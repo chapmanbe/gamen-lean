@@ -259,29 +259,29 @@ def framePropertiesCases : List Case := [
   -- keep the Haskell spec's literal wording ("Diamond"/"Box"/"->"/"<->"
   -- instead of ◇/□/→/↔) so each `it` in test/FramePropertiesSpec.hs has an
   -- exact-string match here.
-  ⟨"Diamond p -> Box p corresponds to partially functional",
+  ⟨"◇p → □p corresponds to partially functional",
     validOn (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3")])
       (.implies (.diamond p) (.box p)) == some true
     && validOn (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")])
       (.implies (.diamond p) (.box p)) == some false⟩,
-  ⟨"Diamond p <-> Box p corresponds to functional",
+  ⟨"◇p ↔ □p corresponds to functional",
     validOn (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) (.iff (.diamond p) (.box p))
       == some true
     && validOn (frame ["w1", "w2"] [("w1","w2")]) (.iff (.diamond p) (.box p))
       == some false⟩,
-  ⟨"Box Box p -> Box p corresponds to weakly dense",
+  ⟨"□□p → □p corresponds to weakly dense",
     validOn (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")])
       (.implies (.box (.box p)) (.box p)) == some true
     && validOn (frame ["w1", "w2"] [("w1","w2")]) (.implies (.box (.box p)) (.box p))
       == some false⟩,
-  ⟨"Schema L corresponds to weakly connected",
+  ⟨"schema L corresponds to weakly connected",
     validOn (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3"), ("w2","w3")])
       (.or (.box (.implies (.and p (.box p)) q)) (.box (.implies (.and q (.box q)) p)))
       == some true
     && validOn (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")])
       (.or (.box (.implies (.and p (.box p)) q)) (.box (.implies (.and q (.box q)) p)))
       == some false⟩,
-  ⟨"Schema G: Diamond Box p -> Box Diamond p corresponds to weakly directed",
+  ⟨"schema G: ◇□p → □◇p corresponds to weakly directed",
     validOn (frame ["w1", "w2", "w3", "w4"]
       [("w1","w2"), ("w1","w3"), ("w2","w4"), ("w3","w4"), ("w4","w4")])
       (.implies (.diamond (.box p)) (.box (.diamond p))) == some true

@@ -149,8 +149,15 @@ class of models") that exercises `isValidOnFrame`. B&D numbers were
 checked against `notes/bd-screen.pdf` (see `Gamen/FrameProperties.lean`
 for the two spots where the Haskell citations were wrong). -/
 
-private def frame (ws : List String) (rels : List (String × String)) : Frame :=
-  (mkFrame ws rels).toOption.get!
+/-- `none` when `mkFrame` rejects the fixture, so a malformed test frame
+fails its case instead of `get!` panicking and continuing with a default. -/
+private def frame (ws : List String) (rels : List (String × String)) : Option Frame :=
+  (mkFrame ws rels).toOption
+
+/-- A frame predicate on a fixture frame; `none` if the frame is malformed.
+Compare against `some true` / `some false`, as with `validOn`. -/
+private def holds (prop : Frame → Bool) (fr : Option Frame) : Option Bool :=
+  fr.map prop
 
 /-- `Except`-safe: an evaluation error (`none`) matches neither `some true`
 nor `some false`, so a call site comparing against either one fails the
@@ -158,28 +165,28 @@ test on error, whichever polarity it expected. A plain `Bool`-returning
 helper with a fixed default (e.g. `.getD false`) would let an error
 masquerade as a definite answer for whichever polarity matches the
 default — that is exactly the bug this shape avoids. -/
-private def validOn (fr : Frame) (f : Formula) : Option Bool :=
-  (isValidOnFrame fr f).toOption
+private def validOn (fr : Option Frame) (f : Formula) : Option Bool :=
+  fr.bind fun fr => (isValidOnFrame fr f).toOption
 
 def framePropertiesCases : List Case := [
   -- Frame property predicates (B&D Table 2.1)
   ⟨"detects reflexive frames",
-    isReflexive (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")])
-    && isSerial (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")])
-    && !isReflexive (frame ["w1", "w2"] [("w1","w1"), ("w1","w2")])⟩,
+    holds isReflexive (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")]) == some true
+    && holds isSerial (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")]) == some true
+    && holds isReflexive (frame ["w1", "w2"] [("w1","w1"), ("w1","w2")]) == some false⟩,
   ⟨"detects symmetric frames",
-    isSymmetric (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")])
-    && !isSymmetric (frame ["w1", "w2"] [("w1","w2")])⟩,
+    holds isSymmetric (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true
+    && holds isSymmetric (frame ["w1", "w2"] [("w1","w2")]) == some false⟩,
   ⟨"detects transitive frames",
-    isTransitive (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3"), ("w1","w3")])
-    && !isTransitive (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3")])⟩,
+    holds isTransitive (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3"), ("w1","w3")]) == some true
+    && holds isTransitive (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3")]) == some false⟩,
   ⟨"detects serial frames",
-    isSerial (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")])
-    && !isSerial (frame ["w1", "w2", "w3"] [("w1","w2")])⟩,
+    holds isSerial (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true
+    && holds isSerial (frame ["w1", "w2", "w3"] [("w1","w2")]) == some false⟩,
   ⟨"detects euclidean frames",
-    isEuclidean (frame ["w1", "w2", "w3"]
-      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")])
-    && !isEuclidean (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")])⟩,
+    holds isEuclidean (frame ["w1", "w2", "w3"]
+      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]) == some true
+    && holds isEuclidean (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")]) == some false⟩,
   -- Frame validity (B&D Definition 2.4)
   ⟨"validates Box Top on any frame",
     validOn (frame ["w1", "w2"] [("w1","w2")]) (.box .top) == some true⟩,
@@ -229,32 +236,32 @@ def framePropertiesCases : List Case := [
       (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) == some true⟩,
   -- Additional frame properties (B&D Table 2.2)
   ⟨"detects partially functional frames",
-    isPartiallyFunctional (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3")])
-    && !isPartiallyFunctional (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")])⟩,
+    holds isPartiallyFunctional (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3")]) == some true
+    && holds isPartiallyFunctional (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")]) == some false⟩,
   ⟨"detects functional frames",
-    isFunctional (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")])
-    && !isFunctional (frame ["w1", "w2"] [("w1","w2")])
-    && !isFunctional (frame ["w1", "w2", "w3"]
-      [("w1","w2"), ("w1","w3"), ("w2","w3"), ("w3","w1")])⟩,
+    holds isFunctional (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true
+    && holds isFunctional (frame ["w1", "w2"] [("w1","w2")]) == some false
+    && holds isFunctional (frame ["w1", "w2", "w3"]
+      [("w1","w2"), ("w1","w3"), ("w2","w3"), ("w3","w1")]) == some false⟩,
   ⟨"detects weakly dense frames",
-    isWeaklyDense (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")])
-    && !isWeaklyDense (frame ["w1", "w2"] [("w1","w2")])⟩,
+    holds isWeaklyDense (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")]) == some true
+    && holds isWeaklyDense (frame ["w1", "w2"] [("w1","w2")]) == some false⟩,
   ⟨"detects weakly connected frames",
-    isWeaklyConnected (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3"), ("w2","w3")])
-    && !isWeaklyConnected (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")])⟩,
+    holds isWeaklyConnected (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3"), ("w2","w3")]) == some true
+    && holds isWeaklyConnected (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")]) == some false⟩,
   ⟨"detects weakly directed frames",
-    isWeaklyDirected (frame ["w1", "w2", "w3", "w4"]
-      [("w1","w2"), ("w1","w3"), ("w2","w4"), ("w3","w4"), ("w4","w4")])
-    && !isWeaklyDirected (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")])⟩,
+    holds isWeaklyDirected (frame ["w1", "w2", "w3", "w4"]
+      [("w1","w2"), ("w1","w3"), ("w2","w4"), ("w3","w4"), ("w4","w4")]) == some true
+    && holds isWeaklyDirected (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")]) == some false⟩,
   -- Equivalence relation and universal (B&D Definition 2.11)
   ⟨"detects equivalence relations",
-    isEquivalenceRelation (frame ["w1", "w2"]
-      [("w1","w1"), ("w2","w2"), ("w1","w2"), ("w2","w1")])
-    && !isEquivalenceRelation (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")])⟩,
+    holds isEquivalenceRelation (frame ["w1", "w2"]
+      [("w1","w1"), ("w2","w2"), ("w1","w2"), ("w2","w1")]) == some true
+    && holds isEquivalenceRelation (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some false⟩,
   ⟨"detects universal frames",
-    isUniversal (frame ["w1", "w2"]
-      [("w1","w1"), ("w1","w2"), ("w2","w1"), ("w2","w2")])
-    && !isUniversal (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")])⟩,
+    holds isUniversal (frame ["w1", "w2"]
+      [("w1","w1"), ("w1","w2"), ("w2","w1"), ("w2","w2")]) == some true
+    && holds isUniversal (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")]) == some false⟩,
   -- B&D Table 2.2 correspondence results (cf. Problems 2.3–2.4). Names below
   -- keep the Haskell spec's literal wording ("Diamond"/"Box"/"->"/"<->"
   -- instead of ◇/□/→/↔) so each `it` in test/FramePropertiesSpec.hs has an
@@ -289,39 +296,39 @@ def framePropertiesCases : List Case := [
       (.implies (.diamond (.box p)) (.box (.diamond p))) == some false⟩,
   -- Relationships between properties (B&D Proposition 2.9)
   ⟨"reflexive implies serial",
-    isReflexive (frame ["w1", "w2"] [("w1","w1"), ("w2","w2")])
-    && isSerial (frame ["w1", "w2"] [("w1","w1"), ("w2","w2")])⟩,
+    holds isReflexive (frame ["w1", "w2"] [("w1","w1"), ("w2","w2")]) == some true
+    && holds isSerial (frame ["w1", "w2"] [("w1","w1"), ("w2","w2")]) == some true⟩,
   ⟨"symmetric + transitive implies euclidean",
-    isSymmetric (frame ["w1", "w2"] [("w1","w2"), ("w2","w1"), ("w1","w1"), ("w2","w2")])
-    && isTransitive (frame ["w1", "w2"] [("w1","w2"), ("w2","w1"), ("w1","w1"), ("w2","w2")])
-    && isEuclidean (frame ["w1", "w2"] [("w1","w2"), ("w2","w1"), ("w1","w1"), ("w2","w2")])⟩,
+    holds isSymmetric (frame ["w1", "w2"] [("w1","w2"), ("w2","w1"), ("w1","w1"), ("w2","w2")]) == some true
+    && holds isTransitive (frame ["w1", "w2"] [("w1","w2"), ("w2","w1"), ("w1","w1"), ("w2","w2")]) == some true
+    && holds isEuclidean (frame ["w1", "w2"] [("w1","w2"), ("w2","w1"), ("w1","w1"), ("w2","w2")]) == some true⟩,
   ⟨"symmetric or euclidean implies weakly directed",
-    isSymmetric (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")])
-    && isWeaklyDirected (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")])
-    && isEuclidean (frame ["w1", "w2", "w3"]
-      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")])
-    && isWeaklyDirected (frame ["w1", "w2", "w3"]
-      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")])⟩,
+    holds isSymmetric (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true
+    && holds isWeaklyDirected (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true
+    && holds isEuclidean (frame ["w1", "w2", "w3"]
+      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]) == some true
+    && holds isWeaklyDirected (frame ["w1", "w2", "w3"]
+      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]) == some true⟩,
   ⟨"euclidean implies weakly connected",
-    isEuclidean (frame ["w1", "w2", "w3"]
-      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")])
-    && isWeaklyConnected (frame ["w1", "w2", "w3"]
-      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")])⟩,
+    holds isEuclidean (frame ["w1", "w2", "w3"]
+      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]) == some true
+    && holds isWeaklyConnected (frame ["w1", "w2", "w3"]
+      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]) == some true⟩,
   ⟨"functional implies serial",
-    isFunctional (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")])
-    && isSerial (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")])⟩,
+    holds isFunctional (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true
+    && holds isSerial (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true⟩,
   -- Equivalence relation characterizations (B&D Proposition 2.12)
   ⟨"equivalence relation satisfies all equivalent conditions",
     let equiv3 := frame ["w1", "w2", "w3"]
       [ ("w1","w1"), ("w1","w2"), ("w1","w3")
       , ("w2","w1"), ("w2","w2"), ("w2","w3")
       , ("w3","w1"), ("w3","w2"), ("w3","w3") ]
-    isEquivalenceRelation equiv3 && isReflexive equiv3 && isEuclidean equiv3
-    && isSerial equiv3 && isSymmetric equiv3 && isTransitive equiv3 && isUniversal equiv3⟩,
+    holds isEquivalenceRelation equiv3 == some true && holds isReflexive equiv3 == some true && holds isEuclidean equiv3 == some true
+    && holds isSerial equiv3 == some true && holds isSymmetric equiv3 == some true && holds isTransitive equiv3 == some true && holds isUniversal equiv3 == some true⟩,
   ⟨"non-universal equivalence relation",
     let equivTwoClasses := frame ["w1", "w2", "w3"]
       [("w1","w1"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]
-    isEquivalenceRelation equivTwoClasses && !isUniversal equivTwoClasses⟩,
+    holds isEquivalenceRelation equivTwoClasses == some true && holds isUniversal equivTwoClasses == some false⟩,
   -- S5 on equivalence and universal frames (B&D Proposition 2.14)
   ⟨"all S5 schemas valid on equivalence frames",
     let equiv := frame ["w1", "w2", "w3"]
@@ -335,7 +342,7 @@ def framePropertiesCases : List Case := [
   ⟨"S5 schemas also valid on non-universal equivalence relations",
     let equiv2 := frame ["w1", "w2", "w3"]
       [("w1","w1"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]
-    isEquivalenceRelation equiv2
+    holds isEquivalenceRelation equiv2 == some true
     && validOn equiv2 (.implies (.box p) p) == some true
     && validOn equiv2 (.implies p (.box (.diamond p))) == some true
     && validOn equiv2 (.implies (.box p) (.box (.box p))) == some true
@@ -344,17 +351,20 @@ def framePropertiesCases : List Case := [
   -- models — the isValidOnFrame-exercising `it`s only (the "entailment"
   -- describe block in that file needs `entails`, not yet ported).
   ⟨"Def 1.11: □p is true at an isolated world (no successors, vacuously)",
-    let fr := frame ["w"] []
+    if let some fr := frame ["w"] [] then
     let m := mkModel fr []
-    (satisfies m "w" (.box p)).toOption == some true⟩,
+    (satisfies m "w" (.box p)).toOption == some true
+    else false⟩,
   ⟨"Def 1.11: p is false at an isolated world (V(p) = ∅)",
-    let fr := frame ["w"] []
+    if let some fr := frame ["w"] [] then
     let m := mkModel fr []
-    (satisfies m "w" p).toOption == some false⟩,
+    (satisfies m "w" p).toOption == some false
+    else false⟩,
   ⟨"Def 1.11: □p→p is false at an isolated world (witnesses T failing off reflexivity)",
-    let fr := frame ["w"] []
+    if let some fr := frame ["w"] [] then
     let m := mkModel fr []
-    (satisfies m "w" (.implies (.box p) p)).toOption == some false⟩,
+    (satisfies m "w" (.implies (.box p) p)).toOption == some false
+    else false⟩,
   ⟨"Prop 1.19: K axiom valid on 2-world chain frame {w1→w2}",
     validOn (frame ["w1","w2"] [("w1","w2")])
       (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) == some true⟩,

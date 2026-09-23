@@ -64,12 +64,26 @@ and list each fix in your report.
 
 ## Report (under 250 words)
 
-Every count comes from a command you ran, not from memory:
+Fill in this block first. Every value is the raw output of the command on
+the same line, pasted, not retyped or summed in your head:
 
-- Spec cases: number of `it`s in the Haskell spec vs cases added, and the
-  names of any not ported.
-- `lake test` pass/fail totals; results of the two planted checks;
-  compare.py disagreements.
+```
+Haskell its, spec:        <command> → <output>
+Haskell its, per PaperCorrespondence block ported:
+                          <command> → <output>   (one line per block)
+Lean cases per list:      <command> → <output>   (every list you touched)
+lake test before changes: <last line of output>   (run right after the fast-forward)
+lake test after changes:  <last line of output>
+Check: after − before = <n>; cases added across lists = <n>; equal? <yes/no>
+compare.py:               <command> → <TOTAL row>, or the error it printed
+```
+
+If the check line says no, find out why before reporting. For a step you
+skipped, give the command you tried and the error it printed; "not
+available" without that is not a reason. Then:
+
+- The names of any spec or PaperCorrespondence `it`s not ported, and why.
+- Results of the two planted checks.
 - Each deviation from the Haskell or the conventions, and why.
 - B&D citations fixed, and any you could not verify.
 - Branch name and commit hash.

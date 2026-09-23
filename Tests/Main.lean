@@ -408,13 +408,15 @@ instance : Shrinkable Formula where
     | _ => []
 
 /-- A fixed 3-world model with a reflexive point, a dead end, and a cycle,
-used to check that `toNNF` preserves truth everywhere. -/
-def testModel : Model :=
-  let fr := (mkFrame ["w1", "w2", "w3"] [("w1", "w1"), ("w1", "w2"), ("w2", "w3"), ("w3", "w1")]).toOption.get!
-  mkModel fr [("p", ["w1", "w3"]), ("q", ["w2"]), ("r", [])]
+used to check that `toNNF` preserves truth everywhere. `none` if `mkFrame`
+rejects it (not `get!`, whose panic would continue with an empty model and
+make the properties below pass vacuously). -/
+def testModel : Option Model :=
+  (mkFrame ["w1", "w2", "w3"] [("w1", "w1"), ("w1", "w2"), ("w2", "w3"), ("w3", "w1")]).toOption.map
+    (mkModel · [("p", ["w1", "w3"]), ("q", ["w2"]), ("r", [])])
 
-def truthsIn (m : Model) (f : Formula) : Option (List Bool) :=
-  (m.frame.worlds.toList.mapM (satisfies m · f)).toOption
+def truthsIn (m : Option Model) (f : Formula) : Option (List Bool) :=
+  m.bind fun m => (m.frame.worlds.toList.mapM (satisfies m · f)).toOption
 
 def properties : List (String × IO Bool) :=
   let run (p : Prop) [Testable p] : IO Bool := do
@@ -430,7 +432,8 @@ def properties : List (String × IO Bool) :=
       run (NamedBinder "f" <| ∀ f : Formula, isNNF (toNNF f) = true)),
     ("toNNF preserves truth at every world",
       run (NamedBinder "f" <| ∀ f : Formula,
-        truthsIn testModel (toNNF f) = truthsIn testModel f)),
+        ((truthsIn testModel f).isSome
+          && truthsIn testModel (toNNF f) == truthsIn testModel f) = true)),
     ("tableau-valid formulas are true in the test model (soundness spot-check)",
       run (NamedBinder "f" <| ∀ f : Formula,
         (!proves [] f || truthsIn testModel f == some [true, true, true]) = true)) ]

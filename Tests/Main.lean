@@ -1,8 +1,10 @@
 import Gamen.Tableau
+import Gamen.Fragment
 import Gamen.FrameProperties
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
+import Validate.Core
 
 /-!
 # Tests
@@ -10,8 +12,11 @@ import Notebooks.Ch1SyntaxSemantics
 Ports of `test/TableauSpec.hs` (system K cases and countermodel extraction),
 `test/FormulaSpec.hs`-style printing checks, `test/FramePropertiesSpec.hs`,
 the `Definition 1.11` / `Proposition 1.19` slice of `test/PaperCorrespondence.hs`
-that exercises `isValidOnFrame`, and the `toNNF` properties from
-`test/Properties.hs`, run with Plausible instead of QuickCheck.
+that exercises `isValidOnFrame`, the `toNNF` properties from
+`test/Properties.hs`, run with Plausible instead of QuickCheck, and
+`Gamen.Fragment` (`test/RegressionIssue18.hs`'s "A2" describe block, plus
+the fragment-boundary assertions from `test/Properties.hs`'s "issue #25"
+`it` — see `fragmentCases` for what of that `it` is and is not ported).
 -/
 open Gamen Plausible
 
@@ -376,6 +381,91 @@ def framePropertiesCases : List Case := [
       (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) == some true⟩
 ]
 
+/-! ## Fragment gating (`Gamen.Fragment`) -/
+
+/-- `Except`-safe comparison for fragment checks: matches the constructor
+and payload of both sides directly, so an unexpected `Except` variant
+(e.g. `.error (.budgetExhausted _)` where `.ok ()` was expected) fails the
+case instead of being coerced to a default `Bool`. -/
+def fragOk (r expected : Except UnknownReason Unit) : Bool :=
+  match r, expected with
+  | .ok (), .ok () => true
+  | .error e1, .error e2 => e1 == e2
+  | _, _ => false
+
+/-- Port of `test/RegressionIssue18.hs`'s "A2: fragment gating rejects
+out-of-fragment operators" (all 6 `it`s), plus the fragment-boundary
+assertions from `test/Properties.hs`'s "issue #25: all temporal operators
+are quarantined at the fragment boundary" `it`.
+
+That Properties.hs `it` has four numbered steps; only steps 2 and 3 belong
+to `Gamen.Fragment` (`checkTableauFragment` itself). Step 1 (an exhaustive
+semantic-oracle search over ≤3-world models, confirming `{HA, P¬A}` is
+really unsatisfiable) belongs with `Gamen.Semantics`/model enumeration and
+step 4 (`tableauConsistent systemKDt … unsat`, confirming the *raw* prover
+is still wrong on the past) needs the full temporal tableau — both
+`Gamen.Temporal` dependents not yet ported (see `PORTING.md`). Porting
+those two steps is deferred to `Gamen.Temporal`; this file ports only the
+gate. -/
+def fragmentCases : List Case := [
+  ⟨"G3DS fragment accepts ⊗_i p",
+    fragOk (checkDSFragment (.ought "i" p)) (.ok ())⟩,
+  ⟨"G3DS fragment rejects K_b q (epistemic is outside L_n)",
+    fragOk (checkDSFragment (.knowledge "b" q)) (.error (.unsupportedOperator "Knowledge"))⟩,
+  ⟨"G3DS fragment rejects a mixed set's epistemic member",
+    fragOk (checkDSFragment (.not (.knowledge "b" q))) (.error (.unsupportedOperator "Knowledge"))⟩,
+  ⟨"tableau fragment accepts □p",
+    fragOk (checkTableauFragment systemK (.box p)) (.ok ())⟩,
+  ⟨"tableau fragment rejects Knowledge",
+    fragOk (checkTableauFragment systemK (.knowledge "a" (.and p (.not p))))
+      (.error (.unsupportedOperator "Knowledge"))⟩,
+  ⟨"tableau fragment rejects GroupStit (the A4 crash trigger)",
+    fragOk (checkTableauFragment systemK (.groupStit p))
+      (.error (.unsupportedOperator "GroupStit"))⟩,
+  ⟨"issue #25 (step 2): every temporal operator is rejected, past and \
+    future, including nested under another modality",
+    fragOk (checkTableauFragment systemKDt (.pastBox p))
+        (.error (.unsupportedOperator "PastBox"))
+    && fragOk (checkTableauFragment systemKDt (.pastDiamond p))
+        (.error (.unsupportedOperator "PastDiamond"))
+    && fragOk (checkTableauFragment systemKDt (.futureBox p))
+        (.error (.unsupportedOperator "FutureBox"))
+    && fragOk (checkTableauFragment systemKDt (.futureDiamond p))
+        (.error (.unsupportedOperator "FutureDiamond"))
+    && fragOk (checkTableauFragment systemKDt (.box (.pastDiamond p)))
+        (.error (.unsupportedOperator "PastDiamond"))
+    && fragOk (checkTableauFragment systemKDt (.box (.futureBox p)))
+        (.error (.unsupportedOperator "FutureBox"))⟩,
+  ⟨"issue #25 (step 3): the quarantine must not over-reach — the \
+    non-temporal operators the service relies on stay in fragment",
+    fragOk (checkTableauFragment systemKDt (.box p)) (.ok ())
+    && fragOk (checkTableauFragment systemKDt (.diamond p)) (.ok ())
+    && fragOk (checkTableauFragment systemKDt (.belief "a" p)) (.ok ())
+    && fragOk (checkTableauFragment systemKDt (.implies p (.not p))) (.ok ())⟩,
+  -- Review fix: `firstUnsupported` (validate/Main.hs:262-269) must route
+  -- *every* `Left` through `reasonOperator` (validate/Main.hs:271-276),
+  -- not just `UnsupportedOperator` — `reasonOperator other = show other`
+  -- for any other reason. A fragment check "should not" produce
+  -- `ProverStuck`/`BudgetExhausted`, but if one ever did, treating it as
+  -- in-fragment (routing the formula on to the prover) would be exactly
+  -- the silent-wrong-answer bug this module exists to prevent. Verified
+  -- against GHC's actual derived `Show UnknownReason`
+  -- (`runghc` on the three-constructor type: `show (ProverStuck "x") ==
+  -- "ProverStuck \"x\""`), not from memory or from Lean's `reprStr`.
+  ⟨"firstUnsupported renders a non-UnsupportedOperator reason via \
+    Haskell's derived Show, not Lean's Repr, and does not let it through \
+    as in-fragment",
+    firstUnsupported (fun _ => .error (.proverStuck "x")) [p] == some "ProverStuck \"x\""
+    && firstUnsupported (fun _ => .error (.budgetExhausted 5)) [p] == some "BudgetExhausted 5"⟩,
+  -- Review fix: pin `hasAgentOperator (GroupStit _) = False`
+  -- (Formula.hs:230) even when the operand itself has an agent operator —
+  -- `GroupStit` does not recurse into its operand (it is excluded outright,
+  -- not merely "no agent operator at top level"), unlike the previous Lean
+  -- version routed through `immediateSubformulas`.
+  ⟨"hasAgentOperator (GroupStit (Stit a p)) = false (Formula.hs:230)",
+    !(Formula.groupStit (Formula.stit "a" p)).hasAgentOperator⟩
+]
+
 /-! ## Property tests (Plausible) -/
 
 /-- Kripke-fragment formulas over atoms p, q, r. Mirrors `genFormula` in
@@ -444,7 +534,7 @@ where
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
-  for c in unitCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases do
+  for c in unitCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases ++ fragmentCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -453,6 +543,6 @@ def main : IO UInt32 := do
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
   let total := unitCases.length + widgetCases.length + answerKeyCases.length
-    + framePropertiesCases.length + properties.length
+    + framePropertiesCases.length + fragmentCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

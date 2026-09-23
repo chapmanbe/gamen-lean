@@ -4,6 +4,7 @@ import Gamen.Semantics
 import Gamen.FrameProperties
 import Gamen.Verdict
 import Gamen.Tableau
+import Gamen.Fragment
 import Gamen.Notation
 import Gamen.Protocol
 import Gamen.Teaching

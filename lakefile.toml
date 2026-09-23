@@ -36,6 +36,12 @@ globs = ["Notebooks.+"]
 [[lean_lib]]
 name = "Tests"
 
+# `gamen-validate`'s non-`IO` core (`Validate.lean`, `Validate/Core.lean`),
+# so `Tests.Main` can import `Validate.Core` without its `main` colliding
+# with the `gamen-validate` executable's own `main`.
+[[lean_lib]]
+name = "Validate"
+
 # ── Executables ─────────────────────────────────────────────────────
 
 # JSON Lines service, wire-compatible with gamen-hs `gamen-validate`.

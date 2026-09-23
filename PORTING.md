@@ -49,7 +49,7 @@ Lines are gamen-hs source lines. "Depends on" lists gamen-hs imports.
 | Component | Lines | Lean status |
 |---|---:|---|
 | `protocol/Gamen/Protocol/Formula.hs` | 167 | **Done** (`Gamen/Protocol.lean`): tree and flat formats, all 30 constructors. Fragment gating that used to live here moved to `Gamen/Fragment.lean`. |
-| `validate/Main.hs` (`gamen-validate`) | 329 | **Done for the tableau backend** (`Validate.lean`). Requests needing the doxastic/ranking rules or the deontic-STIT prover answer `"not ported in Lean slice: …"` until those modules land. |
+| `validate/Main.hs` (`gamen-validate`) | 329 | **Done for the tableau backend.** The non-`IO` request/response logic lives in `Validate/Core.lean` (split out of `Validate.lean`, which now only wraps it with `main`, so `Tests.Main` can `import Validate.Core` for direct unit tests without the two executables' `main` colliding). Requests needing the doxastic/ranking rules or the deontic-STIT prover answer `"not ported in Lean slice: …"` until those modules land. `reasonOperator` (validate/Main.hs:271-276) is ported faithfully: a non-`UnsupportedOperator` reason renders as GHC's derived `Show UnknownReason` would, not Lean's `reprStr` — verified against `runghc` output, not from memory. |
 | `protocol/Service/*` + `service/Main.hs` (dcleg service) | 893 | Not started |
 | `app/Main.hs` (`gamen-repl` demo) | 43 | Not started |
 

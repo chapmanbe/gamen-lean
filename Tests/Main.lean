@@ -4,6 +4,7 @@ import Gamen.FrameProperties
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
+import Validate.Core
 
 /-!
 # Tests
@@ -440,7 +441,29 @@ def fragmentCases : List Case := [
     fragOk (checkTableauFragment systemKDt (.box p)) (.ok ())
     && fragOk (checkTableauFragment systemKDt (.diamond p)) (.ok ())
     && fragOk (checkTableauFragment systemKDt (.belief "a" p)) (.ok ())
-    && fragOk (checkTableauFragment systemKDt (.implies p (.not p))) (.ok ())⟩
+    && fragOk (checkTableauFragment systemKDt (.implies p (.not p))) (.ok ())⟩,
+  -- Review fix: `firstUnsupported` (validate/Main.hs:262-269) must route
+  -- *every* `Left` through `reasonOperator` (validate/Main.hs:271-276),
+  -- not just `UnsupportedOperator` — `reasonOperator other = show other`
+  -- for any other reason. A fragment check "should not" produce
+  -- `ProverStuck`/`BudgetExhausted`, but if one ever did, treating it as
+  -- in-fragment (routing the formula on to the prover) would be exactly
+  -- the silent-wrong-answer bug this module exists to prevent. Verified
+  -- against GHC's actual derived `Show UnknownReason`
+  -- (`runghc` on the three-constructor type: `show (ProverStuck "x") ==
+  -- "ProverStuck \"x\""`), not from memory or from Lean's `reprStr`.
+  ⟨"firstUnsupported renders a non-UnsupportedOperator reason via \
+    Haskell's derived Show, not Lean's Repr, and does not let it through \
+    as in-fragment",
+    firstUnsupported (fun _ => .error (.proverStuck "x")) [p] == some "ProverStuck \"x\""
+    && firstUnsupported (fun _ => .error (.budgetExhausted 5)) [p] == some "BudgetExhausted 5"⟩,
+  -- Review fix: pin `hasAgentOperator (GroupStit _) = False`
+  -- (Formula.hs:230) even when the operand itself has an agent operator —
+  -- `GroupStit` does not recurse into its operand (it is excluded outright,
+  -- not merely "no agent operator at top level"), unlike the previous Lean
+  -- version routed through `immediateSubformulas`.
+  ⟨"hasAgentOperator (GroupStit (Stit a p)) = false (Formula.hs:230)",
+    !(Formula.groupStit (Formula.stit "a" p)).hasAgentOperator⟩
 ]
 
 /-! ## Property tests (Plausible) -/

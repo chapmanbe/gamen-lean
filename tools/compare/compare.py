@@ -182,6 +182,18 @@ def build_corpus(rng):
         mixed.append(req("check_consistency", formulas=fs))
     add("D consistency-mixed", mixed)
 
+    # D''. Explicit regression: GroupStit must not be treated as an agent
+    # operator via its operand (Formula.hs:230 excludes it outright, unlike
+    # Stit/ChoiceDiamond/Ought/Permitted/.../CanUntil, which recurse). Both
+    # backends agree the operator itself is unsupported either way, but the
+    # *prover* named in the error message differs ("kdt+doxasticD" if
+    # hasAgentOperator is False as it should be, "deontic-stit" if a
+    # regression makes it recurse into Stit) -- exercising the dispatch,
+    # not just the fragment gate.
+    add("D consistency-groupstit-regression", [
+        req("check_consistency", formulas=[un("group_stit", ag("stit", "a", atom("p")))])
+    ])
+
     # E. check_pairwise
     add("E pairwise-K", [
         req("check_pairwise", formulas=[rand_k(rng, 3) for _ in range(rng.randint(0, 6))])

@@ -9,3 +9,6 @@ tools/compare/results/
 
 __pycache__/
 .DS_Store
+
+# git worktrees created by Claude Code agent runs
+.claude/worktrees/

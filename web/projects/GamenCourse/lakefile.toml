@@ -1,0 +1,10 @@
+name = "GamenCourse"
+reservoir = false
+defaultTargets = ["GamenCourse"]
+
+[[require]]
+name = "gamen"
+path = "../../.."
+
+[[lean_lib]]
+name = "GamenCourse"

@@ -1,0 +1,20 @@
+section                          identical  equivalent   scope_gap    DISAGREE
+A envelope                               6          13           0           0
+B codec-each                            30           0           0           0
+B codec-random                         500           0           0           0
+C flat                                  83           0           0           0
+C flat-consistency                      70           1          12           0
+D consistency-K                       2000           0           0           0
+D consistency-mixed                    255           0          45           0
+E pairwise-K                           300           0           0           0
+E pairwise-mixed                        20           0           0           0
+F validate_agent                        12           0           0           0
+G guideline-validate                   141           0           0           0
+G guideline-consistency                141           0           0           0
+G guideline-set                          6           0           0           0
+G guideline-pairwise                     6           0           0           0
+G guideline-noagent-pairwise            12           0           0           0
+TOTAL                                 3582          14          57           0
+
+requests: 3653   seed: 20260923
+stderr bytes: haskell 0, lean 0

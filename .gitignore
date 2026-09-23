@@ -1,2 +1,11 @@
 # cache and other artifacts produced by Lean's Lake build tool
 .lake/
+
+# lean4web clone created by web/setup.sh (third-party; not vendored)
+web/lean4web/
+
+# output of tools/compare/compare.py (regenerate; dated baselines live in docs/assessment/)
+tools/compare/results/
+
+__pycache__/
+.DS_Store

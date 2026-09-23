@@ -1,0 +1,42 @@
+diff --git a/client/vite.config.ts b/client/vite.config.ts
+index 1b33789..d361b93 100644
+--- a/client/vite.config.ts
++++ b/client/vite.config.ts
+@@ -55,18 +55,20 @@ export default defineConfig({
+   publicDir: 'public',
+   base: '/', // setting this to `/leanweb/` means the server is now accessible at `localhost:3000/leanweb`
+   server: {
++    // gamen-roc local change: loopback only.
++    host: '127.0.0.1',
+     port: 3000,
+     proxy: {
+       '/websocket': {
+-        target: 'ws://localhost:8080',
++        target: 'ws://127.0.0.1:' + (process.env.LEAN4WEB_SERVER_PORT ?? '8080') + '',
+         ws: true,
+       },
+       '/yjs-signaling': {
+-        target: 'ws://localhost:8080',
++        target: 'ws://127.0.0.1:' + (process.env.LEAN4WEB_SERVER_PORT ?? '8080') + '',
+         ws: true,
+       },
+       '/api': {
+-        target: 'http://localhost:8080',
++        target: 'http://127.0.0.1:' + (process.env.LEAN4WEB_SERVER_PORT ?? '8080') + '',
+       },
+     },
+     watch: {
+diff --git a/server/index.mjs b/server/index.mjs
+index e5ea35d..c87190e 100755
+--- a/server/index.mjs
++++ b/server/index.mjs
+@@ -178,7 +178,8 @@ if (crtFile && keyFile) {
+   })
+ } else {
+   const PORT = process.env.PORT ?? 8080
+-  server = app.listen(PORT, () => console.log(`HTTP on port ${PORT}`))
++  // gamen-roc local change: bind to loopback unless HOST is set (Lean runs unsandboxed in dev).
++  server = app.listen(PORT, process.env.HOST ?? '127.0.0.1', () => console.log(`HTTP on port ${PORT}`))
+ }
+ 
+ const wss = new WebSocketServer({

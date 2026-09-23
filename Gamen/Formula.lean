@@ -112,6 +112,33 @@ def isModalFree : Formula → Bool
   | .groupStit _ | .next _ | .ought _ _ | .permitted _ _ | .coalition _ _
   | .canNext _ _ | .canAlways _ _ | .canEventually _ _ | .canUntil _ _ _ => false
 
+/-- Does any subformula use an agent-relative operator? True when `stit`,
+`choiceDiamond`, `ought`, `permitted`, `coalition`, `canNext`, `canAlways`,
+`canEventually`, or `canUntil` appears anywhere in the formula.
+`groupStit` is excluded because the deontic-STIT calculus has no
+group-obligation operator (gamen-hs issue #8). Used by `Validate.lean` to
+dispatch consistency checking to the deontic-STIT prover. -/
+def hasAgentOperator : Formula → Bool
+  | .bot | .atomF _ => false
+  | .not f => f.hasAgentOperator
+  | .and l r | .or l r | .implies l r | .iff l r => l.hasAgentOperator || r.hasAgentOperator
+  | .box f | .diamond f | .futureBox f | .futureDiamond f | .pastBox f
+  | .pastDiamond f => f.hasAgentOperator
+  | .since l r | .until l r => l.hasAgentOperator || r.hasAgentOperator
+  | .knowledge _ f | .belief _ f | .rankedBelief _ _ f => f.hasAgentOperator
+  | .announce l r => l.hasAgentOperator || r.hasAgentOperator
+  | .stit .. => true
+  | .choiceDiamond .. => true
+  | .groupStit _ => false
+  | .next f => f.hasAgentOperator
+  | .ought .. => true
+  | .permitted .. => true
+  | .coalition .. => true
+  | .canNext .. => true
+  | .canAlways .. => true
+  | .canEventually .. => true
+  | .canUntil .. => true
+
 /-- The set of atoms occurring in a formula. -/
 def atoms : Formula → Std.TreeSet Atom
   | .bot => ∅

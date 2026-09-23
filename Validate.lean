@@ -1,5 +1,6 @@
 import Gamen.Protocol
 import Gamen.Tableau
+import Gamen.Fragment
 
 /-!
 # gamen-validate (Lean port)
@@ -57,22 +58,37 @@ inductive Classified where
 
 def tableauMaxSteps : Nat := 5000
 
-def firstUnsupported (ok : Formula → Bool) (fs : List Formula) : Option String :=
+/-- Port of `firstUnsupported` in `validate/Main.hs`: the first constructor
+across a formula list rejected by a fragment check (`checkTableauFragment`
+or `checkDSFragment`), or `none` if all are in fragment. Any reason other
+than `unsupportedOperator` should not arise from a fragment check. -/
+def firstUnsupported (chk : Formula → Except UnknownReason Unit) (fs : List Formula) :
+    Option String :=
+  fs.findSome? fun f => match chk f with
+    | .ok () => none
+    | .error (.unsupportedOperator name) => some name
+    | .error _ => none
+
+/-- A fragment-agnostic scan for operators outside this Lean slice's own
+scope (not a Haskell concept: gamen-hs's doxastic/ranking tableau rules
+are fully implemented, so it never needs this). -/
+def firstOutOfScope (ok : Formula → Bool) (fs : List Formula) : Option String :=
   fs.findSome? (·.firstOffender ok)
 
 /-- Port of `classifyConsistency`: any agent operator sends the whole set to
 the deontic-STIT prover; otherwise the KDt tableau (plus doxastic and
-ranking rules) handles it. Each backend gates its fragment first. -/
+ranking rules) handles it. Each backend gates its fragment first with
+`Gamen.Fragment.checkDSFragment` / `checkTableauFragment`. -/
 def classifyConsistency (fs : List Formula) : Classified :=
   if fs.any (·.hasAgentOperator) then
-    match firstUnsupported Formula.allowedInDS fs with
+    match firstUnsupported checkDSFragment fs with
     | some op => .unsupported op "deontic-stit"
     | none => .notPorted "deontic-STIT prover (G3DS)"
   else
-    match firstUnsupported Formula.allowedInTableau fs with
+    match firstUnsupported (checkTableauFragment systemKDt) fs with
     | some op => .unsupported op "kdt+doxasticD"
     | none =>
-      match firstUnsupported (fun f => !(f matches .belief .. | .rankedBelief ..)) fs with
+      match firstOutOfScope (fun f => !(f matches .belief .. | .rankedBelief ..)) fs with
       | some op => .notPorted s!"doxastic/ranking tableau rules ({op})"
       | none => .verdict (tableauConsistent systemKDt tableauMaxSteps fs) "kdt+doxasticD"
 

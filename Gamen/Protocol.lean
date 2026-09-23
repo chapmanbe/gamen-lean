@@ -5,9 +5,10 @@ import Gamen.Verdict
 /-!
 # Gamen.Protocol
 
-Port of `gamen-hs/protocol/Gamen/Protocol/Formula.hs` (the JSON codec for
-`Formula`) and `gamen-hs/src/Gamen/Fragment.hs` (per-prover fragment
-gating), plus `hasAgentOperator` from `Gamen.Formula`.
+Port of `gamen-hs/protocol/Gamen/Protocol/Formula.hs`: the JSON codec for
+`Formula`. Fragment gating (`gamen-hs/src/Gamen/Fragment.hs`) lives in
+`Gamen.Fragment`; `hasAgentOperator` lives in `Gamen.Formula`, as in the
+Haskell.
 
 Two decoding formats, as in Haskell:
 
@@ -163,74 +164,4 @@ where
 instance : ToJson Formula := ⟨encodeFormula⟩
 instance : FromJson Formula := ⟨decodeFormula⟩
 
-/-! ## Fragment gating (port of `Gamen.Fragment`) -/
-
-namespace Formula
-
-/-- Haskell constructor name, used verbatim in wire-protocol errors. -/
-def constructorName : Formula → String
-  | .bot => "Bot" | .atomF _ => "Atom" | .not _ => "Not" | .and .. => "And"
-  | .or .. => "Or" | .implies .. => "Implies" | .iff .. => "Iff" | .box _ => "Box"
-  | .diamond _ => "Diamond" | .futureBox _ => "FutureBox"
-  | .futureDiamond _ => "FutureDiamond" | .pastBox _ => "PastBox"
-  | .pastDiamond _ => "PastDiamond" | .since .. => "Since" | .until .. => "Until"
-  | .knowledge .. => "Knowledge" | .belief .. => "Belief"
-  | .rankedBelief .. => "RankedBelief" | .announce .. => "Announce"
-  | .stit .. => "Stit" | .choiceDiamond .. => "ChoiceDiamond"
-  | .groupStit _ => "GroupStit" | .next _ => "Next" | .ought .. => "Ought"
-  | .permitted .. => "Permitted" | .coalition .. => "Coalition"
-  | .canNext .. => "CanNext" | .canAlways .. => "CanAlways"
-  | .canEventually .. => "CanEventually" | .canUntil .. => "CanUntil"
-
-def immediateSubformulas : Formula → List Formula
-  | .bot | .atomF _ => []
-  | .not g | .box g | .diamond g | .futureBox g | .futureDiamond g | .pastBox g
-  | .pastDiamond g | .knowledge _ g | .belief _ g | .rankedBelief _ _ g
-  | .stit _ g | .choiceDiamond _ g | .groupStit g | .next g | .ought _ g
-  | .permitted _ g | .coalition _ g | .canNext _ g | .canAlways _ g
-  | .canEventually _ g => [g]
-  | .and l r | .or l r | .implies l r | .iff l r | .since l r | .until l r
-  | .announce l r | .canUntil _ l r => [l, r]
-
-/-- Every immediate subformula is structurally smaller. This one lemma lets
-`hasAgentOperator` and `firstOffender` recurse through
-`immediateSubformulas`, as the Haskell does, and still be total. -/
-theorem sizeOf_lt_of_mem_immediate {f g : Formula} (h : g ∈ f.immediateSubformulas) :
-    sizeOf g < sizeOf f := by
-  cases f <;> simp [immediateSubformulas] at h <;>
-    (try rcases h with rfl | rfl) <;> (try subst h) <;> simp <;> omega
-
-/-- Is the top-level constructor an agent operator? -/
-def isAgentOperator : Formula → Bool
-  | .stit .. | .choiceDiamond .. | .ought .. | .permitted .. | .coalition ..
-  | .canNext .. | .canAlways .. | .canEventually .. | .canUntil .. => true
-  | _ => false
-
-/-- Does the formula contain an agent operator anywhere (which dispatches
-consistency checking to the deontic-STIT prover)? -/
-def hasAgentOperator (f : Formula) : Bool :=
-  f.isAgentOperator || f.immediateSubformulas.attach.any fun ⟨g, _⟩ => g.hasAgentOperator
-termination_by f
-decreasing_by exact sizeOf_lt_of_mem_immediate ‹_›
-
-/-- The first constructor (pre-order) that `ok` rejects. -/
-def firstOffender (ok : Formula → Bool) (f : Formula) : Option String :=
-  if !ok f then some f.constructorName
-  else f.immediateSubformulas.attach.findSome? fun ⟨g, _⟩ => g.firstOffender ok
-termination_by f
-decreasing_by exact sizeOf_lt_of_mem_immediate ‹_›
-
-/-- Operators the consistency tableau (KDt + doxastic D + ranking) accepts. -/
-def allowedInTableau : Formula → Bool
-  | .bot | .atomF _ | .not _ | .and .. | .or .. | .implies .. | .iff .. | .box _
-  | .diamond _ | .belief .. | .rankedBelief .. => true
-  | _ => false
-
-/-- Operators the deontic-STIT prover (G3DS) accepts. -/
-def allowedInDS : Formula → Bool
-  | .bot | .atomF _ | .not _ | .and .. | .or .. | .implies .. | .iff .. | .box _
-  | .diamond _ | .stit .. | .choiceDiamond .. | .ought .. | .permitted .. => true
-  | _ => false
-
-end Formula
 end Gamen

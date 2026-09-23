@@ -1,0 +1,9 @@
+{
+  "name": "Gamen course (_LeanVers_)",
+  "default": true,
+  "hidden": false,
+  "examples": [
+    { "file": "GamenCourse/Ch1SyntaxSemantics.lean", "name": "Ch. 1: Syntax and Semantics" },
+    { "file": "GamenCourse/Ch1HealthObligations.lean", "name": "Ch. 1 (health): Clinical Obligations" }
+  ]
+}

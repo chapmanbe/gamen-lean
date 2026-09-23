@@ -1,4 +1,5 @@
 import Gamen.Tableau
+import Gamen.FrameProperties
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
@@ -7,7 +8,9 @@ import Notebooks.Ch1SyntaxSemantics
 # Tests
 
 Ports of `test/TableauSpec.hs` (system K cases and countermodel extraction),
-`test/FormulaSpec.hs`-style printing checks, and the `toNNF` properties from
+`test/FormulaSpec.hs`-style printing checks, `test/FramePropertiesSpec.hs`,
+the `Definition 1.11` / `Proposition 1.19` slice of `test/PaperCorrespondence.hs`
+that exercises `isValidOnFrame`, and the `toNNF` properties from
 `test/Properties.hs`, run with Plausible instead of QuickCheck.
 -/
 open Gamen Plausible
@@ -138,6 +141,241 @@ def answerKeyCases : List Case := [
     && consistency [g8, g9, ml[ sepsis ], ml[ fluid_overload ]]
          == "inconsistent: no model satisfies all of them"⟩ ]
 
+/-! ## Frame properties
+
+Port of `test/FramePropertiesSpec.hs`, plus the slice of
+`test/PaperCorrespondence.hs` ("Definition 1.11 (p. 11): validity in a
+class of models") that exercises `isValidOnFrame`. B&D numbers were
+checked against `notes/bd-screen.pdf` (see `Gamen/FrameProperties.lean`
+for the two spots where the Haskell citations were wrong). -/
+
+/-- `none` when `mkFrame` rejects the fixture, so a malformed test frame
+fails its case instead of `get!` panicking and continuing with a default. -/
+private def frame (ws : List String) (rels : List (String × String)) : Option Frame :=
+  (mkFrame ws rels).toOption
+
+/-- A frame predicate on a fixture frame; `none` if the frame is malformed.
+Compare against `some true` / `some false`, as with `validOn`. -/
+private def holds (prop : Frame → Bool) (fr : Option Frame) : Option Bool :=
+  fr.map prop
+
+/-- `Except`-safe: an evaluation error (`none`) matches neither `some true`
+nor `some false`, so a call site comparing against either one fails the
+test on error, whichever polarity it expected. A plain `Bool`-returning
+helper with a fixed default (e.g. `.getD false`) would let an error
+masquerade as a definite answer for whichever polarity matches the
+default — that is exactly the bug this shape avoids. -/
+private def validOn (fr : Option Frame) (f : Formula) : Option Bool :=
+  fr.bind fun fr => (isValidOnFrame fr f).toOption
+
+def framePropertiesCases : List Case := [
+  -- Frame property predicates (B&D Table 2.1)
+  ⟨"detects reflexive frames",
+    holds isReflexive (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")]) == some true
+    && holds isSerial (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")]) == some true
+    && holds isReflexive (frame ["w1", "w2"] [("w1","w1"), ("w1","w2")]) == some false⟩,
+  ⟨"detects symmetric frames",
+    holds isSymmetric (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true
+    && holds isSymmetric (frame ["w1", "w2"] [("w1","w2")]) == some false⟩,
+  ⟨"detects transitive frames",
+    holds isTransitive (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3"), ("w1","w3")]) == some true
+    && holds isTransitive (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3")]) == some false⟩,
+  ⟨"detects serial frames",
+    holds isSerial (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true
+    && holds isSerial (frame ["w1", "w2", "w3"] [("w1","w2")]) == some false⟩,
+  ⟨"detects euclidean frames",
+    holds isEuclidean (frame ["w1", "w2", "w3"]
+      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]) == some true
+    && holds isEuclidean (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")]) == some false⟩,
+  -- Frame validity (B&D Definition 2.4)
+  ⟨"validates Box Top on any frame",
+    validOn (frame ["w1", "w2"] [("w1","w2")]) (.box .top) == some true⟩,
+  ⟨"rejects Bot on any frame",
+    validOn (frame ["w1", "w2"] [("w1","w2")]) .bot == some false⟩,
+  -- Schema T: □p → p corresponds to reflexivity (B&D Table 2.1; Corollary 2.8)
+  ⟨"schema T is valid on reflexive frames",
+    validOn (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")])
+      (.implies (.box p) p) == some true⟩,
+  ⟨"schema T is not valid on non-reflexive frames",
+    validOn (frame ["w1", "w2"] [("w1","w2")]) (.implies (.box p) p) == some false⟩,
+  -- Schema D: □p → ◇p corresponds to seriality (B&D Table 2.1; Corollary 2.8)
+  ⟨"schema D is valid on serial frames",
+    validOn (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")])
+      (.implies (.box p) (.diamond p)) == some true⟩,
+  ⟨"schema D is not valid on non-serial frames",
+    validOn (frame ["w1", "w2"] [("w1","w2")]) (.implies (.box p) (.diamond p)) == some false⟩,
+  -- Schema B: p → □◇p corresponds to symmetry (B&D Table 2.1; Corollary 2.8)
+  ⟨"schema B is valid on symmetric frames",
+    validOn (frame ["w1", "w2"] [("w1","w2"), ("w2","w1"), ("w1","w1"), ("w2","w2")])
+      (.implies p (.box (.diamond p))) == some true⟩,
+  ⟨"schema B is not valid on non-symmetric frames",
+    validOn (frame ["w1", "w2"] [("w1","w2"), ("w2","w2")])
+      (.implies p (.box (.diamond p))) == some false⟩,
+  -- Schema 4: □p → □□p corresponds to transitivity (B&D Table 2.1; Corollary 2.8)
+  ⟨"schema 4 is valid on transitive frames",
+    validOn (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3"), ("w1","w3")])
+      (.implies (.box p) (.box (.box p))) == some true⟩,
+  ⟨"schema 4 is not valid on non-transitive frames",
+    validOn (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3")])
+      (.implies (.box p) (.box (.box p))) == some false⟩,
+  -- Schema 5: ◇p → □◇p corresponds to euclideanness (B&D Table 2.1; Corollary 2.8)
+  ⟨"schema 5 is valid on euclidean frames",
+    validOn (frame ["w1", "w2", "w3"]
+      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")])
+      (.implies (.diamond p) (.box (.diamond p))) == some true⟩,
+  ⟨"schema 5 is not valid on non-euclidean frames",
+    validOn (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")])
+      (.implies (.diamond p) (.box (.diamond p))) == some false⟩,
+  -- Schema K: □(p→q) → (□p→□q) valid on all frames (B&D Proposition 1.19)
+  ⟨"schema K is valid on any frame",
+    validOn (frame ["w1", "w2"] [("w1","w2")])
+      (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) == some true
+    && validOn (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3")])
+      (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) == some true
+    && validOn (frame ["w1"] [("w1","w1")])
+      (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) == some true⟩,
+  -- Additional frame properties (B&D Table 2.2)
+  ⟨"detects partially functional frames",
+    holds isPartiallyFunctional (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3")]) == some true
+    && holds isPartiallyFunctional (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")]) == some false⟩,
+  ⟨"detects functional frames",
+    holds isFunctional (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true
+    && holds isFunctional (frame ["w1", "w2"] [("w1","w2")]) == some false
+    && holds isFunctional (frame ["w1", "w2", "w3"]
+      [("w1","w2"), ("w1","w3"), ("w2","w3"), ("w3","w1")]) == some false⟩,
+  ⟨"detects weakly dense frames",
+    holds isWeaklyDense (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")]) == some true
+    && holds isWeaklyDense (frame ["w1", "w2"] [("w1","w2")]) == some false⟩,
+  ⟨"detects weakly connected frames",
+    holds isWeaklyConnected (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3"), ("w2","w3")]) == some true
+    && holds isWeaklyConnected (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")]) == some false⟩,
+  ⟨"detects weakly directed frames",
+    holds isWeaklyDirected (frame ["w1", "w2", "w3", "w4"]
+      [("w1","w2"), ("w1","w3"), ("w2","w4"), ("w3","w4"), ("w4","w4")]) == some true
+    && holds isWeaklyDirected (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")]) == some false⟩,
+  -- Equivalence relation and universal (B&D Definition 2.11)
+  ⟨"detects equivalence relations",
+    holds isEquivalenceRelation (frame ["w1", "w2"]
+      [("w1","w1"), ("w2","w2"), ("w1","w2"), ("w2","w1")]) == some true
+    && holds isEquivalenceRelation (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some false⟩,
+  ⟨"detects universal frames",
+    holds isUniversal (frame ["w1", "w2"]
+      [("w1","w1"), ("w1","w2"), ("w2","w1"), ("w2","w2")]) == some true
+    && holds isUniversal (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")]) == some false⟩,
+  -- B&D Table 2.2 correspondence results (cf. Problems 2.3–2.4). Names below
+  -- keep the Haskell spec's literal wording ("Diamond"/"Box"/"->"/"<->"
+  -- instead of ◇/□/→/↔) so each `it` in test/FramePropertiesSpec.hs has an
+  -- exact-string match here.
+  ⟨"◇p → □p corresponds to partially functional",
+    validOn (frame ["w1", "w2", "w3"] [("w1","w2"), ("w2","w3")])
+      (.implies (.diamond p) (.box p)) == some true
+    && validOn (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")])
+      (.implies (.diamond p) (.box p)) == some false⟩,
+  ⟨"◇p ↔ □p corresponds to functional",
+    validOn (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) (.iff (.diamond p) (.box p))
+      == some true
+    && validOn (frame ["w1", "w2"] [("w1","w2")]) (.iff (.diamond p) (.box p))
+      == some false⟩,
+  ⟨"□□p → □p corresponds to weakly dense",
+    validOn (frame ["w1", "w2"] [("w1","w1"), ("w1","w2"), ("w2","w2")])
+      (.implies (.box (.box p)) (.box p)) == some true
+    && validOn (frame ["w1", "w2"] [("w1","w2")]) (.implies (.box (.box p)) (.box p))
+      == some false⟩,
+  ⟨"schema L corresponds to weakly connected",
+    validOn (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3"), ("w2","w3")])
+      (.or (.box (.implies (.and p (.box p)) q)) (.box (.implies (.and q (.box q)) p)))
+      == some true
+    && validOn (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")])
+      (.or (.box (.implies (.and p (.box p)) q)) (.box (.implies (.and q (.box q)) p)))
+      == some false⟩,
+  ⟨"schema G: ◇□p → □◇p corresponds to weakly directed",
+    validOn (frame ["w1", "w2", "w3", "w4"]
+      [("w1","w2"), ("w1","w3"), ("w2","w4"), ("w3","w4"), ("w4","w4")])
+      (.implies (.diamond (.box p)) (.box (.diamond p))) == some true
+    && validOn (frame ["w1", "w2", "w3"] [("w1","w2"), ("w1","w3")])
+      (.implies (.diamond (.box p)) (.box (.diamond p))) == some false⟩,
+  -- Relationships between properties (B&D Proposition 2.9)
+  ⟨"reflexive implies serial",
+    holds isReflexive (frame ["w1", "w2"] [("w1","w1"), ("w2","w2")]) == some true
+    && holds isSerial (frame ["w1", "w2"] [("w1","w1"), ("w2","w2")]) == some true⟩,
+  ⟨"symmetric + transitive implies euclidean",
+    holds isSymmetric (frame ["w1", "w2"] [("w1","w2"), ("w2","w1"), ("w1","w1"), ("w2","w2")]) == some true
+    && holds isTransitive (frame ["w1", "w2"] [("w1","w2"), ("w2","w1"), ("w1","w1"), ("w2","w2")]) == some true
+    && holds isEuclidean (frame ["w1", "w2"] [("w1","w2"), ("w2","w1"), ("w1","w1"), ("w2","w2")]) == some true⟩,
+  ⟨"symmetric or euclidean implies weakly directed",
+    holds isSymmetric (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true
+    && holds isWeaklyDirected (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true
+    && holds isEuclidean (frame ["w1", "w2", "w3"]
+      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]) == some true
+    && holds isWeaklyDirected (frame ["w1", "w2", "w3"]
+      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]) == some true⟩,
+  ⟨"euclidean implies weakly connected",
+    holds isEuclidean (frame ["w1", "w2", "w3"]
+      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]) == some true
+    && holds isWeaklyConnected (frame ["w1", "w2", "w3"]
+      [("w1","w2"), ("w1","w3"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]) == some true⟩,
+  ⟨"functional implies serial",
+    holds isFunctional (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true
+    && holds isSerial (frame ["w1", "w2"] [("w1","w2"), ("w2","w1")]) == some true⟩,
+  -- Equivalence relation characterizations (B&D Proposition 2.12)
+  ⟨"equivalence relation satisfies all equivalent conditions",
+    let equiv3 := frame ["w1", "w2", "w3"]
+      [ ("w1","w1"), ("w1","w2"), ("w1","w3")
+      , ("w2","w1"), ("w2","w2"), ("w2","w3")
+      , ("w3","w1"), ("w3","w2"), ("w3","w3") ]
+    holds isEquivalenceRelation equiv3 == some true && holds isReflexive equiv3 == some true && holds isEuclidean equiv3 == some true
+    && holds isSerial equiv3 == some true && holds isSymmetric equiv3 == some true && holds isTransitive equiv3 == some true && holds isUniversal equiv3 == some true⟩,
+  ⟨"non-universal equivalence relation",
+    let equivTwoClasses := frame ["w1", "w2", "w3"]
+      [("w1","w1"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]
+    holds isEquivalenceRelation equivTwoClasses == some true && holds isUniversal equivTwoClasses == some false⟩,
+  -- S5 on equivalence and universal frames (B&D Proposition 2.14)
+  ⟨"all S5 schemas valid on equivalence frames",
+    let equiv := frame ["w1", "w2", "w3"]
+      [ ("w1","w1"), ("w1","w2"), ("w1","w3")
+      , ("w2","w1"), ("w2","w2"), ("w2","w3")
+      , ("w3","w1"), ("w3","w2"), ("w3","w3") ]
+    validOn equiv (.implies (.box p) p) == some true
+    && validOn equiv (.implies p (.box (.diamond p))) == some true
+    && validOn equiv (.implies (.box p) (.box (.box p))) == some true
+    && validOn equiv (.implies (.diamond p) (.box (.diamond p))) == some true⟩,
+  ⟨"S5 schemas also valid on non-universal equivalence relations",
+    let equiv2 := frame ["w1", "w2", "w3"]
+      [("w1","w1"), ("w2","w2"), ("w2","w3"), ("w3","w2"), ("w3","w3")]
+    holds isEquivalenceRelation equiv2 == some true
+    && validOn equiv2 (.implies (.box p) p) == some true
+    && validOn equiv2 (.implies p (.box (.diamond p))) == some true
+    && validOn equiv2 (.implies (.box p) (.box (.box p))) == some true
+    && validOn equiv2 (.implies (.diamond p) (.box (.diamond p))) == some true⟩,
+  -- PaperCorrespondence: Definition 1.11 (p. 11), validity in a class of
+  -- models — the isValidOnFrame-exercising `it`s only (the "entailment"
+  -- describe block in that file needs `entails`, not yet ported).
+  ⟨"Def 1.11: □p is true at an isolated world (no successors, vacuously)",
+    if let some fr := frame ["w"] [] then
+    let m := mkModel fr []
+    (satisfies m "w" (.box p)).toOption == some true
+    else false⟩,
+  ⟨"Def 1.11: p is false at an isolated world (V(p) = ∅)",
+    if let some fr := frame ["w"] [] then
+    let m := mkModel fr []
+    (satisfies m "w" p).toOption == some false
+    else false⟩,
+  ⟨"Def 1.11: □p→p is false at an isolated world (witnesses T failing off reflexivity)",
+    if let some fr := frame ["w"] [] then
+    let m := mkModel fr []
+    (satisfies m "w" (.implies (.box p) p)).toOption == some false
+    else false⟩,
+  ⟨"Prop 1.19: K axiom valid on 2-world chain frame {w1→w2}",
+    validOn (frame ["w1","w2"] [("w1","w2")])
+      (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) == some true⟩,
+  ⟨"Prop 1.19: K axiom valid on 3-world chain frame {w1→w2→w3}",
+    validOn (frame ["w1","w2","w3"] [("w1","w2"), ("w2","w3")])
+      (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) == some true⟩,
+  ⟨"Prop 1.19: K axiom valid on reflexive singleton frame {w1→w1}",
+    validOn (frame ["w1"] [("w1","w1")])
+      (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) == some true⟩
+]
+
 /-! ## Property tests (Plausible) -/
 
 /-- Kripke-fragment formulas over atoms p, q, r. Mirrors `genFormula` in
@@ -203,7 +441,7 @@ where
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
-  for c in unitCases ++ widgetCases ++ answerKeyCases do
+  for c in unitCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -211,6 +449,7 @@ def main : IO UInt32 := do
     let ok ← prop
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
-  let total := unitCases.length + widgetCases.length + answerKeyCases.length + properties.length
+  let total := unitCases.length + widgetCases.length + answerKeyCases.length
+    + framePropertiesCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

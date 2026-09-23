@@ -1,6 +1,7 @@
 import Gamen.Formula
 import Gamen.Kripke
 import Gamen.Semantics
+import Gamen.FrameProperties
 import Gamen.Verdict
 import Gamen.Tableau
 import Gamen.Notation

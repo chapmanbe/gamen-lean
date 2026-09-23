@@ -7,42 +7,47 @@ this plan was written. Background and evidence for choosing Lean:
 
 ## Status by module
 
-Lines are gamen-hs source lines. "Depends on" lists gamen-hs imports.
+Lines are gamen-hs source lines. "Depends on" lists gamen-hs imports. "Porter" is the
+model `/port-module` runs the `module-porter` agent on (the review is always
+Opus). `opus` or `fable` marks the risky ports: termination rewrites, search
+loops needing fuel, laziness, the deontic-STIT saturation loop. It is a first
+cut; change it when a port proves easier or harder than expected. `—` means
+nothing left to port.
 
 ### Core (`src/Gamen/`)
 
-| Module | Lines | Depends on | Lean status |
-|---|---:|---|---|
-| Formula | 446 | — | **Mostly done** (`Gamen/Formula.lean`): all 30 constructors, printing, `atoms`, `toNNF`, `isNNF`, `isModalFree`. `hasAgentOperator` lives in `Gamen/Protocol.lean`. Missing: `dstit`, `commitment`. |
-| Verdict | 68 | — | **Done** |
-| Kripke | 147 | Formula | **Partial**: `Frame`, `Model`, `mkFrame`, `mkModel`. Missing: `isEquivalenceOn`, `equivalenceClasses`, `checkIndependence`. |
-| Semantics | 212 | Formula, Kripke | **Done** (`satisfies`, `isTrueIn`). Missing: `isValid`, `isTautology`, `entails`. |
-| Tableau | 1067 | Formula, Kripke, Semantics, Verdict | **Partial**: engine, blocking, all passes, driver, countermodels, closures; systems K and KDt (D rules). Missing: KT, KD, KB, K4, S4, S5 rule sets (Table 6.4). Temporal rules stay quarantined (gamen-hs issue #25). |
-| Fragment | 242 | Formula, Tableau, Verdict | **Done**, but lives in `Gamen/Protocol.lean`; split out to `Gamen/Fragment.lean` to keep the one-to-one module mapping. |
-| FrameProperties | 172 | Formula, Kripke, Semantics | **Done** (`Gamen/FrameProperties.lean`): all predicates and `isValidOnFrame`. Two of the Haskell docstring's B&D citations were wrong for `notes/bd-screen.pdf` and were corrected in the port (basic properties are Table 2.1, not "Definition 2.3"; frame validity is Definition 2.4, not "Definition 2.1"); gamen-hs's internal "frd.N" tags for Definition 2.11 / Proposition 2.9 / 2.12 / 2.14 all checked out and are spelled out as real chapter-2 numbers. |
-| Temporal | 210 | Formula, Kripke, Tableau | Not started (semantics already in `Semantics.lean`; `systemKDt`'s D rules in `Tableau.lean`) |
-| Doxastic | 56 | Formula, Tableau | Not started (needed by `gamen-validate`) |
-| RankingTheory | 454 | Formula, Kripke, Tableau | Not started (needed by `gamen-validate`) |
-| Plausibility | 340 | Kripke, RankingTheory | Not started; the one Haskell typeclass (`class Plausibility`) maps to a Lean `class` directly |
-| Epistemic | 411 | Formula, Kripke | Not started; see the laziness note under Conventions |
-| DeonticStit | 277 | Formula, Kripke | Not started |
-| DeonticStit.Sequent | 209 | Formula | Not started |
-| DeonticStit.Rules | 515 | Sequent, Formula | Not started |
-| DeonticStit.Saturation | 341 | Rules, Sequent, Formula | Not started |
-| DeonticStit.Prove | 250 | Rules, Saturation, Sequent, Formula, Verdict | Not started (needed by `gamen-validate`) |
-| DeonticStit.CounterModel | 199 | DeonticStit, Rules, Saturation, Sequent, Formula, Kripke | Not started |
-| Stit | 348 | Formula, Kripke | Not started |
-| Xstit | 417 | Formula, Kripke | Not started |
-| Laca | 274 | Cgs, Formula | Not started |
-| Cgs | 164 | — | Not started |
-| Coalition | 142 | Cgs, Formula | Not started |
-| Atl.Strategy | 35 | — | Not started |
-| Atl.ModelCheck | 116 | Cgs, Formula | Not started |
-| Atl | 47 | Atl.ModelCheck, Atl.Strategy, Cgs, Formula | Not started |
-| Atel | 184 | Atl.ModelCheck, Cgs, Formula | Not started |
-| Atl.ImperfectInfo | 335 | Atel, Atl.ModelCheck, Cgs, Formula | Not started |
-| Dcleg | 528 | — | Not started |
-| Visualize | 83 | Formula, Kripke | Superseded by `Widgets/KripkeExplorer.lean` for teaching; port only if a text/DOT export is needed |
+| Module | Lines | Depends on | Porter | Lean status |
+|---|---:|---|---|---|
+| Formula | 446 | — | sonnet | **Mostly done** (`Gamen/Formula.lean`): all 30 constructors, printing, `atoms`, `toNNF`, `isNNF`, `isModalFree`. `hasAgentOperator` lives in `Gamen/Protocol.lean`. Missing: `dstit`, `commitment`. |
+| Verdict | 68 | — | — | **Done** |
+| Kripke | 147 | Formula | sonnet | **Partial**: `Frame`, `Model`, `mkFrame`, `mkModel`. Missing: `isEquivalenceOn`, `equivalenceClasses`, `checkIndependence`. |
+| Semantics | 212 | Formula, Kripke | sonnet | **Done** (`satisfies`, `isTrueIn`). Missing: `isValid`, `isTautology`, `entails`. |
+| Tableau | 1067 | Formula, Kripke, Semantics, Verdict | opus | **Partial**: engine, blocking, all passes, driver, countermodels, closures; systems K and KDt (D rules). Missing: KT, KD, KB, K4, S4, S5 rule sets (Table 6.4). Temporal rules stay quarantined (gamen-hs issue #25). |
+| Fragment | 242 | Formula, Tableau, Verdict | sonnet | **Done**, but lives in `Gamen/Protocol.lean`; split out to `Gamen/Fragment.lean` to keep the one-to-one module mapping. |
+| FrameProperties | 172 | Formula, Kripke, Semantics | — | **Done** (`Gamen/FrameProperties.lean`): all predicates and `isValidOnFrame`. Two of the Haskell docstring's B&D citations were wrong for `notes/bd-screen.pdf` and were corrected in the port (basic properties are Table 2.1, not "Definition 2.3"; frame validity is Definition 2.4, not "Definition 2.1"); gamen-hs's internal "frd.N" tags for Definition 2.11 / Proposition 2.9 / 2.12 / 2.14 all checked out and are spelled out as real chapter-2 numbers. |
+| Temporal | 210 | Formula, Kripke, Tableau | opus | Not started (semantics already in `Semantics.lean`; `systemKDt`'s D rules in `Tableau.lean`) |
+| Doxastic | 56 | Formula, Tableau | sonnet | Not started (needed by `gamen-validate`) |
+| RankingTheory | 454 | Formula, Kripke, Tableau | opus | Not started (needed by `gamen-validate`) |
+| Plausibility | 340 | Kripke, RankingTheory | sonnet | Not started; the one Haskell typeclass (`class Plausibility`) maps to a Lean `class` directly |
+| Epistemic | 411 | Formula, Kripke | fable | Not started; see the laziness note under Conventions |
+| DeonticStit | 277 | Formula, Kripke | sonnet | Not started |
+| DeonticStit.Sequent | 209 | Formula | sonnet | Not started |
+| DeonticStit.Rules | 515 | Sequent, Formula | opus | Not started |
+| DeonticStit.Saturation | 341 | Rules, Sequent, Formula | fable | Not started |
+| DeonticStit.Prove | 250 | Rules, Saturation, Sequent, Formula, Verdict | opus | Not started (needed by `gamen-validate`) |
+| DeonticStit.CounterModel | 199 | DeonticStit, Rules, Saturation, Sequent, Formula, Kripke | opus | Not started |
+| Stit | 348 | Formula, Kripke | sonnet | Not started |
+| Xstit | 417 | Formula, Kripke | opus | Not started |
+| Laca | 274 | Cgs, Formula | sonnet | Not started |
+| Cgs | 164 | — | sonnet | Not started |
+| Coalition | 142 | Cgs, Formula | sonnet | Not started |
+| Atl.Strategy | 35 | — | sonnet | Not started |
+| Atl.ModelCheck | 116 | Cgs, Formula | sonnet | Not started |
+| Atl | 47 | Atl.ModelCheck, Atl.Strategy, Cgs, Formula | sonnet | Not started |
+| Atel | 184 | Atl.ModelCheck, Cgs, Formula | sonnet | Not started |
+| Atl.ImperfectInfo | 335 | Atel, Atl.ModelCheck, Cgs, Formula | opus | Not started |
+| Dcleg | 528 | — | opus | Not started |
+| Visualize | 83 | Formula, Kripke | — | Superseded by `Widgets/KripkeExplorer.lean` for teaching; port only if a text/DOT export is needed |
 
 ### Protocol and executables
 

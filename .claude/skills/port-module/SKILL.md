@@ -22,6 +22,12 @@ Launch the `module-porter` agent with `isolation: "worktree"` and `model`
 set to the porter model. The prompt names the module and nothing else; the
 agent file carries the instructions.
 
+The worktree branches from `origin/main`, not the local `main`. The porter
+fast-forwards to local `main` as its first step. If it reports that the
+fast-forward failed, stop and tell the user. When reviewing, diff with
+`main...<branch>` (three dots) so commits made on `main` since the fork do
+not show up as deletions.
+
 ## 3. Review
 
 Launch the `module-reviewer` agent (Opus) on the porter's branch. Give it

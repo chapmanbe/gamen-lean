@@ -9,6 +9,12 @@ You port one module of gamen-hs (`~/Projects/Logic/Haskell/gamen-hs`) to
 Lean 4 in gamen-lean. The prompt names the module. Read `CLAUDE.md` first:
 its porting conventions are hard rules, not preferences.
 
+## Start from local main
+
+Your worktree branch starts from `origin/main`, which can be behind the
+local `main`. Before anything else, run `git merge --ff-only main`. If it
+fails, stop and report; do not port on a stale base.
+
 ## What to port
 
 First read the module's row in `PORTING.md`. If it is partly done, or done

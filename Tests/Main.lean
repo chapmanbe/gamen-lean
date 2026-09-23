@@ -387,17 +387,30 @@ def framePropertiesCases : List Case := [
 
 /-! ## Semantics (`Gamen.Semantics`)
 
-Port of `test/KripkeSemanticsSpec.hs` (all 9 `it`s), plus the rest of
+Port of `test/KripkeSemanticsSpec.hs` (all 9 `it`s), the rest of
 `test/PaperCorrespondence.hs`'s "Boxes & Diamonds Ch. 1 (Zach 2019)" block
 that was not already covered by `framePropertiesCases`'s "Definition 1.11"
 slice: Definition 1.6 (model as a triple), Definition 1.7 (all 8 truth
 clauses), Proposition 1.8 (□/◇ duality), Definition 1.9 (truth in a
 model), Proposition 1.19 (K is K-provable, via the already-ported
-`systemK` tableau), and Definition 1.23 + Example 1.24 (entailment). Every
-B&D citation in this block was checked against `notes/bd-screen.pdf`
-(`Definition 1.6` p.7, `Definition 1.7`/`Proposition 1.8` p.9,
-`Definition 1.9` p.10, `Proposition 1.19` p.15, `Definition 1.23` p.16,
-`Example 1.24` p.17) — all correct, no fixes needed. -/
+`systemK` tableau), and Definition 1.23 + Example 1.24 (entailment); plus
+`test/RegressionIssue18.hs`'s "B5: isTautology abstracts modal
+subformulas" block (all 4 `it`s) and two `isValid` cases (not in any
+Haskell spec — `isValid` is exercised only indirectly there, via
+`isValidOnFrame`/`isValidDSFrame`/`isValidStitFrame`/`isValidXstitFrame`
+in other modules), one with an expected-`false` result so a planted
+`throw` cannot slip past under either polarity. Every B&D citation in
+this block was checked against `notes/bd-screen.pdf` (`Definition 1.6`
+p.7, `Definition 1.7`/`Proposition 1.8` p.9, `Definition 1.9` p.10,
+`Proposition 1.19` p.15, `Definition 1.23` p.16, `Example 1.24` p.17,
+`Definition 1.14`/`Proposition 1.16` p.12–14) — one fix: `Semantics.hs`
+cites "Definition 1.16" for `isTautology`, but the PDF's Definition 1.16
+is `Proposition 1.16` ("All tautological instances are valid"); the
+"tautological instance" it actually defines is *Definition 1.14*. Fixed
+in `Gamen/Semantics.lean`'s docstring. The three Proposition 1.8 cases
+compare each side against an explicit `some true`/`some false` rather
+than against each other, so a planted error on both sides (`none ==
+none`) cannot pass. -/
 
 def r : Formula := .atom "r"
 
@@ -430,6 +443,13 @@ private def trueIn (m : Option Model) (f : Formula) : Option Bool :=
 
 private def ent (m : Option Model) (prem : List Formula) (concl : Formula) : Option Bool :=
   m.bind fun m => (entails m prem concl).toOption
+
+/-- `Except`-safe `isValid` over a list of possibly-malformed fixtures:
+`none` if any model in `ms` is malformed or if `isValid` itself errors. -/
+private def valid (ms : List (Option Model)) (f : Formula) : Option Bool :=
+  (ms.mapM id).bind fun ms => (isValid ms f).toOption
+
+private def tautology (f : Formula) : Option Bool := (isTautology f).toOption
 
 def semanticsCases : List Case := [
   -- KripkeSemanticsSpec.hs: "Kripke structures (Definition 1.6)"
@@ -489,11 +509,14 @@ def semanticsCases : List Case := [
   ⟨"clause 8 (◇): ◇q = False at w3 (dead end, no successors)", sat fig11model "w3" (.diamond q) == some false⟩,
   -- PaperCorrespondence.hs: "Proposition 1.8 (p. 9): □/◇ duality  □A ↔ ¬◇¬A"
   ⟨"Prop 1.8: □p = False and ¬◇¬p = False at w1 (w3 accessible lacks p)",
-    sat fig11model "w1" (.box p) == sat fig11model "w1" (.not (.diamond (.not p)))⟩,
+    sat fig11model "w1" (.box p) == some false
+    && sat fig11model "w1" (.not (.diamond (.not p))) == some false⟩,
   ⟨"Prop 1.8: □p = True and ¬◇¬p = True at w2 (dead end — both vacuously true)",
-    sat fig11model "w2" (.box p) == sat fig11model "w2" (.not (.diamond (.not p)))⟩,
+    sat fig11model "w2" (.box p) == some true
+    && sat fig11model "w2" (.not (.diamond (.not p))) == some true⟩,
   ⟨"Prop 1.8: □p = True and ¬◇¬p = True at w3 (dead end — both vacuously true)",
-    sat fig11model "w3" (.box p) == sat fig11model "w3" (.not (.diamond (.not p)))⟩,
+    sat fig11model "w3" (.box p) == some true
+    && sat fig11model "w3" (.not (.diamond (.not p))) == some true⟩,
   -- PaperCorrespondence.hs: "Definition 1.9 (p. 10): truth in a model  M ⊩ A"
   ⟨"⊥→p is true in Figure 1.1 (ex falso, true at all worlds)",
     trueIn fig11model (.implies .bot p) == some true⟩,
@@ -507,7 +530,27 @@ def semanticsCases : List Case := [
   ⟨"Example 1.24: □p→p = False at w1 in Figure 1.2 (□p true but p false)",
     sat fig12model "w1" (.implies (.box p) p) == some false⟩,
   ⟨"Example 1.24: {p→◇p} ⊭ □p→p — w1 witnesses the failure of entailment",
-    ent fig12model [.implies p (.diamond p)] (.implies (.box p) p) == some false⟩
+    ent fig12model [.implies p (.diamond p)] (.implies (.box p) p) == some false⟩,
+  -- RegressionIssue18.hs: "B5: isTautology abstracts modal subformulas" (all 4 `it`s)
+  ⟨"□⊥ is not a tautology", tautology (.box .bot) == some false⟩,
+  ⟨"¬◇p is not a tautology", tautology (.not (.diamond p)) == some false⟩,
+  ⟨"p ∨ ¬p is a tautology", tautology (.or p (.not p)) == some true⟩,
+  ⟨"□p ∨ ¬□p is a tautology (same modal subformula abstracts alike)",
+    tautology (.or (.box p) (.not (.box p))) == some true⟩,
+  -- isValid (B&D Definition 1.11), not covered by any Haskell spec. Both
+  -- cases use a genuine two-model class where the models disagree on the
+  -- test formula, so `isValid` really exercises "true in *every* model
+  -- in the class" (Definition 1.11) rather than degenerating to a single
+  -- model's `isTrueIn` — a single-model class would not catch, e.g.,
+  -- `allM` mistakenly swapped for `anyM`.
+  ⟨"isValid: schema K holds in the class {Figure 1.1, Figure 1.2} \
+    (frame-valid by Prop 1.19, so true regardless of valuation)",
+    valid [fig11model, fig12model]
+      (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) == some true⟩,
+  ⟨"isValid: ¬q fails in the class {Figure 1.1, Figure 1.2} — fig11model's \
+    w2 (q true) witnesses invalidity even though fig12model (q unvalued, \
+    so false everywhere) satisfies ¬q vacuously",
+    valid [fig11model, fig12model] (.not q) == some false⟩
 ]
 
 /-! ## Fragment gating (`Gamen.Fragment`) -/

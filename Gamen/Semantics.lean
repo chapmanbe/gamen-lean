@@ -82,7 +82,20 @@ open Formula in
 atom, keyed by the subformula's printed form so that identical
 subformulas map to the same atom (e.g. both occurrences of `□p` in
 `□p ∨ ¬□p` become the same variable, keeping the disjunction a
-tautology). The result is a purely propositional formula. -/
+tautology). The result is a purely propositional formula.
+
+Known gamen-hs bug, chapmanbe/gamen-hs#31; kept identical here until it
+is fixed upstream (the Lean's contract is to match gamen-hs, not to fix
+it silently): keying by the *printed* form lets unrelated operators
+collide when their `Show`/`toString` renderings coincide. `Stit agent
+f`'s `toString` is `"[" ++ agent ++ "]" ++ f.toString`, and `Announce b
+c`'s is `"[" ++ b.toString ++ "]" ++ c.toString` — the same `[…]…`
+shape. So `Stit "a" p` and `Announce (Atom "a") p` both print as
+`"[a]p"` and abstract to the same atom, even though STIT and public
+announcement have unrelated semantics:
+`isTautology (Or (Stit "a" p) (Not (Announce (Atom "a") p)))` reduces to
+`X ∨ ¬X` under abstraction and reports `true`. Not pinned by a test:
+that would pin the wrong answer. -/
 def abstractModal : Formula → Formula
   | .bot => .bot
   | .atomF a => .atomF a
@@ -96,7 +109,8 @@ def abstractModal : Formula → Formula
   | f => .atomF ⟨s!"__modal:{f.toString}"⟩
 
 /-- Is the formula a propositional tautology — a substitution instance
-of a tautology of classical propositional logic (B&D Definition 1.16)?
+of a tautology of classical propositional logic (B&D Definition 1.14;
+Proposition 1.16 is that every tautological instance is valid)?
 
 Each *maximal* non-propositional subformula (any `box`, `diamond`,
 temporal, epistemic, deontic, STIT, or ATL node) is first abstracted to

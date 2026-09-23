@@ -19,7 +19,7 @@ Lines are gamen-hs source lines. "Depends on" lists gamen-hs imports.
 | Semantics | 212 | Formula, Kripke | **Done** (`satisfies`, `isTrueIn`). Missing: `isValid`, `isTautology`, `entails`. |
 | Tableau | 1067 | Formula, Kripke, Semantics, Verdict | **Partial**: engine, blocking, all passes, driver, countermodels, closures; systems K and KDt (D rules). Missing: KT, KD, KB, K4, S4, S5 rule sets (Table 6.4). Temporal rules stay quarantined (gamen-hs issue #25). |
 | Fragment | 242 | Formula, Tableau, Verdict | **Done**, but lives in `Gamen/Protocol.lean`; split out to `Gamen/Fragment.lean` to keep the one-to-one module mapping. |
-| FrameProperties | 172 | Formula, Kripke, Semantics | Not started |
+| FrameProperties | 172 | Formula, Kripke, Semantics | **Done** (`Gamen/FrameProperties.lean`): all predicates and `isValidOnFrame`. Two of the Haskell docstring's B&D citations were wrong for `notes/bd-screen.pdf` and were corrected in the port (basic properties are Table 2.1, not "Definition 2.3"; frame validity is Definition 2.4, not "Definition 2.1"); gamen-hs's internal "frd.N" tags for Definition 2.11 / Proposition 2.9 / 2.12 / 2.14 all checked out and are spelled out as real chapter-2 numbers. |
 | Temporal | 210 | Formula, Kripke, Tableau | Not started (semantics already in `Semantics.lean`; `systemKDt`'s D rules in `Tableau.lean`) |
 | Doxastic | 56 | Formula, Tableau | Not started (needed by `gamen-validate`) |
 | RankingTheory | 454 | Formula, Kripke, Tableau | Not started (needed by `gamen-validate`) |
@@ -60,8 +60,9 @@ Lines are gamen-hs source lines. "Depends on" lists gamen-hs imports.
 | TableauSpec | 229 | K-system cases ported (`Tests/Main.lean`) |
 | Properties | 910 | NNF properties ported (Plausible); rest not started |
 | ProtocolSpec, DclegServiceSpec | 565 | Covered for `gamen-validate` by the side-by-side harness (`tools/compare/`); unit specs not ported |
-| FormulaSpec, KripkeSemanticsSpec, FramePropertiesSpec, TemporalSpec, EpistemicSpec, StitSpec, XstitSpec, LacaSpec, DeonticStitSpec, RankingTheorySpec, PlausibilitySpec, WorldGuardsSpec | 2,950 | Not started: port with each module |
-| PaperCorrespondence | 1,848 | Not started: port section by section with each module; these pin the code to the papers |
+| FramePropertiesSpec | 356 | **Done** (`Tests/Main.lean`, `framePropertiesCases`) |
+| FormulaSpec, KripkeSemanticsSpec, TemporalSpec, EpistemicSpec, StitSpec, XstitSpec, LacaSpec, DeonticStitSpec, RankingTheorySpec, PlausibilitySpec, WorldGuardsSpec | ~2,600 | Not started: port with each module |
+| PaperCorrespondence | 1,848 | Not started, except the `isValidOnFrame`-exercising slice of the "Definition 1.11 (p. 11): validity in a class of models" section (6 cases, in `framePropertiesCases`); the rest of that section ("entailment") needs `entails`, not yet ported. Port the remaining sections one by one with each module; these pin the code to the papers |
 | RegressionIssue18 | 481 | Not started |
 
 ## Proposed order
@@ -70,8 +71,8 @@ Each wave ends with its tests ported and `tools/compare/compare.py` green.
 
 1. **Finish the core.** Split `Fragment` out of `Protocol.lean`; add
    `dstit`/`commitment`, the rest of `Kripke` and `Semantics`, the KT–S5
-   rule sets, `FrameProperties`. Port `FormulaSpec`,
-   `KripkeSemanticsSpec`, the rest of `TableauSpec`, `FramePropertiesSpec`.
+   rule sets. Port `FormulaSpec`, `KripkeSemanticsSpec`, the rest of
+   `TableauSpec`. (`FrameProperties` and `FramePropertiesSpec` are done.)
 2. **Complete the `gamen-validate` tableau backend.** `Doxastic`,
    `RankingTheory` (+ `Plausibility`). After this, belief/ranked-belief
    requests stop being scope gaps in the comparison.

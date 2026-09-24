@@ -9,7 +9,7 @@ import Validate.Core
 /-!
 # Tests
 
-Ports of `test/TableauSpec.hs` (system K cases and countermodel extraction),
+Ports of `test/TableauSpec.hs` in full (`tableauCases`),
 `test/FormulaSpec.hs` in full (`formulaCases`; `unitCases` keeps two extra
 printing spot-checks that predate `formulaCases` and aren't literal ports
 of a Haskell `it`), `test/FramePropertiesSpec.hs`, `test/KripkeSemanticsSpec.hs`,
@@ -39,8 +39,6 @@ def q : Formula := .atom "q"
 
 def proves (prem : List Formula) (c : Formula) : Bool :=
   tableauProves systemK defaultMaxSteps prem c == .definitely true
-def refutes (prem : List Formula) (c : Formula) : Bool :=
-  tableauProves systemK defaultMaxSteps prem c == .definitely false
 def consistent (fs : List Formula) : Verdict := tableauConsistent systemK defaultMaxSteps fs
 
 /-- Countermodel for □p → p: build, take the first open branch, extract,
@@ -54,35 +52,120 @@ def countermodelCase : Bool :=
   | _ => false
 
 def unitCases : List Case := [
-  -- Prefixes and closure
-  ⟨"prefix printing", toString (Prefix.root.extend 2 |>.extend 3) == "1.2.3"⟩,
-  ⟨"detects open branch", !(Branch.ofList [pfTrue .root p, pfTrue .root q]).isClosed⟩,
-  ⟨"detects closed branch", (Branch.ofList [pfTrue .root p, pfFalse .root p]).isClosed⟩,
-  ⟨"closure needs matching prefixes",
-    !(Branch.ofList [pfTrue .root p, pfFalse (Prefix.root.extend 1) p]).isClosed⟩,
-  -- System K validities (B&D Table 6.2)
-  ⟨"proves (□p ∧ □q) → □(p ∧ q)", proves [] (.implies (.and (.box p) (.box q)) (.box (.and p q)))⟩,
-  ⟨"proves ◇(p ∨ q) → (◇p ∨ ◇q)",
-    proves [] (.implies (.diamond (.or p q)) (.or (.diamond p) (.diamond q)))⟩,
-  ⟨"proves Schema K", proves [] (.implies (.box (.implies p q)) (.implies (.box p) (.box q)))⟩,
-  ⟨"does not prove T: □p → p", refutes [] (.implies (.box p) p)⟩,
-  ⟨"does not prove 4: □p → □□p", refutes [] (.implies (.box p) (.box (.box p)))⟩,
-  ⟨"□p does not entail ◇p", refutes [.box p] (.diamond p)⟩,
-  ⟨"◇p does not entail □p", refutes [] (.implies (.diamond p) (.box p))⟩,
-  ⟨"proves dual ¬◇¬p → □p", proves [] (.implies (.not (.diamond (.not p))) (.box p))⟩,
-  ⟨"K does not prove D: □p → ◇p", refutes [] (.implies (.box p) (.diamond p))⟩,
-  -- Consistency
-  ⟨"{□p, ◇q} satisfiable", consistent [.box p, .diamond q] == .definitely true⟩,
-  ⟨"{p, ¬p} unsatisfiable", consistent [p, .not p] == .definitely false⟩,
-  ⟨"{p → q, ¬q} satisfiable", consistent [.implies p q, .not q] == .definitely true⟩,
-  ⟨"{p ∨ q, ¬p} satisfiable", consistent [.or p q, .not p] == .definitely true⟩,
-  ⟨"{p, p ∨ q, ¬q} satisfiable", consistent [p, .or p q, .not q] == .definitely true⟩,
-  -- Countermodels (B&D Theorem 6.19)
-  ⟨"extracts countermodel for □p → p", countermodelCase⟩,
   -- Pretty-printing matches Haskell `show`
   ⟨"show □(p → ◇q)", toString (Formula.box (.implies p (.diamond q))) == "□(p → ◇q)"⟩,
   ⟨"show agents", toString (Formula.canUntil ["a", "b"] p q) == "⟨⟨a,b⟩⟩(p U q)"⟩
 ]
+
+/-! ## Tableau
+
+Port of `test/TableauSpec.hs` in full, one case per `it`, in file order.
+Verdicts are compared against `.definitely true`/`.definitely false`, so a
+budget-exhausted `.unknown` fails the case whichever answer was expected
+(stricter than Haskell's `TestShims`, which maps `Unknown` to `False`).
+The "Chapter 14: Temporal Logics" banner at the end of the spec has no
+`it`s. -/
+
+/-- Both sides succeeded with equal values; any error fails. -/
+def okEq [BEq α] : Except String α → Except String α → Bool
+  | .ok a, .ok b => a == b
+  | _, _ => false
+
+def provesIn (sys : System) (prem : List Formula) (c : Formula) : Verdict :=
+  tableauProves sys defaultMaxSteps prem c
+def consistentIn (sys : System) (fs : List Formula) : Verdict :=
+  tableauConsistent sys defaultMaxSteps fs
+
+def tableauCases : List Case :=
+  let yes : Verdict := .definitely true
+  let no : Verdict := .definitely false
+  let schemaK : Formula := .implies (.box (.implies p q)) (.implies (.box p) (.box q))
+  let axT : Formula := .implies (.box p) p
+  let ax4 : Formula := .implies (.box p) (.box (.box p))
+  let axD : Formula := .implies (.box p) (.diamond p)
+  let bpDbp : Formula := .implies (.box p) (.diamond (.box p))
+  let ax5 : Formula := .implies (.diamond p) (.box (.diamond p))
+  let σ1 := mkPrefix [1]
+  let σ12 := mkPrefix [1, 2]
+  let pf1 := pfTrue .root p
+  let pf2 := pfFalse .root p
+  let pf3 := pfTrue .root q
+  [
+  -- describe "Prefix (Definition 6.1)" [B&D §6.2: no numbered definition]
+  ⟨"constructs and extends prefixes",
+    okEq (σ1 >>= (extendPrefix · 2)) σ12
+    && okEq (σ12 >>= parentPrefix) σ1
+    && okEq (toString <$> mkPrefix [1, 2, 3]) (.ok "1.2.3")⟩,
+  -- describe "PrefixedFormula and branch closure (Definition 6.2)" [B&D §6.2]
+  ⟨"detects open branches", !(Branch.ofList [pf1, pf3]).isClosed⟩,
+  ⟨"detects closed branches", (Branch.ofList [pf1, pf2]).isClosed⟩,
+  ⟨"requires matching prefixes for closure",
+    match mkPrefix [1, 1] with
+    | .ok σ2 => !(Branch.ofList [pf1, pfFalse σ2 p]).isClosed
+    | .error _ => false⟩,
+  -- describe "K rules: Examples 6.1 and 6.2 (B&D)"
+  ⟨"proves (□p ∧ □q) → □(p ∧ q)",
+    provesIn systemK [] (.implies (.and (.box p) (.box q)) (.box (.and p q))) == yes⟩,
+  ⟨"proves ◇(p ∨ q) → (◇p ∨ ◇q)",
+    provesIn systemK [] (.implies (.diamond (.or p q)) (.or (.diamond p) (.diamond q))) == yes⟩,
+  ⟨"proves Schema K: □(p→q) → (□p→□q)", provesIn systemK [] schemaK == yes⟩,
+  ⟨"does not prove T: □p → p", provesIn systemK [] axT == no⟩,
+  ⟨"does not prove 4: □p → □□p", provesIn systemK [] ax4 == no⟩,
+  -- describe "Soundness: non-theorems in K (Theorem 6.6)"
+  ⟨"□p does not entail ◇p (seriality not assumed)", provesIn systemK [.box p] (.diamond p) == no⟩,
+  ⟨"◇p does not entail □p", provesIn systemK [] (.implies (.diamond p) (.box p)) == no⟩,
+  ⟨"proves dual: ¬◇¬p → □p",
+    provesIn systemK [] (.implies (.not (.diamond (.not p))) (.box p)) == yes⟩,
+  -- describe "Consistency in K"
+  ⟨"{□p, ◇q} is satisfiable in K", consistentIn systemK [.box p, .diamond q] == yes⟩,
+  ⟨"{p, ¬p} is unsatisfiable", consistentIn systemK [p, .not p] == no⟩,
+  ⟨"{p → q, ¬q} is satisfiable", consistentIn systemK [.implies p q, .not q] == yes⟩,
+  ⟨"{p → q, p} is satisfiable", consistentIn systemK [.implies p q, p] == yes⟩,
+  ⟨"{p ∨ q, ¬q} is satisfiable", consistentIn systemK [.or p q, .not q] == yes⟩,
+  ⟨"{p ∨ q, ¬p} is satisfiable", consistentIn systemK [.or p q, .not p] == yes⟩,
+  ⟨"{p, p ∨ q, ¬q} is satisfiable", consistentIn systemK [p, .or p q, .not q] == yes⟩,
+  -- describe "Countermodel extraction (Theorem 6.19)"
+  ⟨"extracts a countermodel for □p → p", countermodelCase⟩,
+  -- describe "KT rules: T axiom (Table 6.4)"
+  ⟨"KT proves T: □p → p", provesIn systemKT [] axT == yes⟩,
+  ⟨"KT proves Schema K", provesIn systemKT [] schemaK == yes⟩,
+  ⟨"KT does not prove 4: □p → □□p", provesIn systemKT [] ax4 == no⟩,
+  -- describe "KD rules: D axiom (Table 6.4)"
+  ⟨"KD proves D: □p → ◇p", provesIn systemKD [] axD == yes⟩,
+  ⟨"K does not prove D: □p → ◇p", provesIn systemK [] axD == no⟩,
+  -- describe "KB rules: B axiom (Table 6.4)". gamen-hs names □p → ◇□p
+  -- "B"; B&D's B is A → □◇A (Table 2.1), while □A → ◇□A already holds
+  -- on every reflexive frame. Formula kept, label corrected.
+  ⟨"KB proves □p → ◇□p (gamen-hs: \"B\")", provesIn systemKB [] bpDbp == yes⟩,
+  ⟨"K does not prove □p → ◇□p (gamen-hs: \"B\")", provesIn systemK [] bpDbp == no⟩,
+  -- describe "K4 rules: 4 axiom (Table 6.4)"
+  ⟨"K4 proves 4: □p → □□p", provesIn systemK4 [] ax4 == yes⟩,
+  ⟨"K does not prove 4", provesIn systemK [] ax4 == no⟩,
+  -- describe "S4 rules: T + 4 (Table 6.4)"
+  ⟨"S4 proves T: □p → p", provesIn systemS4 [] axT == yes⟩,
+  ⟨"S4 proves 4: □p → □□p", provesIn systemS4 [] ax4 == yes⟩,
+  ⟨"S4 does not prove 5: ◇p → □◇p", provesIn systemS4 [] ax5 == no⟩,
+  -- describe "S5 rules: T + B + 4 + 4r (Table 6.4)"
+  ⟨"S5 proves T: □p → p", provesIn systemS5 [] axT == yes⟩,
+  ⟨"S5 proves 4: □p → □□p", provesIn systemS5 [] ax4 == yes⟩,
+  ⟨"S5 proves 5: ◇p → □◇p", provesIn systemS5 [] ax5 == yes⟩,
+  -- gamen-hs cites Example 6.9 here, but Example 6.9 proves
+  -- S5 ⊢ □A → □◇A, not □A → ◇□A.
+  ⟨"S5 proves □p → ◇□p (gamen-hs: \"B\", \"Example 6.9\")", provesIn systemS5 [] bpDbp == yes⟩,
+  ⟨"S5 proves Schema K", provesIn systemS5 [] schemaK == yes⟩,
+  -- describe "Consistency in extended systems"
+  ⟨"{□p, ¬p} is unsatisfiable in KT", consistentIn systemKT [.box p, .not p] == no⟩,
+  ⟨"{□p, ¬p} is satisfiable in K (no reflexivity)", consistentIn systemK [.box p, .not p] == yes⟩,
+  ⟨"KD: {p → □(¬q), □q} is satisfiable",
+    consistentIn systemKD [.implies p (.box (.not q)), .box q] == yes⟩,
+  ⟨"KD: {p → □q, ¬p} is satisfiable", consistentIn systemKD [.implies p (.box q), .not p] == yes⟩,
+  ⟨"KD: {□p, □¬p} is unsatisfiable (seriality forces a clashing successor)",
+    consistentIn systemKD [.box p, .box (.not p)] == no⟩,
+  ⟨"KD: a modal conflict is not masked by a noisy implication bundle",
+    let noise := (List.range 10).map fun i =>
+      Formula.implies (.atom s!"a{i + 1}") (.atom s!"b{i + 1}")
+    consistentIn systemKD (noise ++ [.box p, .box (.not p)]) == no⟩
+  ]
 
 /-! ## Formula
 
@@ -952,7 +1035,7 @@ where
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
-  for c in unitCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
+  for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
       ++ kripkeCases ++ semanticsCases ++ fragmentCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
@@ -961,7 +1044,7 @@ def main : IO UInt32 := do
     let ok ← prop
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
-  let total := unitCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
+  let total := unitCases.length + tableauCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
     + fragmentCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"

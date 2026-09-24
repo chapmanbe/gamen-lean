@@ -1,5 +1,6 @@
 import Gamen.Tableau
 import Gamen.Doxastic
+import Gamen.RankingTheory
 import Gamen.Fragment
 import Gamen.FrameProperties
 import Plausible
@@ -1003,6 +1004,242 @@ def doxasticCases : List Case := [
       [.belief "a" p, .belief "b" (.not p)] == .definitely true⟩
 ]
 
+/-! ## Ranking theory (`Gamen.RankingTheory`)
+
+Port of `test/RankingTheorySpec.hs` in full (40 `it`s, in file order), then
+the "Spohn (1988) — ranking theory" section of `test/PaperCorrespondence.hs`
+in full (15 `it`s), then "B4: ranking theory κ=∞ no longer leaks into
+arithmetic" from `test/RegressionIssue18.hs` (5 `it`s). An `it` with several
+`shouldBe`s is one case joining them with `&&`.
+
+Every `Except` result is compared against `.ok v` (`okIs`), so an error
+fails the case whichever answer was expected; the Haskell `shouldThrow`
+cases check for `.error` (`isErr`). Tableau verdicts are compared against
+`.definitely true`/`.definitely false`, so budget exhaustion fails too.
+
+One case name differs from the Haskell: "conditionalize is overwrite, not
+additive (Spohn p.117)" cites p.118 here, where the quoted passage is in
+`notes/spohn1988-ordinal-conditional-functions.pdf`. -/
+
+/-- `e` succeeded with value `v`; an error fails. -/
+def okIs [BEq α] (e : Except String α) (v : α) : Bool :=
+  match e with
+  | .ok a => a == v
+  | .error _ => false
+
+/-- `e` is an error (Haskell `shouldThrow anyErrorCall`). -/
+def isErr (e : Except String α) : Bool :=
+  match e with
+  | .ok _ => false
+  | .error _ => true
+
+def rkX : Formula := .atom "X"
+
+/-- Two worlds, w1 ⊨ X, w2 ⊨ ¬X; κ_c(w1) = 0, κ_c(w2) = 2. -/
+def rkM2 : KappaModel :=
+  mkKappaModel ["w1", "w2"] [("c", [("w1", 0), ("w2", 2)])] [("X", ["w1"])]
+
+/-- The same two worlds with c neutral about X. -/
+def rkNeutral : KappaModel :=
+  mkKappaModel ["w1", "w2"] [("c", [("w1", 0), ("w2", 0)])] [("X", ["w1"])]
+
+/-- PaperCorrespondence reference model: κ_c(w1) = 0, κ_c(w2) = 3. -/
+def rkM0 : KappaModel :=
+  mkKappaModel ["w1", "w2"] [("c", [("w1", 0), ("w2", 3)])] [("X", ["w1"])]
+
+def rkSys : System := { systemK with usedPrefixRules := rankingRules }
+
+def rkCheck (fs : List Formula) : Verdict := consistentIn rkSys fs
+
+/-- The cwyde 5-row assertion-category mapping. -/
+def cwydeAssertion : String → Option Formula
+  | "DEFINITE_EXISTENCE" => some (.rankedBelief "c" 2 rkX)
+  | "PROBABLE_EXISTENCE" => some (.rankedBelief "c" 1 rkX)
+  | "AMBIVALENT_EXISTENCE" => some (.rankedBelief "c" 0 rkX)
+  | "PROBABLE_NEGATED_EXISTENCE" => some (.rankedBelief "c" (-1) rkX)
+  | "DEFINITE_NEGATED_EXISTENCE" => some (.rankedBelief "c" (-2) rkX)
+  | _ => none
+
+/-- Consistency verdict of the named cwyde categories; `none` on an unknown
+category name (Haskell's `error "unknown cwyde category"`). -/
+def cwydeCheck (cats : List String) : Option Verdict :=
+  (cats.mapM cwydeAssertion).map rkCheck
+
+def rankingTheoryCases : List Case := [
+  -- RankingTheory: Formula constructor and Show
+  ⟨"RankedBelief shows with κ-notation and signed rank",
+    toString (Formula.rankedBelief "c" 2 rkX) == "κ[c,2]X"
+      && toString (Formula.rankedBelief "c" (-2) rkX) == "κ[c,-2]X"
+      && toString (Formula.rankedBelief "c" 0 rkX) == "κ[c,0]X"⟩,
+  ⟨"rank-0 is a meaningful (non-vacuous) assertion under signed semantics",
+    Formula.rankedBelief "c" 0 rkX != .rankedBelief "c" 1 rkX⟩,
+  ⟨"atoms recurses under RankedBelief",
+    (Formula.rankedBelief "c" 2 (.and p q)).atoms.toList == [⟨"p"⟩, ⟨"q"⟩]⟩,
+  ⟨"toNNF preserves RankedBelief structure",
+    (Formula.rankedBelief "c" 2 (.implies p q)).toNNF == .rankedBelief "c" 2 (.or (.not p) q)⟩,
+  ⟨"isNNF accepts RankedBelief over an NNF body",
+    (Formula.rankedBelief "c" 2 p).isNNF == true
+      && (Formula.rankedBelief "c" 2 (.implies p q)).isNNF == false⟩,
+  -- RankingTheory: KappaModel semantics
+  ⟨"wellFormed accepts a properly constructed model", wellFormed rkM2 == true⟩,
+  ⟨"wellFormed rejects a model with no κ=0 world",
+    wellFormed (mkKappaModel ["w1"] [("c", [("w1", 1)])] []) == false⟩,
+  ⟨"kappaProp computes min over a proposition",
+    okIs (kappaProp rkM2 "c" (.ofList ["w1"])) 0
+      && okIs (kappaProp rkM2 "c" (.ofList ["w2"])) 2
+      && okIs (kappaProp rkM2 "c" (.ofList ["w1", "w2"])) 0⟩,
+  ⟨"tau gives a positive firmness for a believed proposition", okIs (tau rkM2 "c" rkX) 2⟩,
+  ⟨"tau gives a negative firmness for a disbelieved proposition",
+    okIs (tau rkM2 "c" (.not rkX)) (-2)⟩,
+  ⟨"kappaSat: RankedBelief holds at the asserted exact rank",
+    okIs (kappaSat rkM2 "w1" (.rankedBelief "c" 2 rkX)) true
+      && okIs (kappaSat rkM2 "w1" (.rankedBelief "c" 1 rkX)) false
+      && okIs (kappaSat rkM2 "w1" (.rankedBelief "c" (-2) rkX)) false⟩,
+  ⟨"kappaSat: RankedBelief is global (same answer at every world)",
+    okEq (kappaSat rkM2 "w1" (.rankedBelief "c" 2 rkX))
+      (kappaSat rkM2 "w2" (.rankedBelief "c" 2 rkX))⟩,
+  ⟨"kappaSat: rank-0 (neutrality) holds when both halves are at κ=0",
+    okIs (kappaSat rkNeutral "w1" (.rankedBelief "c" 0 rkX)) true⟩,
+  ⟨"kappaSat negation symmetry: τ(¬φ) = -τ(φ)",
+    okIs (kappaSat rkM2 "w1" (.rankedBelief "c" (-2) (.not rkX))) true⟩,
+  ⟨"kappaSat errors on a world not in the model", isErr (kappaSat rkM2 "wstray" rkX)⟩,
+  -- RankingTheory: Conditionalization (Spohn Def. 6)
+  ⟨"conditionalize +n shifts ¬φ-worlds up by n (overwrite)",
+    okIs (do tau (← conditionalize rkNeutral "c" rkX 2) "c" rkX) 2⟩,
+  ⟨"conditionalize -n shifts φ-worlds up by n (evidence against)",
+    okIs (do tau (← conditionalize rkNeutral "c" rkX (-3)) "c" rkX) (-3)⟩,
+  ⟨"conditionalize is overwrite, not additive (Spohn p.118)",
+    okIs (do
+      let m1 ← conditionalize rkNeutral "c" rkX 2
+      let m2' ← conditionalize m1 "c" rkX 1
+      tau m2' "c" rkX) 1⟩,
+  ⟨"conditionalization preserves well-formedness",
+    okIs (wellFormed <$> conditionalize rkNeutral "c" rkX 2) true⟩,
+  -- RankingTheory: applyEvidence (additive aggregation)
+  ⟨"two +evidence applications stack additively",
+    okIs (do
+      let m1 ← applyEvidence rkNeutral "c" rkX 2
+      let m2' ← applyEvidence m1 "c" rkX 1
+      tau m2' "c" rkX) 3⟩,
+  ⟨"+ evidence followed by - evidence partially cancels",
+    okIs (do
+      let m1 ← applyEvidence rkNeutral "c" rkX 2
+      let m2' ← applyEvidence m1 "c" rkX (-1)
+      tau m2' "c" rkX) 1⟩,
+  ⟨"+ and - of equal magnitude returns to neutrality",
+    okIs (do
+      let m1 ← applyEvidence rkNeutral "c" rkX 2
+      let m2' ← applyEvidence m1 "c" rkX (-2)
+      tau m2' "c" rkX) 0⟩,
+  ⟨"applyEvidence preserves well-formedness",
+    okIs (wellFormed <$> applyEvidence rkNeutral "c" rkX 2) true⟩,
+  -- RankingTheory: combineIndependent (use under independence only)
+  ⟨"is integer addition",
+    combineIndependent 2 3 == 5 && combineIndependent 2 (-3) == -1
+      && combineIndependent (-2) (-3) == -5 && combineIndependent 0 0 == 0⟩,
+  -- RankingTheory: Belief ↔ RankedBelief translation
+  ⟨"beliefToRanked promotes Belief to RankedBelief at given rank",
+    beliefToRanked 2 (.belief "c" rkX) == .rankedBelief "c" 2 rkX⟩,
+  ⟨"beliefToRanked recurses under modal operators",
+    beliefToRanked 1 (.and (.belief "c" rkX) (.box (.belief "d" (.atom "Y"))))
+      == .and (.rankedBelief "c" 1 rkX) (.box (.rankedBelief "d" 1 (.atom "Y")))⟩,
+  ⟨"rankedToBelief: positive rank → Belief over the operand",
+    rankedToBelief (.rankedBelief "c" 2 rkX) == some (.belief "c" rkX)⟩,
+  ⟨"rankedToBelief: negative rank → Belief over the negated operand",
+    rankedToBelief (.rankedBelief "c" (-2) rkX) == some (.belief "c" (.not rkX))⟩,
+  ⟨"rankedToBelief: rank-0 has no binary equivalent",
+    rankedToBelief (.rankedBelief "c" 0 rkX) == none⟩,
+  -- RankingTheory: Tableau closure rules (Spohn Theorem 2(a))
+  ⟨"single ranked-belief assertion is consistent",
+    rkCheck [.rankedBelief "c" 2 rkX] == .definitely true⟩,
+  ⟨"rank-0 (neutrality) alone is consistent",
+    rkCheck [.rankedBelief "c" 0 rkX] == .definitely true⟩,
+  ⟨"functionality: same agent + operand at different ranks closes",
+    rkCheck [.rankedBelief "c" 2 rkX, .rankedBelief "c" 3 rkX] == .definitely false⟩,
+  ⟨"negation symmetry: positive φ + positive ¬φ closes",
+    rkCheck [.rankedBelief "c" 2 rkX, .rankedBelief "c" 1 (.not rkX)] == .definitely false⟩,
+  ⟨"negation symmetry holds when m = -n: consistent",
+    rkCheck [.rankedBelief "c" 2 rkX, .rankedBelief "c" (-2) (.not rkX)] == .definitely true⟩,
+  ⟨"different agents are independent",
+    rkCheck [.rankedBelief "radA" 2 rkX, .rankedBelief "radB" (-3) rkX] == .definitely true⟩,
+  ⟨"cwyde mapping: DEFINITE + AMBIVALENT-of-other-finding is consistent",
+    rkCheck [.rankedBelief "c" 2 (.atom "PE"), .rankedBelief "c" 0 (.atom "Pneumonia")]
+      == .definitely true⟩,
+  ⟨"cwyde mapping: DEFINITE_EXISTENCE + DEFINITE_NEGATED on same finding closes",
+    rkCheck [.rankedBelief "c" 2 (.atom "PE"), .rankedBelief "c" (-2) (.atom "PE")]
+      == .definitely false⟩,
+  -- RankingTheory: cwyde 5-row assertion-category mapping
+  ⟨"each cwyde category alone is consistent",
+    ["DEFINITE_EXISTENCE", "PROBABLE_EXISTENCE", "AMBIVALENT_EXISTENCE",
+     "PROBABLE_NEGATED_EXISTENCE", "DEFINITE_NEGATED_EXISTENCE"].all fun cat =>
+      cwydeCheck [cat] == some (.definitely true)⟩,
+  ⟨"DEFINITE + DEFINITE_NEGATED on same finding is inconsistent",
+    cwydeCheck ["DEFINITE_EXISTENCE", "DEFINITE_NEGATED_EXISTENCE"] == some (.definitely false)⟩,
+  ⟨"DEFINITE + PROBABLE_NEGATED on same finding is inconsistent",
+    cwydeCheck ["DEFINITE_EXISTENCE", "PROBABLE_NEGATED_EXISTENCE"] == some (.definitely false)⟩,
+  -- PaperCorrespondence: Spohn (1988), Definition 4 (p. 115)
+  ⟨"reference model satisfies well-formedness (κ_c(w1) = 0)", wellFormed rkM0 == true⟩,
+  ⟨"model with no κ = 0 world is ill-formed",
+    wellFormed (mkKappaModel ["w1"] [("c", [("w1", 2)])] []) == false⟩,
+  -- Theorem 2(b) (p. 115)
+  ⟨"kappaProp({w1}) = 0 — w1 is the minimum-ranked world (w1 ∈ V(X))",
+    okIs (kappaProp rkM0 "c" (.ofList ["w1"])) 0⟩,
+  ⟨"kappaProp({w2}) = 3 — w2 is disbelieved with firmness 3 (w2 ∉ V(X))",
+    okIs (kappaProp rkM0 "c" (.ofList ["w2"])) 3⟩,
+  ⟨"kappaProp({w1,w2}) = 0 — min{0,3} = 0 (Theorem 2(b): κ(A∪B) = min{κ(A),κ(B)})",
+    okIs (kappaProp rkM0 "c" (.ofList ["w1", "w2"])) 0⟩,
+  ⟨"κ(A∪B) = min{κ(A),κ(B)}: computed values confirm Theorem 2(b)",
+    okIs (do
+      let kA ← kappaProp rkM0 "c" (.ofList ["w1"])
+      let kB ← kappaProp rkM0 "c" (.ofList ["w2"])
+      let kAB ← kappaProp rkM0 "c" (.ofList ["w1", "w2"])
+      return kAB == min kA kB) true⟩,
+  -- Definition 6 (p. 117)
+  ⟨"τ(X) = 2 after conditionalize to α=2 (overwrites prior firmness 3)",
+    okIs (do tau (← conditionalize rkM0 "c" rkX 2) "c" rkX) 2⟩,
+  ⟨"τ(X) = 1 after second conditionalize to α=1 (overwrites previous α=2)",
+    okIs (do
+      let m1 ← conditionalize rkM0 "c" rkX 2
+      tau (← conditionalize m1 "c" rkX 1) "c" rkX) 1⟩,
+  -- Theorem 3 (p. 118)
+  ⟨"τ(X) = 3 after round-trip α=2 then α=3 (original firmness restored)",
+    okIs (do
+      let m1 ← conditionalize rkM0 "c" rkX 2
+      tau (← conditionalize m1 "c" rkX 3) "c" rkX) 3⟩,
+  ⟨"κ_c(w1) = 0 after round-trip (minimum-ranked world unchanged)",
+    okIs (do
+      let m1 ← conditionalize rkM0 "c" rkX 2
+      kappaWorld (← conditionalize m1 "c" rkX 3) "c" "w1") 0⟩,
+  ⟨"κ_c(w2) = 3 after round-trip (original rank restored)",
+    okIs (do
+      let m1 ← conditionalize rkM0 "c" rkX 2
+      kappaWorld (← conditionalize m1 "c" rkX 3) "c" "w2") 3⟩,
+  -- Theorem 7 (p. 121)
+  ⟨"combineIndependent 2 3 = 5  (κ(B∩C) = κ(B) + κ(C))", combineIndependent 2 3 == 5⟩,
+  ⟨"combineIndependent 0 3 = 3  (rank-0 component leaves sum = other rank)",
+    combineIndependent 0 3 == 3⟩,
+  ⟨"combineIndependent 2 0 = 2  (symmetric: rank-0 on either side)",
+    combineIndependent 2 0 == 2⟩,
+  ⟨"combineIndependent 2 2 = 4  (equal ranks add)", combineIndependent 2 2 == 4⟩,
+  -- RegressionIssue18 B4: ranking theory κ=∞ no longer leaks into arithmetic
+  ⟨"τ of a normal proposition is finite", okIs (tau rkM2 "c" rkX) 2⟩,
+  ⟨"τ of a model-tautology is +∞ (maxBound), not wrapped garbage",
+    okIs (tau rkM2 "c" (.or rkX (.not rkX))) rankMaxBound⟩,
+  ⟨"τ of a model-contradiction is −∞ (minBound), not wrapped garbage",
+    okIs (tau rkM2 "c" (.and rkX (.not rkX))) rankMinBound⟩,
+  ⟨"conditionalizing on a contradiction errors (would break wellFormed)",
+    isErr (conditionalize rkM2 "c" (.and rkX (.not rkX)) 2)⟩,
+  ⟨"conditionalizing on a satisfiable proposition preserves wellFormed",
+    okIs (wellFormed <$> conditionalize rkM2 "c" rkX 3) true⟩,
+  -- Not in gamen-hs: with the agent's κ-table empty, Haskell's lazy rank
+  -- argument to `conditionalize` is never forced (`Map.mapWithKey` over an
+  -- empty map), so τ is not evaluated and `applyEvidence` returns the model
+  -- unchanged (checked in GHCi). The Lean must not compute τ, which errors.
+  ⟨"applyEvidence with an empty κ-table returns the model unchanged",
+    let m := mkKappaModel ["w1", "w2"] [("a", [])] [("p", ["w1"])]
+    okIs (applyEvidence m "a" p 1) m⟩
+]
+
 /-! ## Property tests (Plausible) -/
 
 /-- Kripke-fragment formulas over atoms p, q, r. Mirrors `genFormula` in
@@ -1072,7 +1309,7 @@ def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
-      ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases do
+      ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases ++ rankingTheoryCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -1082,6 +1319,6 @@ def main : IO UInt32 := do
     unless ok do failures := failures + 1
   let total := unitCases.length + tableauCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
-    + fragmentCases.length + doxasticCases.length + properties.length
+    + fragmentCases.length + doxasticCases.length + rankingTheoryCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

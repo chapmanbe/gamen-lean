@@ -66,6 +66,12 @@ Check every definition, table, and proposition number against the PDF:
 The Haskell's own citations have been wrong before; fix them in the Lean
 and list each fix in your report.
 
+Other papers (Spohn, Lyon & van Berkel, …) are in `gamen-hs/notes/` too.
+Copy a title, venue, volume, or page range only from that PDF's
+`pdftotext` output, never from memory. If the Haskell gives a shorter
+citation ("JAIR 2024"), keep it short rather than expand it unchecked.
+(The Sequent port invented a journal, title, and pages this way.)
+
 ## Verify
 
 1. `lake build` and `lake test` green. If a ported test cannot pass, leave

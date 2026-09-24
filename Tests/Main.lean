@@ -415,6 +415,25 @@ def kripkeCases : List Case := [
     let cls := equivalenceClasses (Std.TreeSet.ofList ["w1", "w2"]) rel
     cls.all (fun c => !c.isEmpty)
     && cls.foldl (· ∪ ·) ∅ == Std.TreeSet.ofList ["w1", "w2"]⟩,
+  -- Not in any Haskell spec, but pins the *order* of `equivalenceClasses`'s
+  -- output, which the case above does not check (it only checks the
+  -- classes as a set of sets). `equivalenceClasses`'s docstring and
+  -- `Kripke.hs`/`RegressionIssue18.hs:337` both describe the algorithm as
+  -- reverse discovery order over `ws` in ascending order; this fixture
+  -- (worlds {a,b,c,d,e}, rel = {a↦{b}, c↦{c,d}, d↦{a}, e↦∅}, b keyless)
+  -- exercises all three B7 cases at once (a non-reflexive pair a/b, a
+  -- self-looping pair c/d, and a keyless/empty-image world e) so the
+  -- order is not incidentally symmetric. Expected value obtained by
+  -- running gamen-hs's `equivalenceClasses` on this fixture in `cabal
+  -- repl` (not derived from the Lean code under test).
+  ⟨"equivalenceClasses returns classes in reverse discovery order",
+    let rel : Std.TreeMap World (Std.TreeSet World) := Std.TreeMap.ofList
+      [ ("a", Std.TreeSet.ofList ["b"])
+      , ("c", Std.TreeSet.ofList ["c", "d"])
+      , ("d", Std.TreeSet.ofList ["a"])
+      , ("e", (∅ : Std.TreeSet World)) ]
+    let cls := equivalenceClasses (Std.TreeSet.ofList ["a", "b", "c", "d", "e"]) rel
+    cls.map (·.toList) == [["e"], ["c", "d"], ["a", "b"]]⟩,
   ⟨"isUniversal checks coverage, not successor count (dangling edge)",
     -- w1 reaches {w1, ghost}: count 2 = |worlds| but w2 is uncovered.
     -- Built with the raw `Frame` constructor (as the Haskell does), since

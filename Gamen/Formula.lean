@@ -6,9 +6,12 @@ import Std.Data.TreeSet
 Port of `gamen-hs/src/Gamen/Formula.hs`: the 30-constructor formula ADT,
 pretty-printing, `atoms`, and negation normal form.
 
-B&D Definition 1.1 (formulas of basic modal logic), extended with the
-temporal, epistemic, doxastic, STIT, deontic-STIT, and ATL operators used
-elsewhere in gamen.
+B&D Definition 1.2 (p. 5): formulas of the basic modal language, inductively
+defined; extended with the temporal, epistemic, doxastic, STIT, deontic-STIT,
+and ATL operators used elsewhere in gamen. (The Haskell cites "Definition
+1.2, B&D" correctly; this docstring previously cited Definition 1.1, which
+is the *language* — the symbol inventory, not the inductive formula clauses
+— per `notes/bd-screen.pdf`; fixed here.)
 -/
 namespace Gamen
 
@@ -245,6 +248,24 @@ def isNNF : Formula → Bool
   | .permitted _ f | .coalition _ f | .canNext _ f | .canAlways _ f
   | .canEventually _ f => f.isNNF
   | .since l r | .until l r | .announce l r | .canUntil _ l r => l.isNNF && r.isNNF
+
+/-- Deliberative stit: agent i deliberately sees to it that A.
+`[i dstit]A = [i]A ∧ ¬□A` (Lorini 2013). Settledness is represented by
+`box` in this language (no separate "settled" constructor); the relational
+interpretation depends on the model: `Gamen.Stit` interprets `box` over
+R_□. -/
+def dstit (agent : String) (phi : Formula) : Formula :=
+  .and (.stit agent phi) (.not (.box phi))
+
+/-- Social commitment: agent i is committed to agent j to ensure A.
+`C_{i:j}A = □(¬F*[i]A → G*v_{i,j}) ∧ ¬[i]A` where `F*p = p ∨ Fp`,
+`G*p = p ∧ Gp` (Lorini 2013, Section 3). -/
+def commitment (i j : String) (phi : Formula) : Formula :=
+  let fStar (p : Formula) : Formula := .or p (.futureDiamond p)
+  let gStar (p : Formula) : Formula := .and p (.futureBox p)
+  let viol : Formula := .atom ("v_" ++ i ++ "_" ++ j)
+  .and (.box (.implies (.not (fStar (.stit i phi))) (gStar viol)))
+       (.not (.stit i phi))
 
 end Formula
 end Gamen

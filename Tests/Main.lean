@@ -10,16 +10,19 @@ import Validate.Core
 # Tests
 
 Ports of `test/TableauSpec.hs` (system K cases and countermodel extraction),
-`test/FormulaSpec.hs`-style printing checks, `test/FramePropertiesSpec.hs`,
-`test/KripkeSemanticsSpec.hs`, the "Boxes & Diamonds Ch. 1 (Zach 2019)"
-block of `test/PaperCorrespondence.hs` (split between `framePropertiesCases`,
-for the `isValidOnFrame`-exercising "Definition 1.11" slice, and
-`semanticsCases`, for the rest — see `semanticsCases` for the full list),
-the `toNNF` properties from `test/Properties.hs`, run with Plausible instead
-of QuickCheck, `Gamen.Fragment` (`test/RegressionIssue18.hs`'s "A2"
-describe block, plus the fragment-boundary assertions from
-`test/Properties.hs`'s "issue #25" `it` — see `fragmentCases` for what of
-that `it` is and is not ported), and `Gamen.Kripke`'s "B7: Kripke /
+`test/FormulaSpec.hs` in full (`formulaCases`; `unitCases` keeps two extra
+printing spot-checks that predate `formulaCases` and aren't literal ports
+of a Haskell `it`), `test/FramePropertiesSpec.hs`, `test/KripkeSemanticsSpec.hs`,
+the "Boxes & Diamonds Ch. 1 (Zach 2019)" block of `test/PaperCorrespondence.hs`
+(split between `framePropertiesCases`, for the `isValidOnFrame`-exercising
+"Definition 1.11" slice, and `semanticsCases`, for the rest — see
+`semanticsCases` for the full list; no `PaperCorrespondence.hs` section
+exercises `dstit`/`commitment` yet — those are only reached through
+`Gamen.Stit`/`Gamen.Laca`, both not yet ported), the `toNNF` properties from
+`test/Properties.hs`, run with Plausible instead of QuickCheck, `Gamen.Fragment`
+(`test/RegressionIssue18.hs`'s "A2" describe block, plus the fragment-boundary
+assertions from `test/Properties.hs`'s "issue #25" `it` — see `fragmentCases`
+for what of that `it` is and is not ported), and `Gamen.Kripke`'s "B7: Kripke /
 FrameProperties dangling-edge and class fixes" describe block from the
 same file (see `kripkeCases`).
 -/
@@ -79,6 +82,122 @@ def unitCases : List Case := [
   -- Pretty-printing matches Haskell `show`
   ⟨"show □(p → ◇q)", toString (Formula.box (.implies p (.diamond q))) == "□(p → ◇q)"⟩,
   ⟨"show agents", toString (Formula.canUntil ["a", "b"] p q) == "⟨⟨a,b⟩⟩(p U q)"⟩
+]
+
+/-! ## Formula
+
+Port of `test/FormulaSpec.hs` in full (B&D Definition 1.2, p. 5 — see the
+citation note in `Gamen/Formula.lean`). Two describe blocks: "Formula
+(Definition 1.2)" and "Negation Normal Form (toNNF, isNNF)". -/
+
+def np : Formula := .not p
+def nq : Formula := .not q
+
+def formulaCases : List Case := [
+  -- describe "Formula (Definition 1.2)"
+  ⟨"shows formulas with standard notation",
+    toString p == "p"
+    && toString (.bot : Formula) == "⊥"
+    && toString np == "¬p"
+    && toString (Formula.box p) == "□p"
+    && toString (Formula.diamond p) == "◇p"
+    && toString (Formula.implies p q) == "(p → q)"⟩,
+  ⟨"derives structural equality",
+    p == p && p != q
+    && Formula.box p == Formula.box p && Formula.box p != Formula.diamond p⟩,
+  ⟨"detects modal-free formulas",
+    p.isModalFree && (Formula.implies p q).isModalFree
+    && !(Formula.box p).isModalFree
+    && !(Formula.and p (Formula.diamond q)).isModalFree⟩,
+  ⟨"collects atoms",
+    (Formula.implies (Formula.box p) (Formula.diamond q)).atoms.toList
+      == [(⟨"p"⟩ : Atom), ⟨"q"⟩]
+    && (Formula.bot : Formula).atoms.toList == []⟩,
+  ⟨"atoms returns properly typed Atom values",
+    (Formula.and p (Formula.box q)).atoms.toList.map Atom.name == ["p", "q"]
+    && toString (⟨"p"⟩ : Atom) == "p"
+    && (match p with | .atom n => n == "p" | _ => false)⟩,
+  -- describe "Negation Normal Form (toNNF, isNNF)"
+  ⟨"leaves atoms and Bot unchanged", p.toNNF == p && (Formula.bot : Formula).toNNF == .bot⟩,
+  ⟨"preserves a literal (Not Atom)", np.toNNF == np⟩,
+  ⟨"eliminates double negation", (Formula.not np).toNNF == p⟩,
+  ⟨"eliminates Implies", (Formula.implies p q).toNNF == Formula.or np q⟩,
+  ⟨"eliminates Iff",
+    (Formula.iff p q).toNNF == Formula.and (Formula.or np q) (Formula.or nq p)⟩,
+  ⟨"applies de Morgan over And/Or",
+    (Formula.not (Formula.and p q)).toNNF == Formula.or np nq
+    && (Formula.not (Formula.or p q)).toNNF == Formula.and np nq⟩,
+  ⟨"negates Box/Diamond as duals",
+    (Formula.not (Formula.box p)).toNNF == Formula.diamond np
+    && (Formula.not (Formula.diamond p)).toNNF == Formula.box np⟩,
+  ⟨"negates FutureBox/FutureDiamond as duals",
+    (Formula.not (Formula.futureBox p)).toNNF == Formula.futureDiamond np
+    && (Formula.not (Formula.futureDiamond p)).toNNF == Formula.futureBox np⟩,
+  ⟨"negates PastBox/PastDiamond as duals",
+    (Formula.not (Formula.pastBox p)).toNNF == Formula.pastDiamond np
+    && (Formula.not (Formula.pastDiamond p)).toNNF == Formula.pastBox np⟩,
+  ⟨"negates Stit and ChoiceDiamond as duals (Lyon-Berkel)",
+    (Formula.not (Formula.stit "i" p)).toNNF == Formula.choiceDiamond "i" np
+    && (Formula.not (Formula.choiceDiamond "i" p)).toNNF == Formula.stit "i" np⟩,
+  ⟨"negates Ought and Permitted as duals (Lyon-Berkel)",
+    (Formula.not (Formula.ought "i" p)).toNNF == Formula.permitted "i" np
+    && (Formula.not (Formula.permitted "i" p)).toNNF == Formula.ought "i" np⟩,
+  ⟨"leaves negations of non-dualizable operators in place",
+    (Formula.not (Formula.knowledge "a" p)).toNNF == Formula.not (Formula.knowledge "a" p)
+    && (Formula.not (Formula.knowledge "a" np)).toNNF == Formula.not (Formula.knowledge "a" np)
+    && (Formula.not (Formula.groupStit p)).toNNF == Formula.not (Formula.groupStit p)
+    && (Formula.not (Formula.next p)).toNNF == Formula.not (Formula.next p)⟩,
+  ⟨"recurses through nested modalities",
+    (Formula.not (Formula.box (Formula.implies (Formula.stit "i" p) (Formula.diamond q)))).toNNF
+      == Formula.diamond (Formula.and (Formula.stit "i" p) (Formula.box nq))⟩,
+  ⟨"isNNF accepts the L_n fragment",
+    p.isNNF && np.isNNF && (Formula.and p np).isNNF
+    && (Formula.or (Formula.box p) (Formula.diamond np)).isNNF
+    && (Formula.stit "i" (Formula.or p np)).isNNF
+    && (Formula.ought "i" np).isNNF
+    && (Formula.choiceDiamond "i" p).isNNF⟩,
+  ⟨"isNNF rejects Implies, Iff, and Not on non-literal modal",
+    !(Formula.implies p q).isNNF && !(Formula.iff p q).isNNF
+    && !(Formula.not (Formula.and p q)).isNNF && !(Formula.not (Formula.box p)).isNNF
+    && !(Formula.not (Formula.stit "i" p)).isNNF && !(Formula.not (Formula.ought "i" p)).isNNF⟩,
+  ⟨"toNNF produces an NNF result on L_n inputs",
+    [ Formula.implies p q
+    , Formula.iff p q
+    , Formula.not (Formula.and p (Formula.or q (Formula.box (Formula.stit "i" p))))
+    , Formula.not (Formula.ought "i" (Formula.implies p q))
+    , Formula.iff (Formula.stit "i" p) (Formula.box (Formula.permitted "i" q))
+    ].all (fun f => f.toNNF.isNNF)⟩,
+  ⟨"toNNF is idempotent",
+    [ Formula.implies p q
+    , Formula.not (Formula.iff p q)
+    , Formula.not (Formula.not (Formula.and (Formula.box p) (Formula.stit "i" (Formula.diamond np))))
+    , Formula.iff (Formula.ought "i" p) (Formula.permitted "i" (Formula.not q))
+    ].all (fun f => f.toNNF.toNNF == f.toNNF)⟩,
+  ⟨"hasAgentOperator detects Stit/Ought/Permitted/ChoiceDiamond",
+    !p.hasAgentOperator && !(Formula.box p).hasAgentOperator
+    && !(Formula.belief "a" p).hasAgentOperator
+    && (Formula.stit "i" p).hasAgentOperator
+    && (Formula.ought "i" p).hasAgentOperator
+    && (Formula.permitted "i" p).hasAgentOperator
+    && (Formula.choiceDiamond "i" p).hasAgentOperator
+    && (Formula.futureBox (Formula.ought "c" (.atom "statin"))).hasAgentOperator
+    && (Formula.implies (.atom "ascvd") (Formula.ought "c" (.atom "statin"))).hasAgentOperator
+    && !(Formula.groupStit p).hasAgentOperator⟩,
+  -- describe "Derived STIT operators" (Formula.hs:429-446). Only the
+  -- structural shape of `dstit`/`commitment` themselves is FormulaSpec's
+  -- business; `dstit`'s satisfaction behavior ("dstit smart constructor
+  -- uses Box for settledness", StitSpec.hs:30-31, and the model-level
+  -- checks at StitSpec.hs:113-116) comes with `Gamen.Stit`.
+  ⟨"dstit smart constructor uses Box for settledness (StitSpec.hs:30)",
+    Formula.dstit "i" p == .and (.stit "i" p) (.not (.box p))⟩,
+  ⟨"commitment builds □(¬F*[i]A → G*v_{i,j}) ∧ ¬[i]A (Formula.hs:440-446)",
+    Formula.commitment "a" "b" p
+      == .and (.box (.implies
+            (.not (.or (.stit "a" p) (.futureDiamond (.stit "a" p))))
+            (.and (.atom "v_a_b") (.futureBox (.atom "v_a_b")))))
+          (.not (.stit "a" p))⟩,
+  ⟨"commitment's agent order is pinned (i is the committed agent, not j)",
+    Formula.commitment "a" "b" p != Formula.commitment "b" "a" p⟩
 ]
 
 /-! ## Widget interaction
@@ -833,8 +952,8 @@ where
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
-  for c in unitCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases ++ kripkeCases
-      ++ semanticsCases ++ fragmentCases do
+  for c in unitCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
+      ++ kripkeCases ++ semanticsCases ++ fragmentCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -842,7 +961,7 @@ def main : IO UInt32 := do
     let ok ← prop
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
-  let total := unitCases.length + widgetCases.length + answerKeyCases.length
+  let total := unitCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
     + fragmentCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"

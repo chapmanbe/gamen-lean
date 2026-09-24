@@ -33,9 +33,13 @@ not show up as deletions.
 Launch the `module-reviewer` agent (Opus) on the porter's branch. Give it
 the branch and module name, **not** the porter's report.
 
-If the Porter column says `opus` or `fable`, also run `mmreview` on the
-branch diff: the porter and the reviewer are both Claude, and on the risky
-modules an outside model is worth the cost.
+If the Porter column says `opus` or `fable`, also launch a second
+`module-reviewer` with `model: fable`, in parallel with the Opus one, with
+the same prompt. Neither reviewer sees the other's report. Findings both
+report are the strongest signal; settle the rest the same way. (Outside
+models via `mmreview` are not available on this machine: Codex has no
+paid account, and Gemini's subscription login is refused for this CLI.
+Revisit if that changes.)
 
 ## 4. Settle the findings
 

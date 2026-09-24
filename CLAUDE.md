@@ -41,6 +41,23 @@ Plan and per-module status: `PORTING.md`. Why Lean, and the evidence:
   explicit lazy memo. Everywhere else, strict evaluation is safe.
 - **Pairs as keys**: Lean core has no `Ord (α × β)` instance; use
   `attribute [local instance] lexOrd` (see `Tableau.lean`).
+- **Shared relation checks live in `Kripke.lean`.** gamen-hs writes
+  reflexive/symmetric/transitive checks four times (FrameProperties,
+  `Kripke.isEquivalenceOn`, `Stit.isTransitiveOn`,
+  `Temporal.isTransitiveFrame`). Lean has one copy, on (worlds, successor
+  map), in `Kripke.lean`; each module keeps its Haskell-named function as a
+  one-line wrapper so the side-by-side reading still works.
+- **One fixpoint helper, with fuel.** gamen-hs iterates "until nothing
+  changes" in six places (`lfp`, `gfp`, `transitiveClose`, `euclideanClose`,
+  `largestBisimulation`, `Laca.trajectory`), none bounded. Port them all
+  through one shared helper that takes fuel and returns `Except`: running out
+  of fuel is an error, never a default. Document the bound (`|U| + 1` for
+  monotone iteration in a finite universe `U`, `|W|² + 1` for relation
+  closures). `partial_fixpoint` counts as `partial def`.
+- Before porting a general-purpose helper, check
+  `docs/assessment/lean-library-reuse-2026-09-23.md`: most of Lean's
+  library versions are proof-only definitions, and the few executable ones
+  must keep gamen-hs's order and output.
 - **Wire compatibility is the contract.** `gamen-validate` output must stay
   byte-identical to gamen-hs for the requests in scope; run
   `tools/compare/compare.py` after touching `Protocol.lean`, `Validate.lean`,

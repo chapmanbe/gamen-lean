@@ -6,7 +6,7 @@ import Gamen.Verdict
 # Gamen.Tableau
 
 Port of `gamen-hs/src/Gamen/Tableau.hs`: prefixed signed tableaux (B&D
-§6.2, where prefixes, prefixed formulas, and branch closure are defined in
+§6.1 for prefixes and prefixed formulas and §6.2 for branch closure, all in
 running prose rather than numbered definitions; rules in Tables 6.1–6.3),
 the systems K, KT, KD, KTB, K4, S4, S5 (Table 6.4), ancestor blocking, and
 countermodel extraction (B&D Theorem 6.19).
@@ -21,10 +21,10 @@ namespace Gamen
 -- on `(World × World)`, so enable it here.
 attribute [local instance] lexOrd
 
-/-! ## Prefixes (B&D §6.2) -/
+/-! ## Prefixes (B&D §6.1) -/
 
 /-- A prefix is a non-empty sequence of positive integers, e.g. `1.2.1`
-(B&D §6.2). -/
+(B&D §6.1). -/
 structure Prefix where
   path : List Nat
   deriving BEq, Ord, Hashable, Repr, DecidableEq, Inhabited
@@ -62,7 +62,7 @@ def extendPrefix (σ : Prefix) (n : Nat) : Except String Prefix :=
 def parentPrefix (σ : Prefix) : Except String Prefix :=
   if σ.length > 1 then pure ⟨σ.path.dropLast⟩ else throw "Root prefix has no parent"
 
-/-! ## Signed, prefixed formulas (B&D §6.2) -/
+/-! ## Signed, prefixed formulas (B&D §6.1) -/
 
 inductive Sign where
   | T
@@ -252,10 +252,12 @@ def dDiamondRule : Rule
     if b.contains new then .noRule else .stack [new]
   | _, _ => .noRule
 
-/-- The parent σ of a non-root prefix σ.n; `none` at the root. The B and 4r
-rules guard on this exactly where Haskell guards `prefixLength σn < 2`
-before calling `parentPrefix`. -/
-private def parentOf? (σ : Prefix) : Option Prefix := (parentPrefix σ).toOption
+/-- The parent σ of σ.n, for the B and 4r rules: the guard is Haskell's
+`prefixLength σn < 2 = NoRule`, and the parent is taken straight from the
+path. Deliberately not routed through `parentPrefix`'s `Except`, so an
+error there can never become "no rule applies". -/
+private def parentOf? (σn : Prefix) : Option Prefix :=
+  if σn.length < 2 then none else some ⟨σn.path.dropLast⟩
 
 /-- Table 6.3, B□: σ.n T □A → σ T A (symmetric). Proposition 6.12. -/
 def bBoxRule : Rule

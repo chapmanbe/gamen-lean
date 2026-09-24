@@ -91,12 +91,13 @@ def tableauCases : List Case :=
   let pf2 := pfFalse .root p
   let pf3 := pfTrue .root q
   [
-  -- describe "Prefix (Definition 6.1)" [B&D §6.2: no numbered definition]
+  -- describe "Prefix (Definition 6.1)" [B&D §6.1: no numbered definition]
   ⟨"constructs and extends prefixes",
     okEq (σ1 >>= (extendPrefix · 2)) σ12
     && okEq (σ12 >>= parentPrefix) σ1
     && okEq (toString <$> mkPrefix [1, 2, 3]) (.ok "1.2.3")⟩,
-  -- describe "PrefixedFormula and branch closure (Definition 6.2)" [B&D §6.2]
+  -- describe "PrefixedFormula and branch closure (Definition 6.2)" [B&D §6.1 prefixed
+  -- formulas, §6.2 closure; no numbered definitions]
   ⟨"detects open branches", !(Branch.ofList [pf1, pf3]).isClosed⟩,
   ⟨"detects closed branches", (Branch.ofList [pf1, pf2]).isClosed⟩,
   ⟨"requires matching prefixes for closure",
@@ -164,7 +165,12 @@ def tableauCases : List Case :=
   ⟨"KD: a modal conflict is not masked by a noisy implication bundle",
     let noise := (List.range 10).map fun i =>
       Formula.implies (.atom s!"a{i + 1}") (.atom s!"b{i + 1}")
-    consistentIn systemKD (noise ++ [.box p, .box (.not p)]) == no⟩
+    consistentIn systemKD (noise ++ [.box p, .box (.not p)]) == no⟩,
+  -- Not in TableauSpec.hs: without these, removing B□/B◇ from systemKB and
+  -- systemS5 left every case green. Verdicts confirmed in gamen-hs
+  -- (cabal repl). B is A → □◇A (B&D Table 2.1).
+  ⟨"KTB proves B: p → □◇p", provesIn systemKB [] (.implies p (.box (.diamond p))) == yes⟩,
+  ⟨"KTB does not prove 4: □p → □□p", provesIn systemKB [] ax4 == no⟩
   ]
 
 /-! ## Formula

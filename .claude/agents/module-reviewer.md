@@ -31,6 +31,11 @@ missed when it is not.
 3. **Planted error.** Make the module's main `Except` function `throw`, run
    `lake test`, and confirm that the expected-false cases fail as well.
    Revert, and confirm `git status` is clean.
+   Also find the Haskell tests that use `fromJust` (or another partial
+   match) on a `Maybe` result. If the Lean case compares `Option`s instead
+   (`==`, `.bind`, `.map`), `none == none` passes where Haskell would crash.
+   Plant the function to always return `none` and confirm those cases fail.
+   (Plausibility's iterated-conditioning cases had this bug.)
 4. **Fidelity.** Read the Haskell and the Lean side by side. Flag changed
    behavior, dropped branches, and changed edge cases (empty sets, missing
    worlds, fuel running out).

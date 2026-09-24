@@ -3,22 +3,20 @@
 
 ## Objective
 Keep porting gamen-hs modules to Lean in `PORTING.md` order, one module per
-`/port-module` run, merged only on the user's word. **Next: Plausibility**,
-which finishes wave 2 ("Complete the `gamen-validate`
-tableau backend"). A module is done when its tests are ported, `lake test`
+`/port-module` run, merged only on the user's word. **Waves 1 and 2 are
+done. Next: wave 3, deontic STIT, starting with `Sequent`** . A module is done when its tests are ported, `lake test`
 is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
 
-## Where things stand (as of `a9d735d`, updated 2026-09-24)
+## Where things stand (as of `1335727`, updated 2026-09-24)
 - **Wave 1 done:** Formula, Kripke, Semantics, Fragment, FrameProperties,
-  Tableau (K, KT, KD, KTB, K4, S4, S5). **Wave 2:** Doxastic and
-  RankingTheory done and wired; Plausibility remains.
-- `lake test`: 264/264. compare.py: 4,470 requests, 4,430 identical, 14
-  equivalent, 26 scope_gap, **0 DISAGREE**.
-- The 26 scope gaps are all deontic-STIT. `consistencySystem` now matches
-  `validate/Main.hs` (`… ++ doxasticRules ++ rankingRules`); the
-  `rankedBelief` gate is gone.
-- `origin` has everything through `f88c2ee`; the RankingTheory merge is
-  unpushed. Push only when the user asks.
+  Tableau (K, KT, KD, KTB, K4, S4, S5).
+- **Wave 2 done:** Doxastic and RankingTheory ported and wired;
+  Plausibility ported, not wired (gamen-hs's `validate/Main.hs` never
+  imports it).
+- `lake test`: 321/321. compare.py: 4,470 requests, 4,430 identical, 14
+  equivalent, 26 scope_gap, **0 DISAGREE**. The 26 scope gaps are all
+  deontic-STIT; wave 3 should clear them.
+- `main` is pushed to `origin`. Push only when the user asks.
 
 ## Decisions (do not relitigate)
 - **The workflow is `/port-module <Module>`** (`.claude/skills/port-module/`).
@@ -66,11 +64,28 @@ is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
   Lean `Int` is unbounded, so `combineIndependent` doesn't wrap near them
   (documented, out of wire scope).
 
-## Plausibility: specifics for the next run
-- Sonnet porter, Opus reviewer only. Its Haskell `class Plausibility` maps
-  to a Lean `class`.
-- Check whether `gamen-validate` uses it; if so, add a compare.py section at
-  the END of `build_corpus` and do the plant-out check.
+## Plausibility: done (record)
+- Sonnet porter, one review round (Opus). Review fix: three
+  iterated-conditioning tests used `Option.bind`, so they passed when
+  `conditionOn` always returned `none` (Haskell's `fromJust` crashes). They
+  now fail on `none`; planting `conditionOn := none` fails 18 cases.
+- Watch for this pattern in later ports: a Haskell `fromJust`/partial match
+  ported as `Option` comparison can make `none == none` pass.
+- `Data.Map.Strict` forces values at construction: check the import before
+  calling any Haskell evaluation "lazy".
+
+## Wave 3: specifics for the next run
+- Order: `Sequent` → `Rules` → `Saturation` → `Prove` → `CounterModel`, with
+  `DeonticStitSpec`. Check each module's Porter column (`Saturation` is
+  `fable`).
+- `CounterModel` also depends on the base `DeonticStit` module (277 lines,
+  `sonnet`, not started), which the wave 3 order in `PORTING.md` omits.
+  Port it before `CounterModel`; it needs only Formula and Kripke.
+- The saturation loop needs fuel (gamen-hs's step budget), returning
+  `Except` on exhaustion, via the shared fixpoint helper where it fits.
+- After `Prove` lands, wire it into `Validate/Core.lean`, remove the
+  deontic-STIT scope gate, and do the plant-out check; the 26 scope gaps
+  should go to 0.
 
 ## Process gotchas (already in the agent files; watch the coordinator side too)
 - Worktrees branch from `origin/main`. The porter fast-forwards to local
@@ -98,7 +113,7 @@ is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
   because output order and executability must match gamen-hs.
 
 ## Open questions / loose ends (raise with the user; don't act unasked)
-- [ ] `PORTING.md` wave 1 entry reads awkwardly after several porters edited
+- [x] (done 2026-09-24, waves 1–2 rewritten) `PORTING.md` wave 1 entry reads awkwardly after several porters edited
       it; offer a clean rewrite.
 - [ ] gamen-hs#33 (weak prefix test) is **closed** upstream. The Lean test
       comment "Not in gamen-hs: its collision test above…" in `Tests/Main.lean`
@@ -114,10 +129,10 @@ is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
       (saturation loop fuel; the explicit lazy memo, `Epistemic.hs` ~148–158).
 
 ## Task list (ordered)
-1. ~~Push `main`~~ (done); ~~RankingTheory~~ (merged `a9d735d`).
-2. `/port-module Plausibility` (Sonnet).
-3. Update `PORTING.md` wave 2 → done; then wave 3 (DeonticStit: Sequent →
-   Rules → Saturation → Prove → CounterModel).
+1. ~~RankingTheory~~ (`a9d735d`), ~~Plausibility~~ (`1335727`); wave 2 done.
+2. `/port-module Sequent`, then Rules, Saturation, Prove, CounterModel.
+3. Wire the deontic-STIT prover into `gamen-validate`; compare.py to 0
+   scope gaps.
 
 ## Suggested implementer model
 Coordinator session: **Opus**. It reviews, reproduces findings, and edits the

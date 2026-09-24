@@ -78,17 +78,16 @@ nothing left to port.
 
 Each wave ends with its tests ported and `tools/compare/compare.py` green.
 
-1. **Finish the core.** Done: `Tableau` (KT–S5 and all of `TableauSpec`),
-   (`Formula` — including `dstit`/`commitment` and `FormulaSpec` — `Kripke`,
-   `Semantics`, `FrameProperties`, and `KripkeSemanticsSpec`/
-   `FramePropertiesSpec` are done; `Fragment` is split out of `Protocol.lean`
-   into its own module and done.)
-2. **Complete the `gamen-validate` tableau backend.** `Doxastic` is done and
-   wired (plain belief requests are answered; compare.py section H).
-   `RankingTheory` is done and wired (ranked-belief requests are answered;
-   compare.py section I). `Plausibility` is done too — it is not wired into
-   `gamen-validate` because gamen-hs's own `validate/Main.hs` never imports
-   it, so this wave now has no scope gaps of its own.
+1. **Finish the core. Done.** `Formula` (including `dstit`/`commitment`),
+   `Kripke`, `Semantics`, `Fragment` (split out of `Protocol.lean`),
+   `FrameProperties`, and `Tableau` (K, KT, KD, KTB, K4, S4, S5), with
+   `FormulaSpec`, `KripkeSemanticsSpec`, `FramePropertiesSpec` and
+   `TableauSpec`.
+2. **Complete the `gamen-validate` tableau backend. Done.** `Doxastic`
+   (plain belief; compare.py section H) and `RankingTheory` (ranked belief;
+   section I) are ported and wired. `Plausibility` is ported but not wired,
+   because gamen-hs's own `validate/Main.hs` never imports it. The
+   remaining 26 scope gaps are all deontic STIT.
 3. **Deontic STIT (G3DS^k_n, Lyon & van Berkel 2024).** `Sequent` →
    `Rules` → `Saturation` → `Prove` → `CounterModel`, with
    `DeonticStitSpec`. The largest remaining risk: expect termination-checker

@@ -15,6 +15,10 @@ Run every command in the foreground and wait for it to finish before you
 report. Leave nothing running in the background: a stray `compare.py` or
 `lake` run in the worktree can collide with the porter's next build.
 
+Always run tests with `lake test`, never the prebuilt `.lake/build/bin/tests`
+binary: after an edit it can be stale, so a planted bug looks caught or
+missed when it is not.
+
 ## Checks
 
 1. **Test coverage, by structure.** List the `it` names in the Haskell spec

@@ -27,6 +27,10 @@ worktree. To set work aside, make a WIP commit on your branch.
 Run every command in the foreground and wait for it to finish before you
 report. Leave nothing running in the background.
 
+Always run tests with `lake test`, never the prebuilt `.lake/build/bin/tests`
+binary: after an edit it can be stale, so a planted bug looks caught or
+missed when it is not.
+
 ## What to port
 
 First read the module's row in `PORTING.md`. If it is partly done, or done

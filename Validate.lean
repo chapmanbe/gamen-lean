@@ -13,11 +13,11 @@ Port of `gamen-hs/validate/Main.hs`: a JSON Lines service on stdin/stdout.
 
 Responses are `{"ok": true, "result": ...}` or `{"ok": false, "error": "..."}`.
 
-**Slice limitation.** gamen-hs dispatches consistency checks to three
-backends: the KDt tableau, its doxastic-D and ranking-theory rules (for
+**Slice limitation.** gamen-hs dispatches consistency checks to two
+backends: the KDt tableau with its doxastic-D and ranking-theory rules (for
 `belief`/`ranked_belief`), and the deontic-STIT prover (for agent
-operators). Only the first is ported. Inputs that would reach the other
-two get `{"ok": false, "error": "not ported in Lean slice: …"}`, so the
+operators). Only the first is ported. Inputs that would reach the second
+get `{"ok": false, "error": "not ported in Lean slice: …"}`, so the
 side-by-side comparison can separate scope gaps from disagreements.
 Fragment rejections ("unsupported operator …") happen before dispatch
 and are fully ported.

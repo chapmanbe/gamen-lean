@@ -8,7 +8,7 @@ binary, and classifies every response pair:
   equivalent    equal as JSON, or both are parser errors whose message text
                 comes from each language's JSON library (aeson vs Lean.Json)
   scope_gap     Lean answered "not ported in Lean slice" (the request needs
-                the doxastic, ranking, or deontic-STIT backends)
+                the deontic-STIT backend)
   DISAGREE      anything else: a real difference to investigate
 
 Usage:  lake build gamen-validate && python3 tools/compare/compare.py [--seed N]
@@ -256,6 +256,42 @@ def build_corpus(rng):
     add("H pairwise-belief", [
         req("check_pairwise", formulas=[Ba(p), q, Ba(un("not", p))]),
     ] + [req("check_pairwise", formulas=[rand_belief(3) for _ in range(rng.randint(2, 5))])
+         for _ in range(100)])
+
+    # I. Ranked belief on the KDt + doxastic-D + ranking-OCF system. Added
+    # with the RankingTheory wiring; last in the corpus so earlier sections'
+    # random draws are unchanged. Agents a/b over small operands, ranks in
+    # [-3, 3], often the same operand or its negation so the functionality
+    # and negation-symmetry rules decide many sets.
+    def rank_operand():
+        f = rng.choice([p, q, un("not", p), bi("and", p, q)])
+        return un("not", f) if rng.random() < 0.3 else f
+    def rand_ranked(d):
+        if d == 0 or rng.random() < 0.3:
+            return {"type": "ranked_belief", "agent": "a" if rng.random() < 0.8 else "b",
+                    "rank": rng.randint(-3, 3), "operand": rank_operand()}
+        k = rng.randrange(6)
+        if k == 0: return un("not", rand_ranked(d - 1))
+        if k == 1: return un(rng.choice(["box", "diamond"]), rand_ranked(d - 1))
+        if k == 2: return Ba(rand_ranked(d - 1))
+        if k == 3: return rand_k(rng, 1, atoms=("p", "q"))
+        return bi(rng.choice(["and", "or", "implies"]), rand_ranked(d - 1), rand_ranked(d - 1))
+    Ra = lambda n, f: {"type": "ranked_belief", "agent": "a", "rank": n, "operand": f}
+    add("I consistency-ranked", [
+        req("check_consistency", formulas=[Ra(2, p)]),
+        req("check_consistency", formulas=[Ra(2, p), Ra(3, p)]),
+        req("check_consistency", formulas=[Ra(2, p), Ra(1, un("not", p))]),
+        req("check_consistency", formulas=[Ra(2, p), Ra(-2, un("not", p))]),
+        req("check_consistency", formulas=[Ra(-2, un("not", p)), Ra(2, p)]),
+        req("check_consistency", formulas=[Ra(2, p), {"type": "ranked_belief", "agent": "b",
+                                                      "rank": 1, "operand": Ra(-3, p)}]),
+        req("check_consistency", formulas=[Ra(0, p), un("not", Ra(0, p))]),
+        req("check_consistency", formulas=[Ra(2, p), Ba(p), Ba(un("not", p))]),
+    ] + [req("check_consistency", formulas=[rand_ranked(2) for _ in range(rng.randint(1, 4))])
+         for _ in range(300)])
+    add("I pairwise-ranked", [
+        req("check_pairwise", formulas=[Ra(2, p), Ra(-2, p), q]),
+    ] + [req("check_pairwise", formulas=[rand_ranked(2) for _ in range(rng.randint(2, 5))])
          for _ in range(100)])
     return sections
 

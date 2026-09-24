@@ -5,9 +5,10 @@ import Std.Data.TreeSet
 # Gamen.DeonticStit.Sequent
 
 Port of `gamen-hs/src/Gamen/DeonticStit/Sequent.hs`: labeled sequent data
-types for the deontic STIT calculus G3DS^k_n (Lyon & van Berkel, "A Labeled
-Sequent Calculus for Deontic STIT Logic", *Journal of Logic and
-Computation* 2024, pp. 839–873; local copy `notes/LyonBerkel2024.pdf`).
+types for the deontic STIT calculus G3DS^k_n (Lyon & van Berkel, "Proof
+Theory and Decision Procedures for Deontic STIT Logics", *Journal of
+Artificial Intelligence Research* 81 (2024), pp. 837–876; local copy
+`notes/LyonBerkel2024.pdf`, checked with `pdftotext -l 1`).
 
 A sequent has the form
 

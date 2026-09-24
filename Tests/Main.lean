@@ -1340,8 +1340,10 @@ def rankedConditioningCases : List Case := [
       && conditionOn rkPlM1 (Std.TreeSet.ofList ["nowhere"]) == none⟩,
   ⟨"RankedPlausibility: iterated conditioning = conditioning on the intersection",
     let e2 := Std.TreeSet.ofList ["w3"]
-    (conditionOn rkPlM1 rkPlE).bind (conditionOn · e2)
-      == conditionOn rkPlM1 (rkPlE.filter fun w => e2.contains w)⟩
+    match conditionOn rkPlM1 rkPlE with
+    | none => false
+    | some step1 =>
+      conditionOn step1 e2 == conditionOn rkPlM1 (rkPlE.filter fun w => e2.contains w)⟩
 ]
 
 -- An unfair 4-sided die: P(w1)=1/2, P(w2)=1/4, P(w3)=1/8, P(w4)=1/8.
@@ -1372,8 +1374,10 @@ def probabilityConditioningCases : List Case := [
     conditionOn probPlM1 (∅ : Std.TreeSet World) == none⟩,
   ⟨"ProbabilityPlausibility: iterated conditioning = conditioning on the intersection",
     let e2 := Std.TreeSet.ofList ["w3", "w4"]
-    (conditionOn probPlM1 probPlE).bind (conditionOn · e2)
-      == conditionOn probPlM1 (probPlE.filter fun w => e2.contains w)⟩
+    match conditionOn probPlM1 probPlE with
+    | none => false
+    | some step1 =>
+      conditionOn step1 e2 == conditionOn probPlM1 (probPlE.filter fun w => e2.contains w)⟩
 ]
 
 -- π: w1 = 1, w2 = 1/2, w3 = 3/10.
@@ -1404,8 +1408,10 @@ def possibilityConditioningCases : List Case := [
     conditionOn possPlM1 (∅ : Std.TreeSet World) == none⟩,
   ⟨"PossibilityPlausibility: iterated conditioning = conditioning on the intersection",
     let e2 := Std.TreeSet.ofList ["w3"]
-    (conditionOn possPlM1 possPlE).bind (conditionOn · e2)
-      == conditionOn possPlM1 (possPlE.filter fun w => e2.contains w)⟩
+    match conditionOn possPlM1 possPlE with
+    | none => false
+    | some step1 =>
+      conditionOn step1 e2 == conditionOn possPlM1 (possPlE.filter fun w => e2.contains w)⟩
 ]
 
 /-- `Pl(A | E)` computed two ways: (1) condition the whole measure, then

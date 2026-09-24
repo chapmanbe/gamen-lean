@@ -47,13 +47,14 @@ Halpern and Spohn (1988) citations are external and are checked in
   automatically the way Haskell projects superclasses.
 * Haskell's `agentMeasure` is *not itself* wrapped in `Except`/`Maybe` — it
   is a bare projection that calls the pure smart constructor `mkRank` on
-  each κ-value, and (Haskell being lazy) only crashes if a thunk holding an
-  out-of-invariant negative rank is later forced. The Lean port evaluates
-  `mkRank` on every κ-value up front, inside the `Except` `agentMeasure`
-  already returns for the unknown-agent case, and propagates a negative-rank
-  error immediately rather than leaving it lurking in an unforced thunk.
-  This is strictly safer than the Haskell and is not exercised by any
-  ported test (every `KappaModel` in scope is well-formed).
+  each κ-value via `Map.map` from `Data.Map.Strict`, which forces every
+  value to WHNF at construction (not the lazy `Data.Map`), so Haskell
+  already crashes immediately on an out-of-invariant negative rank, the
+  same moment the Lean port's `Except` does. The Lean port just makes that
+  eager check explicit as an `Except`, inside the one `agentMeasure`
+  already returns for the unknown-agent case, rather than an uncatchable
+  `error`. Not exercised by any ported test (every `KappaModel` in scope is
+  well-formed).
 * `Rational` (Haskell's arbitrary-precision exact fraction, from `base`) is
   Lean's core `Rat`, with the same exactness guarantee (no floating-point
   drift).

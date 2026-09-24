@@ -259,11 +259,15 @@ result.
 pieces are independent (cf. `combineIndependent`); a domain judgement, not
 enforced by the API.
 
-`conditionalize`'s guards run before τ is computed, matching Haskell, where
-the rank argument is a lazy thunk that the guards never force. -/
+Haskell passes τ + δ to `conditionalize` as a lazy thunk, and only the
+`Map.mapWithKey` over the agent's κ-table forces it. So `conditionalize`'s
+guards run first, and τ is computed exactly when the agent's κ-table is
+non-empty; with an empty table the model comes back unchanged (what
+`Map.adjust` over an empty table yields), even where τ would error. -/
 def applyEvidence (m : KappaModel) (a : Agent) (phi : Formula) (delta : Rank) :
     Except String KappaModel := do
   let (truePhi, falsePhi) ← conditionalizeGuards m a phi
+  if (m.kKappa.getD a ∅).isEmpty then return m
   let t ← tau m a phi
   return conditionalizeUpdate m a truePhi falsePhi (t + delta)
 

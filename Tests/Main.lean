@@ -1230,7 +1230,14 @@ def rankingTheoryCases : List Case := [
   ⟨"conditionalizing on a contradiction errors (would break wellFormed)",
     isErr (conditionalize rkM2 "c" (.and rkX (.not rkX)) 2)⟩,
   ⟨"conditionalizing on a satisfiable proposition preserves wellFormed",
-    okIs (wellFormed <$> conditionalize rkM2 "c" rkX 3) true⟩
+    okIs (wellFormed <$> conditionalize rkM2 "c" rkX 3) true⟩,
+  -- Not in gamen-hs: with the agent's κ-table empty, Haskell's lazy rank
+  -- argument to `conditionalize` is never forced (`Map.mapWithKey` over an
+  -- empty map), so τ is not evaluated and `applyEvidence` returns the model
+  -- unchanged (checked in GHCi). The Lean must not compute τ, which errors.
+  ⟨"applyEvidence with an empty κ-table returns the model unchanged",
+    let m := mkKappaModel ["w1", "w2"] [("a", [])] [("p", ["w1"])]
+    okIs (applyEvidence m "a" p 1) m⟩
 ]
 
 /-! ## Property tests (Plausible) -/

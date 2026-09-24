@@ -182,7 +182,22 @@ def formulaCases : List Case := [
     && (Formula.choiceDiamond "i" p).hasAgentOperator
     && (Formula.futureBox (Formula.ought "c" (.atom "statin"))).hasAgentOperator
     && (Formula.implies (.atom "ascvd") (Formula.ought "c" (.atom "statin"))).hasAgentOperator
-    && !(Formula.groupStit p).hasAgentOperator⟩
+    && !(Formula.groupStit p).hasAgentOperator⟩,
+  -- describe "Derived STIT operators" (Formula.hs:429-446). Only the
+  -- structural shape of `dstit`/`commitment` themselves is FormulaSpec's
+  -- business; `dstit`'s satisfaction behavior ("dstit smart constructor
+  -- uses Box for settledness", StitSpec.hs:30-31, and the model-level
+  -- checks at StitSpec.hs:113-116) comes with `Gamen.Stit`.
+  ⟨"dstit smart constructor uses Box for settledness (StitSpec.hs:30)",
+    Formula.dstit "i" p == .and (.stit "i" p) (.not (.box p))⟩,
+  ⟨"commitment builds □(¬F*[i]A → G*v_{i,j}) ∧ ¬[i]A (Formula.hs:440-446)",
+    Formula.commitment "a" "b" p
+      == .and (.box (.implies
+            (.not (.or (.stit "a" p) (.futureDiamond (.stit "a" p))))
+            (.and (.atom "v_a_b") (.futureBox (.atom "v_a_b")))))
+          (.not (.stit "a" p))⟩,
+  ⟨"commitment's agent order is pinned (i is the committed agent, not j)",
+    Formula.commitment "a" "b" p != Formula.commitment "b" "a" p⟩
 ]
 
 /-! ## Widget interaction

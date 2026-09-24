@@ -1,6 +1,7 @@
 import Gamen.Protocol
 import Gamen.Tableau
 import Gamen.Fragment
+import Gamen.Doxastic
 
 /-!
 # Validate.Core
@@ -83,6 +84,17 @@ are fully implemented, so it never needs this). -/
 def firstOutOfScope (ok : Formula → Bool) (fs : List Formula) : Option String :=
   fs.findSome? (·.firstOffender ok)
 
+/-- Port of `consistencySystem` (`validate/Main.hs`): KDt plus the doxastic
+D rule. gamen-hs also appends `rankingRules`, but both of those rules fire
+only on `σ T RankedBelief …` and no KDt or doxastic rule produces one, so on
+any set without `rankedBelief` this system gives gamen-hs's answers exactly.
+`classifyConsistency` keeps `rankedBelief` out until RankingTheory is ported.
+The name is gamen-hs's, in case it reaches any error text. -/
+def consistencySystem : System :=
+  { systemKDt with
+    name := "KDt+doxasticD+rankingOCF"
+    usedPrefixRules := systemKDt.usedPrefixRules ++ doxasticRules }
+
 /-- Port of `classifyConsistency`: any agent operator sends the whole set to
 the deontic-STIT prover; otherwise the KDt tableau (plus doxastic and
 ranking rules) handles it. Each backend gates its fragment first with
@@ -96,9 +108,9 @@ def classifyConsistency (fs : List Formula) : Classified :=
     match firstUnsupported (checkTableauFragment systemKDt) fs with
     | some op => .unsupported op "kdt+doxasticD"
     | none =>
-      match firstOutOfScope (fun f => !(f matches .belief .. | .rankedBelief ..)) fs with
-      | some op => .notPorted s!"doxastic/ranking tableau rules ({op})"
-      | none => .verdict (tableauConsistent systemKDt tableauMaxSteps fs) "kdt+doxasticD"
+      match firstOutOfScope (fun f => !(f matches .rankedBelief ..)) fs with
+      | some op => .notPorted s!"ranking tableau rules ({op})"
+      | none => .verdict (tableauConsistent consistencySystem tableauMaxSteps fs) "kdt+doxasticD"
 
 def statusPairs : Verdict → List (String × Json)
   | .definitely true => [("status", "consistent"), ("consistent", true)]

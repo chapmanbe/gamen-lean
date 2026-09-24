@@ -26,7 +26,7 @@ nothing left to port.
 | Fragment | 242 | Formula, Tableau, Verdict | — | **Done** (`Gamen/Fragment.lean`): `constructorName`, `immediateSubformulas`, `firstOffender`, `allowedInTableau`, `allowedInDS`, `checkTableauFragment`, `checkDSFragment`, split out of `Gamen/Protocol.lean` into its own module. `Validate.lean`'s `classifyConsistency` gates through `checkTableauFragment`/`checkDSFragment` directly, as `validate/Main.hs` does. No B&D citations in this module (the only citation, "Lyon & van Berkel 2024, Definition 3", is external to `bd-screen.pdf`). |
 | FrameProperties | 172 | Formula, Kripke, Semantics | — | **Done** (`Gamen/FrameProperties.lean`): all predicates and `isValidOnFrame`. Two of the Haskell docstring's B&D citations were wrong for `notes/bd-screen.pdf` and were corrected in the port (basic properties are Table 2.1, not "Definition 2.3"; frame validity is Definition 2.4, not "Definition 2.1"); gamen-hs's internal "frd.N" tags for Definition 2.11 / Proposition 2.9 / 2.12 / 2.14 all checked out and are spelled out as real chapter-2 numbers. |
 | Temporal | 210 | Formula, Kripke, Tableau | opus | Not started (semantics already in `Semantics.lean`; `systemKDt`'s D rules in `Tableau.lean`) |
-| Doxastic | 56 | Formula, Tableau | sonnet | **Done** (`Gamen/Doxastic.lean`): `applyDoxasticDRule`, `doxasticRules`. No B&D citation in the Haskell docstring to check (KD45 belief axioms K/D/4/5 are named, not numbered against `bd-screen.pdf`). Not yet wired into `gamen-validate`'s `consistencySystem` (`validate/Main.hs`: `usedPrefixRules systemKDt ++ doxasticRules ++ rankingRules`) — that also needs `rankingRules` from `Gamen.RankingTheory`, still not started; `Validate/Core.lean` keeps answering `"not ported in Lean slice: …"` for belief/ranked-belief requests until both land. |
+| Doxastic | 56 | Formula, Tableau | sonnet | **Done** (`Gamen/Doxastic.lean`): `applyDoxasticDRule`, `doxasticRules`. No B&D citation in the Haskell docstring to check (KD45 belief axioms K/D/4/5 are named, not numbered against `bd-screen.pdf`). Wired into `gamen-validate`: `Validate/Core.lean`'s `consistencySystem` is KDt + `doxasticRules`, as in `validate/Main.hs` minus `rankingRules`, which fire only on `RankedBelief`; plain `belief` requests are answered, `rankedBelief` stays "not ported" until RankingTheory. compare.py section H covers it. |
 | RankingTheory | 454 | Formula, Kripke, Tableau | opus | Not started (needed by `gamen-validate`) |
 | Plausibility | 340 | Kripke, RankingTheory | sonnet | Not started; the one Haskell typeclass (`class Plausibility`) maps to a Lean `class` directly |
 | Epistemic | 411 | Formula, Kripke | fable | Not started; see the laziness note under Conventions |
@@ -54,7 +54,7 @@ nothing left to port.
 | Component | Lines | Lean status |
 |---|---:|---|
 | `protocol/Gamen/Protocol/Formula.hs` | 167 | **Done** (`Gamen/Protocol.lean`): tree and flat formats, all 30 constructors. Fragment gating that used to live here moved to `Gamen/Fragment.lean`. |
-| `validate/Main.hs` (`gamen-validate`) | 329 | **Done for the tableau backend.** The non-`IO` request/response logic lives in `Validate/Core.lean` (split out of `Validate.lean`, which now only wraps it with `main`, so `Tests.Main` can `import Validate.Core` for direct unit tests without the two executables' `main` colliding). Requests needing the doxastic/ranking rules or the deontic-STIT prover answer `"not ported in Lean slice: …"` until those modules land. `reasonOperator` (validate/Main.hs:271-276) is ported faithfully: a non-`UnsupportedOperator` reason renders as GHC's derived `Show UnknownReason` would, not Lean's `reprStr` — verified against `runghc` output, not from memory. |
+| `validate/Main.hs` (`gamen-validate`) | 329 | **Done for the tableau backend.** The non-`IO` request/response logic lives in `Validate/Core.lean` (split out of `Validate.lean`, which now only wraps it with `main`, so `Tests.Main` can `import Validate.Core` for direct unit tests without the two executables' `main` colliding). Requests needing the ranking rules (`rankedBelief`) or the deontic-STIT prover answer `"not ported in Lean slice: …"` until those modules land. `reasonOperator` (validate/Main.hs:271-276) is ported faithfully: a non-`UnsupportedOperator` reason renders as GHC's derived `Show UnknownReason` would, not Lean's `reprStr` — verified against `runghc` output, not from memory. |
 | `protocol/Service/*` + `service/Main.hs` (dcleg service) | 893 | Not started |
 | `app/Main.hs` (`gamen-repl` demo) | 43 | Not started |
 
@@ -81,12 +81,10 @@ Each wave ends with its tests ported and `tools/compare/compare.py` green.
    `Semantics`, `FrameProperties`, and `KripkeSemanticsSpec`/
    `FramePropertiesSpec` are done; `Fragment` is split out of `Protocol.lean`
    into its own module and done.)
-2. **Complete the `gamen-validate` tableau backend.** `Doxastic` is done;
-   `RankingTheory` (+ `Plausibility`) remain, and wiring `doxasticRules`
-   into `Validate/Core.lean`'s `consistencySystem` waits on them (Haskell's
-   `consistencySystem` needs both `doxasticRules` and `rankingRules`).
-   After this, belief/ranked-belief requests stop being scope gaps in the
-   comparison.
+2. **Complete the `gamen-validate` tableau backend.** `Doxastic` is done and
+   wired (plain belief requests are answered; compare.py section H).
+   `RankingTheory` (+ `Plausibility`) remain; after them, ranked-belief
+   requests stop being scope gaps in the comparison.
 3. **Deontic STIT (G3DS^k_n, Lyon & van Berkel 2024).** `Sequent` →
    `Rules` → `Saturation` → `Prove` → `CounterModel`, with
    `DeonticStitSpec`. The largest remaining risk: expect termination-checker

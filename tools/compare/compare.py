@@ -222,6 +222,41 @@ def build_corpus(rng):
     no_agent = [f for _, f in g if "agent" not in f]
     add("G guideline-noagent-pairwise",
         [req("check_pairwise", formulas=no_agent[i:i + 12]) for i in range(0, len(no_agent), 12)])
+
+    # H. Plain belief (no ranked belief, no agent operator) on the KDt +
+    # doxastic-D system. Added with the Doxastic wiring: no earlier section
+    # sends a belief-only set down the tableau path. Last in the corpus so
+    # its random draws leave every earlier section unchanged.
+    # Mostly agent "a" over atoms p, q, with belief in both a formula and its
+    # negation common enough that the doxastic D rule decides many sets.
+    def rand_belief(d):
+        if d == 0 or rng.random() < 0.3:
+            return rand_k(rng, 1, atoms=("p", "q"))
+        k = rng.randrange(5)
+        if k <= 1:
+            f = rand_belief(d - 1)
+            if rng.random() < 0.4:
+                f = un("not", f)
+            return ag("belief", "a" if rng.random() < 0.8 else "b", f)
+        if k == 2:
+            return un("not", rand_belief(d - 1))
+        return {"type": rng.choice(["and", "or", "implies"]),
+                "left": rand_belief(d - 1), "right": rand_belief(d - 1)}
+    p, q = atom("p"), atom("q")
+    Ba = lambda f: ag("belief", "a", f)
+    add("H consistency-belief", [
+        req("check_consistency", formulas=[Ba(p), Ba(un("not", p))]),
+        req("check_consistency", formulas=[Ba(p), un("not", p)]),
+        req("check_consistency", formulas=[Ba(p), ag("belief", "b", un("not", p))]),
+        req("check_consistency", formulas=[Ba({"type": "and", "left": p, "right": un("not", p)})]),
+        req("check_consistency", formulas=[Ba(ag("belief", "b", q)), un("not", Ba(ag("belief", "b", q)))]),
+        req("check_consistency", formulas=[un("box", Ba(p)), un("diamond", Ba(un("not", p)))]),
+    ] + [req("check_consistency", formulas=[rand_belief(3) for _ in range(rng.randint(1, 4))])
+         for _ in range(300)])
+    add("H pairwise-belief", [
+        req("check_pairwise", formulas=[Ba(p), q, Ba(un("not", p))]),
+    ] + [req("check_pairwise", formulas=[rand_belief(3) for _ in range(rng.randint(2, 5))])
+         for _ in range(100)])
     return sections
 
 

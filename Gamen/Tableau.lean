@@ -5,14 +5,14 @@ import Gamen.Verdict
 /-!
 # Gamen.Tableau
 
-Port of the system-K core of `gamen-hs/src/Gamen/Tableau.hs`: prefixed
-signed tableaux (B&D Chapter 6, Definitions 6.1–6.3, Table 6.1 and 6.2),
-ancestor blocking, and countermodel extraction (B&D Theorem 6.19).
+Port of `gamen-hs/src/Gamen/Tableau.hs`: prefixed signed tableaux (B&D
+§6.1 for prefixes and prefixed formulas and §6.2 for branch closure, all in
+running prose rather than numbered definitions; rules in Tables 6.1–6.3),
+the systems K, KT, KD, KTB, K4, S4, S5 (Table 6.4), ancestor blocking, and
+countermodel extraction (B&D Theorem 6.19).
 
-Not ported in this slice: the KT/KD/KB/K4/S4/S5 rule sets (Table 6.4) and
-the FutureBox/FutureDiamond rules, which gamen-hs has quarantined
-(issue #25). The engine is written against `System` exactly as in Haskell,
-so extra systems are additions, not restructuring.
+Not ported: the FutureBox/FutureDiamond rules, which gamen-hs has
+quarantined (issue #25).
 -/
 namespace Gamen
 
@@ -21,9 +21,10 @@ namespace Gamen
 -- on `(World × World)`, so enable it here.
 attribute [local instance] lexOrd
 
-/-! ## Prefixes (B&D Definition 6.1) -/
+/-! ## Prefixes (B&D §6.1) -/
 
-/-- A prefix is a non-empty sequence of positive integers, e.g. `1.2.1`. -/
+/-- A prefix is a non-empty sequence of positive integers, e.g. `1.2.1`
+(B&D §6.1). -/
 structure Prefix where
   path : List Nat
   deriving BEq, Ord, Hashable, Repr, DecidableEq, Inhabited
@@ -46,7 +47,22 @@ def ancestors (σ : Prefix) : List Prefix :=
 
 end Prefix
 
-/-! ## Signed, prefixed formulas (B&D Definition 6.2) -/
+/-- Construct a prefix, enforcing non-empty and positive (Haskell `mkPrefix`,
+whose `error`s become `Except`). -/
+def mkPrefix : List Nat → Except String Prefix
+  | [] => throw "Prefix must be non-empty"
+  | ns => if ns.all (· > 0) then pure ⟨ns⟩
+          else throw "Prefix elements must be positive integers"
+
+/-- Extend a prefix: σ.n (Haskell `extendPrefix`). -/
+def extendPrefix (σ : Prefix) (n : Nat) : Except String Prefix :=
+  if n > 0 then pure (σ.extend n) else throw "Extension must be a positive integer"
+
+/-- Parent prefix: σ.n → σ. The root has no parent (Haskell `parentPrefix`). -/
+def parentPrefix (σ : Prefix) : Except String Prefix :=
+  if σ.length > 1 then pure ⟨σ.path.dropLast⟩ else throw "Root prefix has no parent"
+
+/-! ## Signed, prefixed formulas (B&D §6.1) -/
 
 inductive Sign where
   | T
@@ -87,7 +103,8 @@ def ofList (pfs : List PrefixedFormula) : Branch :=
     members := Std.TreeSet.ofList pfs
     prefixes := Std.TreeSet.ofList (pfs.map (·.pfx)) }
 
-/-- B&D Definition 6.3: closed iff it contains σ T ⊥, or both σ T A and σ F A. -/
+/-- Closed iff it contains both σ T A and σ F A (B&D §6.2), or
+σ T ⊥ (as in gamen-hs; B&D Ch. 6 states only the first condition). -/
 def isClosed (b : Branch) : Bool :=
   b.formulas.any fun pf =>
     pf.sign == .T && (pf.formula == .bot || b.members.contains { pf with sign := .F })
@@ -205,19 +222,130 @@ structure System where
 
 def systemK : System := ⟨"K", [], []⟩
 
-/-- Table 6.4, D□: from σ T □A add σ T ◇A (seriality). -/
+/-! ### Additional modal rules (B&D Table 6.3) -/
+
+/-- Table 6.3, T□: σ T □A → σ T A (reflexive). Proposition 6.10. -/
+def tBoxRule : Rule
+  | ⟨σ, .T, .box a⟩, b =>
+    let new := pfTrue σ a
+    if b.contains new then .noRule else .stack [new]
+  | _, _ => .noRule
+
+/-- Table 6.3, T◇: σ F ◇A → σ F A (reflexive). Proposition 6.10. -/
+def tDiamondRule : Rule
+  | ⟨σ, .F, .diamond a⟩, b =>
+    let new := pfFalse σ a
+    if b.contains new then .noRule else .stack [new]
+  | _, _ => .noRule
+
+/-- Table 6.3, D□: from σ T □A add σ T ◇A (serial). Proposition 6.11. -/
 def dBoxRule : Rule
   | ⟨σ, .T, .box a⟩, b =>
     let new := pfTrue σ (.diamond a)
     if b.contains new then .noRule else .stack [new]
   | _, _ => .noRule
 
-/-- Table 6.4, D◇: from σ F ◇A add σ F □A. -/
+/-- Table 6.3, D◇: from σ F ◇A add σ F □A (serial). Proposition 6.11. -/
 def dDiamondRule : Rule
   | ⟨σ, .F, .diamond a⟩, b =>
     let new := pfFalse σ (.box a)
     if b.contains new then .noRule else .stack [new]
   | _, _ => .noRule
+
+/-- The parent σ of σ.n, for the B and 4r rules: the guard is Haskell's
+`prefixLength σn < 2 = NoRule`, and the parent is taken straight from the
+path. Deliberately not routed through `parentPrefix`'s `Except`, so an
+error there can never become "no rule applies". -/
+private def parentOf? (σn : Prefix) : Option Prefix :=
+  if σn.length < 2 then none else some ⟨σn.path.dropLast⟩
+
+/-- Table 6.3, B□: σ.n T □A → σ T A (symmetric). Proposition 6.12. -/
+def bBoxRule : Rule
+  | ⟨σn, .T, .box a⟩, b =>
+    match parentOf? σn with
+    | none => .noRule
+    | some σ =>
+      let new := pfTrue σ a
+      if b.contains new then .noRule else .stack [new]
+  | _, _ => .noRule
+
+/-- Table 6.3, B◇: σ.n F ◇A → σ F A (symmetric). Proposition 6.12. -/
+def bDiamondRule : Rule
+  | ⟨σn, .F, .diamond a⟩, b =>
+    match parentOf? σn with
+    | none => .noRule
+    | some σ =>
+      let new := pfFalse σ a
+      if b.contains new then .noRule else .stack [new]
+  | _, _ => .noRule
+
+/-- Table 6.3, 4□: σ T □A → σ.n T □A for each used child σ.n (transitive).
+Proposition 6.13. -/
+def fourBoxRule : Rule
+  | ⟨σ, .T, f@(.box _)⟩, b =>
+    let adds := (b.childrenOf σ).filterMap fun τ =>
+      let pf := pfTrue τ f
+      if b.contains pf then none else some pf
+    if adds.isEmpty then .noRule else .stack adds
+  | _, _ => .noRule
+
+/-- Table 6.3, 4◇: σ F ◇A → σ.n F ◇A for each used child σ.n (transitive).
+Proposition 6.13. -/
+def fourDiamondRule : Rule
+  | ⟨σ, .F, f@(.diamond _)⟩, b =>
+    let adds := (b.childrenOf σ).filterMap fun τ =>
+      let pf := pfFalse τ f
+      if b.contains pf then none else some pf
+    if adds.isEmpty then .noRule else .stack adds
+  | _, _ => .noRule
+
+/-- Table 6.3, 4r□: σ.n T □A → σ T □A (euclidean). Proposition 6.14. -/
+def fourRBoxRule : Rule
+  | ⟨σn, .T, f@(.box _)⟩, b =>
+    match parentOf? σn with
+    | none => .noRule
+    | some σ =>
+      let new := pfTrue σ f
+      if b.contains new then .noRule else .stack [new]
+  | _, _ => .noRule
+
+/-- Table 6.3, 4r◇: σ.n F ◇A → σ F ◇A (euclidean). Proposition 6.14. -/
+def fourRDiamondRule : Rule
+  | ⟨σn, .F, f@(.diamond _)⟩, b =>
+    match parentOf? σn with
+    | none => .noRule
+    | some σ =>
+      let new := pfFalse σ f
+      if b.contains new then .noRule else .stack [new]
+  | _, _ => .noRule
+
+/-! ### Systems (B&D Table 6.4) -/
+
+/-- KT: reflexive frames. T□, T◇. -/
+def systemKT : System := ⟨"KT", [tBoxRule, tDiamondRule], []⟩
+
+/-- KD: serial frames. D□, D◇ as witness rules. -/
+def systemKD : System := ⟨"KD", [], [dBoxRule, dDiamondRule]⟩
+
+/-- B = KTB: reflexive + symmetric. T□, T◇, B□, B◇. Named `systemKB` and
+reporting system name "KTB", as in Haskell: this is KTB, not KB (K + B,
+symmetric frames only). -/
+def systemKB : System :=
+  ⟨"KTB", [tBoxRule, tDiamondRule, bBoxRule, bDiamondRule], []⟩
+
+/-- K4: transitive frames. 4□, 4◇. -/
+def systemK4 : System := ⟨"K4", [fourBoxRule, fourDiamondRule], []⟩
+
+/-- S4 = KT4: reflexive + transitive. T□, T◇, 4□, 4◇. -/
+def systemS4 : System :=
+  ⟨"S4", [tBoxRule, tDiamondRule, fourBoxRule, fourDiamondRule], []⟩
+
+/-- S5 = KT4B: Table 6.4 lists T□, T◇, 4□, 4◇, 4r□, 4r◇. B□, B◇ are added
+as in Haskell: logically redundant (reflexive + euclidean → symmetric) but
+they speed termination. They are not in Table 6.4. -/
+def systemS5 : System :=
+  ⟨"S5", [tBoxRule, tDiamondRule, bBoxRule, bDiamondRule,
+          fourBoxRule, fourDiamondRule, fourRBoxRule, fourRDiamondRule], []⟩
 
 /-- Port of `Gamen.Temporal.systemKDt` as used by `gamen-validate`: the D
 rules as witness rules. Its temporal T/4 rules are omitted because the

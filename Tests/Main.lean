@@ -4,6 +4,7 @@ import Gamen.RankingTheory
 import Gamen.Plausibility
 import Gamen.Fragment
 import Gamen.FrameProperties
+import Gamen.DeonticStit.Sequent
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
@@ -1506,6 +1507,59 @@ def plausibilityCases : List Case :=
   ++ mostPlausibleCases
   ++ agentMeasureCases
 
+/-! ## Deontic-STIT sequents (`Gamen.DeonticStit.Sequent`)
+
+Port of the "Sequent (Gamen.DeonticStit.Sequent)" `describe` block of
+`test/DeonticStitSpec.hs` in full (9 `it`s, in file order). The rest of
+`DeonticStitSpec.hs`, and the "Lyon & van Berkel (2024) — G3DS^k_n prover"
+section of `test/PaperCorrespondence.hs`, exercise `Gamen.DeonticStit`,
+`.Rules`, `.Saturation`, `.Prove`, `.CounterModel` — not yet ported. -/
+
+def dsW0 : Label := label0
+def dsW1 : Label := nextLabel dsW0
+def dsW2 : Label := nextLabel dsW1
+
+def sequentCases : List Case := [
+  ⟨"Label shows as wN",
+    toString dsW0 == "w0" && toString dsW2 == "w2"⟩,
+  ⟨"mkLabFormula normalises to NNF",
+    (mkLabFormula dsW0 (.implies p q)).lfFormula == .or (.not p) q
+      && (mkLabFormula dsW0 (.not (.box p))).lfFormula == .diamond (.not p)⟩,
+  ⟨"singletonSequent seeds proof search at w₀",
+    let s := singletonSequent dsW0 (.implies p q)
+    s.gamma.size == 1 && s.rels.isEmpty
+      && hasFormula (mkLabFormula dsW0 (.implies p q)) s⟩,
+  ⟨"addRel and addFormula are idempotent (set-based)",
+    let r := RelAtom.choice "i" dsW0 dsW1
+    let lf := mkLabFormula dsW0 p
+    let s0 := emptySequent
+    let s1 := addRel r (addRel r s0)
+    let s2 := addFormula lf (addFormula lf s0)
+    s1.rels.size == 1 && s2.gamma.size == 1⟩,
+  ⟨"labels collects every label appearing on either side",
+    let s := addRel (RelAtom.choice "i" dsW0 dsW1)
+      (addRel (RelAtom.ideal "i" dsW2) (singletonSequent dsW0 p))
+    labels s == Std.TreeSet.ofList [dsW0, dsW1, dsW2]⟩,
+  ⟨"freshLabel returns a label not in the sequent",
+    let s := addRel (RelAtom.choice "i" dsW0 dsW1)
+      (addRel (RelAtom.ideal "i" dsW2) (singletonSequent dsW0 p))
+    let fresh := freshLabel s
+    !(labels s).contains fresh⟩,
+  ⟨"freshLabel on the empty sequent is w0",
+    freshLabel emptySequent == dsW0⟩,
+  ⟨"substLabel rewrites labels everywhere they appear",
+    let s := addRel (RelAtom.choice "i" dsW1 dsW2)
+      (addFormula (mkLabFormula dsW1 p) (singletonSequent dsW0 q))
+    let renamed := substLabel dsW1 dsW0 s
+    hasRel (RelAtom.choice "i" dsW0 dsW2) renamed
+      && !hasRel (RelAtom.choice "i" dsW1 dsW2) renamed
+      && hasFormula (mkLabFormula dsW0 p) renamed
+      && !hasFormula (mkLabFormula dsW1 p) renamed⟩,
+  ⟨"RelAtom Show matches the paper's notation shape",
+    toString (RelAtom.choice "i" dsW0 dsW1) == "R_[i]w0w1"
+      && toString (RelAtom.ideal "i" dsW2) == "I_⊗_i w2"⟩
+]
+
 /-! ## Property tests (Plausible) -/
 
 /-- Kripke-fragment formulas over atoms p, q, r. Mirrors `genFormula` in
@@ -1576,7 +1630,7 @@ def main : IO UInt32 := do
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
       ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases ++ rankingTheoryCases
-      ++ plausibilityCases do
+      ++ plausibilityCases ++ sequentCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -1587,6 +1641,6 @@ def main : IO UInt32 := do
   let total := unitCases.length + tableauCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
     + fragmentCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
-    + properties.length
+    + sequentCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

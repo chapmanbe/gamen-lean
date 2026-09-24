@@ -26,7 +26,7 @@ nothing left to port.
 | Fragment | 242 | Formula, Tableau, Verdict | — | **Done** (`Gamen/Fragment.lean`): `constructorName`, `immediateSubformulas`, `firstOffender`, `allowedInTableau`, `allowedInDS`, `checkTableauFragment`, `checkDSFragment`, split out of `Gamen/Protocol.lean` into its own module. `Validate.lean`'s `classifyConsistency` gates through `checkTableauFragment`/`checkDSFragment` directly, as `validate/Main.hs` does. No B&D citations in this module (the only citation, "Lyon & van Berkel 2024, Definition 3", is external to `bd-screen.pdf`). |
 | FrameProperties | 172 | Formula, Kripke, Semantics | — | **Done** (`Gamen/FrameProperties.lean`): all predicates and `isValidOnFrame`. Two of the Haskell docstring's B&D citations were wrong for `notes/bd-screen.pdf` and were corrected in the port (basic properties are Table 2.1, not "Definition 2.3"; frame validity is Definition 2.4, not "Definition 2.1"); gamen-hs's internal "frd.N" tags for Definition 2.11 / Proposition 2.9 / 2.12 / 2.14 all checked out and are spelled out as real chapter-2 numbers. |
 | Temporal | 210 | Formula, Kripke, Tableau | opus | Not started (semantics already in `Semantics.lean`; `systemKDt`'s D rules in `Tableau.lean`) |
-| Doxastic | 56 | Formula, Tableau | sonnet | Not started (needed by `gamen-validate`) |
+| Doxastic | 56 | Formula, Tableau | sonnet | **Done** (`Gamen/Doxastic.lean`): `applyDoxasticDRule`, `doxasticRules`. No B&D citation in the Haskell docstring to check (KD45 belief axioms K/D/4/5 are named, not numbered against `bd-screen.pdf`). Not yet wired into `gamen-validate`'s `consistencySystem` (`validate/Main.hs`: `usedPrefixRules systemKDt ++ doxasticRules ++ rankingRules`) — that also needs `rankingRules` from `Gamen.RankingTheory`, still not started; `Validate/Core.lean` keeps answering `"not ported in Lean slice: …"` for belief/ranked-belief requests until both land. |
 | RankingTheory | 454 | Formula, Kripke, Tableau | opus | Not started (needed by `gamen-validate`) |
 | Plausibility | 340 | Kripke, RankingTheory | sonnet | Not started; the one Haskell typeclass (`class Plausibility`) maps to a Lean `class` directly |
 | Epistemic | 411 | Formula, Kripke | fable | Not started; see the laziness note under Conventions |
@@ -62,15 +62,15 @@ nothing left to port.
 
 | gamen-hs test | Lines | Lean status |
 |---|---:|---|
-| TableauSpec | 229 | **Done**: all 43 `it`s in `tableauCases` (`Tests/Main.lean`), plus two KTB cases (B, and not 4) that exercise the B rules, which no spec `it` does. Two case names corrected: gamen-hs labels □p → ◇□p as axiom "B" (B&D's B is A → □◇A, Table 2.1) and cites Example 6.9 for it (Example 6.9 proves S5 ⊢ □A → □◇A). No `PaperCorrespondence.hs` block beyond the already-ported Prop. 1.19 `it` exercises the non-temporal, non-doxastic tableau; the `systemKDt` block waits on `Gamen.Temporal`, the `applyDoxasticDRule` block on `Gamen.Doxastic`. |
+| TableauSpec | 229 | **Done**: all 43 `it`s in `tableauCases` (`Tests/Main.lean`), plus two KTB cases (B, and not 4) that exercise the B rules, which no spec `it` does. Two case names corrected: gamen-hs labels □p → ◇□p as axiom "B" (B&D's B is A → □◇A, Table 2.1) and cites Example 6.9 for it (Example 6.9 proves S5 ⊢ □A → □◇A). No `PaperCorrespondence.hs` block beyond the already-ported Prop. 1.19 `it` exercises the non-temporal, non-doxastic tableau; the `systemKDt` block waits on `Gamen.Temporal`; the `applyDoxasticDRule` block is now ported (`doxasticCases`, see PaperCorrespondence row). |
 | Properties | 910 | NNF properties ported (Plausible). The fragment-boundary half of the "issue #25" `it` (steps 2–3: `checkTableauFragment systemKDt` rejects every temporal operator, nested or not, and does not over-reach on the non-temporal operators) is ported in `fragmentCases`; steps 1 (exhaustive semantic-oracle search) and 4 (raw `tableauConsistent systemKDt` on the unsatisfiable past-operator set) are deferred to `Gamen.Temporal`. Rest not started. |
 | ProtocolSpec, DclegServiceSpec | 565 | Covered for `gamen-validate` by the side-by-side harness (`tools/compare/`); unit specs not ported |
 | FramePropertiesSpec | 356 | **Done** (`Tests/Main.lean`, `framePropertiesCases`) |
 | KripkeSemanticsSpec | 88 | **Done** (`Tests/Main.lean`, `semanticsCases`): all 9 `it`s, including the gamen-hs#3 world-existence-guard regression (checked as a genuine `Except` error, not coerced to a default). |
 | FormulaSpec | 171 | **Done** (`Tests/Main.lean`, `formulaCases`): all 23 `it`s, both describe blocks ("Formula (Definition 1.2)" and "Negation Normal Form"). The `dstit`/`commitment` `it`s live in `StitSpec`/`LacaSpec`, not `FormulaSpec` — ported with those modules. |
 | TemporalSpec, EpistemicSpec, StitSpec, XstitSpec, LacaSpec, DeonticStitSpec, RankingTheorySpec, PlausibilitySpec, WorldGuardsSpec | ~2,300 | Not started: port with each module |
-| PaperCorrespondence | 1,848 | The "Boxes & Diamonds Ch. 1 (Zach 2019)" section is **done**: the `isValidOnFrame`-exercising "Definition 1.11" slice was already in `framePropertiesCases`; `semanticsCases` now adds Definition 1.6 (model as triple), Definition 1.7 (all 8 truth clauses), Proposition 1.8 (□/◇ duality), Definition 1.9 (truth in a model), Proposition 1.19 (K is K-provable, via `systemK`), and Definition 1.23 + Example 1.24 (entailment) — 39 cases total. All of that section's B&D page/definition numbers were checked against `notes/bd-screen.pdf` and were already correct in the Haskell. The rest of the file (Lyon & van Berkel deontic-STIT, Stit/Xstit/Dcleg/ATL sections) needs modules not yet ported; port the remaining sections with each module |
-| RegressionIssue18 | 481 | "A2: fragment gating rejects out-of-fragment operators" ported in full (6 `it`s, `fragmentCases` in `Tests/Main.lean`); "B7: Kripke / FrameProperties dangling-edge and class fixes" ported in full (4 `it`s, `kripkeCases`); the rest needs modules not yet ported (doxastic/ranking, deontic-STIT, ATLir, Epistemic, Stit, Xstit, Cgs, Dcleg) |
+| PaperCorrespondence | 1,848 | The "Boxes & Diamonds Ch. 1 (Zach 2019)" section is **done**: the `isValidOnFrame`-exercising "Definition 1.11" slice was already in `framePropertiesCases`; `semanticsCases` now adds Definition 1.6 (model as triple), Definition 1.7 (all 8 truth clauses), Proposition 1.8 (□/◇ duality), Definition 1.9 (truth in a model), Proposition 1.19 (K is K-provable, via `systemK`), and Definition 1.23 + Example 1.24 (entailment) — 39 cases total. All of that section's B&D page/definition numbers were checked against `notes/bd-screen.pdf` and were already correct in the Haskell. "Gamen.Doxastic — KD45 belief (non-factive)": the "applyDoxasticDRule: tableau closure for contradictory beliefs" describe block is **done** (3 `it`s, `doxasticCases` in `Tests/Main.lean`); its two sibling describe blocks ("Non-factiveness…", "D axiom: B_a φ → ¬B_a(¬φ)…", 3 `it`s each) exercise `Gamen.Epistemic` (`eSatisfies`, `mkEpistemicModel`, `mkEpistemicFrameWithBelief`, `Knowledge`), not yet ported — port with `Gamen.Epistemic`. The rest of the file (Lyon & van Berkel deontic-STIT, Stit/Xstit/Dcleg/ATL sections) needs modules not yet ported; port the remaining sections with each module |
+| RegressionIssue18 | 481 | "A2: fragment gating rejects out-of-fragment operators" ported in full (6 `it`s, `fragmentCases` in `Tests/Main.lean`); "B7: Kripke / FrameProperties dangling-edge and class fixes" ported in full (4 `it`s, `kripkeCases`); the rest needs modules not yet ported (ranking, deontic-STIT, ATLir, Epistemic, Stit, Xstit, Cgs, Dcleg) |
 
 ## Proposed order
 
@@ -81,9 +81,12 @@ Each wave ends with its tests ported and `tools/compare/compare.py` green.
    `Semantics`, `FrameProperties`, and `KripkeSemanticsSpec`/
    `FramePropertiesSpec` are done; `Fragment` is split out of `Protocol.lean`
    into its own module and done.)
-2. **Complete the `gamen-validate` tableau backend.** `Doxastic`,
-   `RankingTheory` (+ `Plausibility`). After this, belief/ranked-belief
-   requests stop being scope gaps in the comparison.
+2. **Complete the `gamen-validate` tableau backend.** `Doxastic` is done;
+   `RankingTheory` (+ `Plausibility`) remain, and wiring `doxasticRules`
+   into `Validate/Core.lean`'s `consistencySystem` waits on them (Haskell's
+   `consistencySystem` needs both `doxasticRules` and `rankingRules`).
+   After this, belief/ranked-belief requests stop being scope gaps in the
+   comparison.
 3. **Deontic STIT (G3DS^k_n, Lyon & van Berkel 2024).** `Sequent` →
    `Rules` → `Saturation` → `Prove` → `CounterModel`, with
    `DeonticStitSpec`. The largest remaining risk: expect termination-checker

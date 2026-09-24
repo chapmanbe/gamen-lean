@@ -1,4 +1,5 @@
 import Gamen.Tableau
+import Gamen.Doxastic
 import Gamen.Fragment
 import Gamen.FrameProperties
 import Plausible
@@ -973,6 +974,35 @@ def fragmentCases : List Case := [
     !(Formula.groupStit (Formula.stit "a" p)).hasAgentOperator⟩
 ]
 
+/-! ## Doxastic belief (`Gamen.Doxastic`)
+
+`test/DoxasticSpec.hs` does not exist in gamen-hs, so there are no spec
+`it`s to port. Port of the "applyDoxasticDRule: tableau closure for
+contradictory beliefs" describe block under "Gamen.Doxastic — KD45 belief
+(non-factive)" in `test/PaperCorrespondence.hs` (all 3 `it`s).
+
+The sibling describe blocks in that section, "Non-factiveness: B_a φ at w
+does not entail φ at w" and "D axiom: B_a φ → ¬B_a(¬φ) (doxastic
+seriality)" (3 `it`s each), exercise `eSatisfies`/`mkEpistemicModel`/
+`mkEpistemicFrameWithBelief`/`Knowledge`, all from `Gamen.Epistemic`, which
+is not ported (see `PORTING.md`) — skipped until that module lands. -/
+
+/-- `KD-belief` system used by the PaperCorrespondence tableau block:
+`doxasticRules` as used-prefix rules, no witness rules. -/
+def doxBeliefSystem : System := ⟨"KD-belief", doxasticRules, []⟩
+
+def doxasticCases : List Case := [
+  ⟨"B_a p is satisfiable on its own",
+    tableauConsistent doxBeliefSystem defaultMaxSteps [.belief "a" p]
+      == .definitely true⟩,
+  ⟨"B_a p ∧ B_a(¬p) is unsatisfiable — D rule closes the branch",
+    tableauConsistent doxBeliefSystem defaultMaxSteps
+      [.belief "a" p, .belief "a" (.not p)] == .definitely false⟩,
+  ⟨"B_a p ∧ B_b(¬p) is satisfiable — D rule is per-agent; agents may disagree",
+    tableauConsistent doxBeliefSystem defaultMaxSteps
+      [.belief "a" p, .belief "b" (.not p)] == .definitely true⟩
+]
+
 /-! ## Property tests (Plausible) -/
 
 /-- Kripke-fragment formulas over atoms p, q, r. Mirrors `genFormula` in
@@ -1042,7 +1072,7 @@ def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
-      ++ kripkeCases ++ semanticsCases ++ fragmentCases do
+      ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -1052,6 +1082,6 @@ def main : IO UInt32 := do
     unless ok do failures := failures + 1
   let total := unitCases.length + tableauCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
-    + fragmentCases.length + properties.length
+    + fragmentCases.length + doxasticCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

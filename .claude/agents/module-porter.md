@@ -15,6 +15,10 @@ Your worktree branch starts from `origin/main`, which can be behind the
 local `main`. Before anything else, run `git merge --ff-only main`. If it
 fails, stop and report; do not port on a stale base.
 
+Call git as `/usr/bin/git` in the worktree, for every git command. A hook
+rewrites plain `git` into a wrapper that the worktree's safety check then
+blocks.
+
 ## What to port
 
 First read the module's row in `PORTING.md`. If it is partly done, or done

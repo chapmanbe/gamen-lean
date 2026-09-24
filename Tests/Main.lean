@@ -5,6 +5,7 @@ import Gamen.Plausibility
 import Gamen.Fragment
 import Gamen.FrameProperties
 import Gamen.DeonticStit.Sequent
+import Gamen.DeonticStit.Rules
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
@@ -1511,9 +1512,10 @@ def plausibilityCases : List Case :=
 
 Port of the "Sequent (Gamen.DeonticStit.Sequent)" `describe` block of
 `test/DeonticStitSpec.hs` in full (9 `it`s, in file order). The rest of
-`DeonticStitSpec.hs`, and the "Lyon & van Berkel (2024) — G3DS^k_n prover"
-section of `test/PaperCorrespondence.hs`, exercise `Gamen.DeonticStit`,
-`.Rules`, `.Saturation`, `.Prove`, `.CounterModel` — not yet ported. -/
+`DeonticStitSpec.hs` (beyond the `.Rules` blocks in `rulesCases` below), and
+the "Lyon & van Berkel (2024) — G3DS^k_n prover" section of
+`test/PaperCorrespondence.hs`, exercise `Gamen.DeonticStit`, `.Saturation`,
+`.Prove`, `.CounterModel` — not yet ported. -/
 
 def dsW0 : Label := label0
 def dsW1 : Label := nextLabel dsW0
@@ -1559,6 +1561,145 @@ def sequentCases : List Case := [
     toString (RelAtom.choice "i" dsW0 dsW1) == "R_[i]w0w1"
       && toString (RelAtom.ideal "i" dsW2) == "I_⊗_i w2"⟩
 ]
+
+/-! ## Deontic-STIT rules (`Gamen.DeonticStit.Rules`)
+
+Port of the two `describe` blocks "DeonticStit.Rules: closure and
+non-generating logical rules" and "DeonticStit.Rules: generating and frame
+rules" of `test/DeonticStitSpec.hs` (31 `it`s, in file order). A Haskell
+`case … of Just RuleApp{…} -> …; _ -> expectationFailure` becomes a `match`
+whose fallback arm is `false`; `shouldBe Nothing` becomes `.isNone`. No
+`PaperCorrespondence.hs` section calls this module directly. -/
+
+def rulesCases : List Case :=
+  let np : Formula := .not p
+  [
+  -- isClosedSequent (id rule)
+  ⟨"isClosedSequent: closes when w:p and w:¬p both appear",
+    isClosedSequent (addFormula (mkLabFormula dsW0 p) (singletonSequent dsW0 np)) == true⟩,
+  ⟨"isClosedSequent: does not close on different labels",
+    isClosedSequent (addFormula (mkLabFormula dsW1 np) (singletonSequent dsW0 p)) == false⟩,
+  ⟨"isClosedSequent: does not close on different atoms",
+    isClosedSequent (addFormula (mkLabFormula dsW0 (.not q)) (singletonSequent dsW0 p)) == false⟩,
+  ⟨"isClosedSequent: does not close the empty sequent",
+    isClosedSequent emptySequent == false⟩,
+  -- applyAnd (∧ rule)
+  ⟨"applyAnd: branches w:(p∧q) into [w:p,…] and [w:q,…] premises",
+    match applyAnd (singletonSequent dsW0 (.and p q)) with
+    | some ⟨[ls, rs], fs, _, _⟩ =>
+      fs == [] && hasFormula (mkLabFormula dsW0 p) ls && hasFormula (mkLabFormula dsW0 q) rs
+        && hasFormula (mkLabFormula dsW0 (.and p q)) ls
+        && hasFormula (mkLabFormula dsW0 (.and p q)) rs
+    | _ => false⟩,
+  ⟨"applyAnd: is Nothing when the sequent has no conjunctions",
+    (applyAnd (singletonSequent dsW0 p)).isNone⟩,
+  ⟨"applyAnd: is Nothing when both conjuncts are already on Γ",
+    (applyAnd (addFormula (mkLabFormula dsW0 p)
+      (addFormula (mkLabFormula dsW0 q) (singletonSequent dsW0 (.and p q))))).isNone⟩,
+  -- applyOr (∨ rule)
+  ⟨"applyOr: produces one premise with both disjuncts added",
+    match applyOr (singletonSequent dsW0 (.or p q)) with
+    | some ⟨[s'], [], _, _⟩ =>
+      hasFormula (mkLabFormula dsW0 p) s' && hasFormula (mkLabFormula dsW0 q) s'
+    | _ => false⟩,
+  ⟨"applyOr: is Nothing when both disjuncts already present",
+    (applyOr (addFormula (mkLabFormula dsW0 p)
+      (addFormula (mkLabFormula dsW0 q) (singletonSequent dsW0 (.or p q))))).isNone⟩,
+  -- applyDiamond (◇ rule)
+  ⟨"applyDiamond: adds u:φ for an existing label u when w:◇φ ∈ Γ",
+    match applyDiamond (singletonSequent dsW0 (.diamond p)) with
+    | some ⟨[s'], [], _, _⟩ =>
+      hasFormula (mkLabFormula dsW0 p) s' && hasFormula (mkLabFormula dsW0 (.diamond p)) s'
+    | _ => false⟩,
+  ⟨"applyDiamond: is Nothing when φ already at every label",
+    (applyDiamond (addFormula (mkLabFormula dsW0 p) (singletonSequent dsW0 (.diamond p)))).isNone⟩,
+  -- applyChoiceDiamond (⟨i⟩ rule)
+  ⟨"applyChoiceDiamond: adds u:φ and u:⟨i⟩φ when R_[i]wu ∈ ℛ and w:⟨i⟩φ ∈ Γ",
+    match applyChoiceDiamond (addRel (.choice "i" dsW0 dsW1)
+        (singletonSequent dsW0 (.choiceDiamond "i" p))) with
+    | some ⟨[s'], [], _, _⟩ =>
+      hasFormula (mkLabFormula dsW1 p) s'
+        && hasFormula (mkLabFormula dsW1 (.choiceDiamond "i" p)) s'
+    | _ => false⟩,
+  ⟨"applyChoiceDiamond: is Nothing without a matching R_[i] relation",
+    (applyChoiceDiamond (singletonSequent dsW0 (.choiceDiamond "i" p))).isNone⟩,
+  -- applyPermitted (⊖_i rule)
+  ⟨"applyPermitted: adds u:φ when I_⊗_i u ∈ ℛ and w:⊖_i φ ∈ Γ",
+    match applyPermitted (addRel (.ideal "i" dsW1) (singletonSequent dsW0 (.permitted "i" p))) with
+    | some ⟨[s'], [], _, _⟩ => hasFormula (mkLabFormula dsW1 p) s'
+    | _ => false⟩,
+  ⟨"applyPermitted: is Nothing without an Ideal relation",
+    (applyPermitted (singletonSequent dsW0 (.permitted "i" p))).isNone⟩,
+  -- applyBox (□ rule)
+  ⟨"applyBox: introduces a fresh label witnessing the body",
+    match applyBox (singletonSequent dsW0 (.box p)) with
+    | some ⟨[s'], [v], _, _⟩ =>
+      hasFormula (mkLabFormula v p) s' && hasFormula (mkLabFormula dsW0 (.box p)) s'
+    | _ => false⟩,
+  ⟨"applyBox: is Nothing when some label already has the body",
+    (applyBox (addFormula (mkLabFormula dsW0 p) (singletonSequent dsW0 (.box p)))).isNone⟩,
+  -- applyStit ([i] rule)
+  ⟨"applyStit: adds R_[i]w_v and v:φ for fresh v",
+    match applyStit (singletonSequent dsW0 (.stit "i" p)) with
+    | some ⟨[s'], [v], _, _⟩ =>
+      hasRel (.choice "i" dsW0 v) s' && hasFormula (mkLabFormula v p) s'
+    | _ => false⟩,
+  ⟨"applyStit: is Nothing when some R_[i]wu has u:φ",
+    (applyStit (addFormula (mkLabFormula dsW0 p)
+      (addRel (.choice "i" dsW0 dsW0) (singletonSequent dsW0 (.stit "i" p))))).isNone⟩,
+  -- applyOught (⊗_i rule)
+  ⟨"applyOught: adds I_⊗_i v and v:φ for fresh v",
+    match applyOught (singletonSequent dsW0 (.ought "i" p)) with
+    | some ⟨[s'], [v], _, _⟩ =>
+      hasRel (.ideal "i" v) s' && hasFormula (mkLabFormula v p) s'
+    | _ => false⟩,
+  ⟨"applyOught: is Nothing when some I_⊗_i u has u:φ",
+    (applyOught (addFormula (mkLabFormula dsW0 p)
+      (addRel (.ideal "i" dsW0) (singletonSequent dsW0 (.ought "i" p))))).isNone⟩,
+  -- applyRef (Ref_i rule)
+  ⟨"applyRef: adds R_[i]ww when missing",
+    match applyRef (singletonSequent dsW0 (.stit "i" p)) with
+    | some ⟨[s'], [], _, _⟩ => hasRel (.choice "i" dsW0 dsW0) s'
+    | _ => false⟩,
+  ⟨"applyRef: is Nothing when every (i, w) is already reflexive",
+    (applyRef (addRel (.choice "i" dsW0 dsW0) (singletonSequent dsW0 (.stit "i" p)))).isNone⟩,
+  -- applyEuc (Euc_i rule)
+  ⟨"applyEuc: with R_[i]wu and R_[i]wv adds R_[i]uv",
+    match applyEuc (addRel (.choice "i" dsW0 dsW1)
+        (addRel (.choice "i" dsW0 dsW2) (singletonSequent dsW0 (.stit "i" p)))) with
+    | some ⟨[s'], [], _, _⟩ =>
+      hasRel (.choice "i" dsW1 dsW2) s' || hasRel (.choice "i" dsW2 dsW1) s'
+        || hasRel (.choice "i" dsW1 dsW1) s' || hasRel (.choice "i" dsW2 dsW2) s'
+    | _ => false⟩,
+  -- applyD3 (D3_i rule)
+  ⟨"applyD3: with I_⊗_i w and R_[i]wu adds I_⊗_i u",
+    match applyD3 (addRel (.ideal "i" dsW0)
+        (addRel (.choice "i" dsW0 dsW1) (singletonSequent dsW0 (.permitted "i" p)))) with
+    | some ⟨[s'], [], _, _⟩ => hasRel (.ideal "i" dsW1) s'
+    | _ => false⟩,
+  ⟨"applyD3: is Nothing when ideal set is already closed under R_[i]",
+    (applyD3 (addRel (.ideal "i" dsW0) (addRel (.ideal "i" dsW1)
+      (addRel (.choice "i" dsW0 dsW1) (singletonSequent dsW0 (.permitted "i" p)))))).isNone⟩,
+  -- applyD2 (D2_i rule)
+  ⟨"applyD2: introduces a fresh I_⊗_i v when no ideal exists for agent i",
+    match applyD2 dsW0 (singletonSequent dsW0 (.ought "i" p)) with
+    | some ⟨[s'], [v], [pa], _⟩ => hasRel (.ideal "i" v) s' && pa == dsW0
+    | _ => false⟩,
+  ⟨"applyD2: is Nothing when every agent already has an ideal world",
+    (applyD2 dsW0 (addRel (.ideal "i" dsW0) (singletonSequent dsW0 (.ought "i" p)))).isNone⟩,
+  -- applyAPC (APC^k_i, limited choice)
+  ⟨"applyAPC: k=0 disables the rule",
+    (applyAPC 0 (addRel (.choice "i" dsW0 dsW0) (singletonSequent dsW0 (.stit "i" p)))).isNone⟩,
+  ⟨"applyAPC: k=1 with 2 labels and no R_[i] yields 1 premise",
+    match applyAPC 1 (addFormula (mkLabFormula dsW1 p) (singletonSequent dsW0 (.stit "i" p))) with
+    | some ⟨[s'], [], _, _⟩ => hasRel (.choice "i" dsW0 dsW1) s'
+    | _ => false⟩,
+  ⟨"applyAPC: k=2 with 3 labels and no R_[i] yields 3 premises",
+    match applyAPC 2 (addFormula (mkLabFormula dsW1 p)
+        (addFormula (mkLabFormula dsW2 p) (singletonSequent dsW0 (.stit "i" p)))) with
+    | some ⟨ps, [], _, _⟩ => ps.length == 3
+    | _ => false⟩
+  ]
 
 /-! ## Property tests (Plausible) -/
 
@@ -1630,7 +1771,7 @@ def main : IO UInt32 := do
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
       ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases ++ rankingTheoryCases
-      ++ plausibilityCases ++ sequentCases do
+      ++ plausibilityCases ++ sequentCases ++ rulesCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -1641,6 +1782,6 @@ def main : IO UInt32 := do
   let total := unitCases.length + tableauCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
     + fragmentCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
-    + sequentCases.length + properties.length
+    + sequentCases.length + rulesCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

@@ -1,6 +1,7 @@
 import Gamen.Tableau
 import Gamen.Doxastic
 import Gamen.RankingTheory
+import Gamen.Plausibility
 import Gamen.Fragment
 import Gamen.FrameProperties
 import Plausible
@@ -1240,6 +1241,265 @@ def rankingTheoryCases : List Case := [
     okIs (applyEvidence m "a" p 1) m⟩
 ]
 
+/-! ## Plausibility (`Gamen.Plausibility`)
+
+Port of `test/PlausibilitySpec.hs` in full (`carrierLaws` is a shared
+helper `it`-ed 3 times in the Haskell, once per carrier; here it is
+`carrierLawCases`, called once per carrier below, for 24 of the 57
+examples `cabal test --test-options="--match Plausibility"` reports).
+Every `Option` result is compared against `some v` (`someIs`) or by
+`match … | none => false`, so a failed `conditionOn` fails the case
+whichever answer was expected, matching `okIs`/`isErr` for `Except`. -/
+
+/-- `o` succeeded with value `v`; `none` (an error) fails the case,
+matching `okIs` for `Except`. -/
+def someIs [BEq α] (o : Option α) (v : α) : Bool :=
+  match o with
+  | some a => a == v
+  | none => false
+
+/-- Test convenience: build a `ProbabilityPlausibility`/`PossibilityPlausibility`
+directly from a literal already known to be in [0,1], bypassing the
+`Except`-returning smart constructor (which `plausibilityConstructorCases`
+tests on its own) — mirrors Haskell calling the (non-`Except`)
+`mkProbability`/`mkPossibility` directly on a literal it knows is valid. -/
+def prob (r : Rat) : ProbabilityPlausibility := ⟨r⟩
+def poss (r : Rat) : PossibilityPlausibility := ⟨r⟩
+
+/-- The carrier laws every `Plausibility` instance commits to (module
+header of `Gamen.Plausibility`), checked over a finite sample. Ports the
+`carrierLaws` helper from `test/PlausibilitySpec.hs`. -/
+def carrierLawCases {p : Type} [BEq p] [Plausibility p] (carrier : String) (samples : List p) :
+    List Case :=
+  [ ⟨carrier ++ ": plBot ⊑ x ⊑ plTop for all sample values",
+      samples.all (plLeq plBot) && samples.all (plLeq · plTop)⟩,
+    ⟨carrier ++ ": plJoin is commutative",
+      samples.all fun x => samples.all fun y => plJoin x y == plJoin y x⟩,
+    ⟨carrier ++ ": plJoin is associative",
+      samples.all fun x => samples.all fun y => samples.all fun z =>
+        plJoin x (plJoin y z) == plJoin (plJoin x y) z⟩,
+    ⟨carrier ++ ": plBot is the identity of plJoin",
+      samples.all fun x => plJoin x plBot == x && plJoin plBot x == x⟩,
+    ⟨carrier ++ ": plTop is the identity of plTimes",
+      samples.all fun x => plTimes x plTop == x && plTimes plTop x == x⟩,
+    ⟨carrier ++ ": plBot annihilates plTimes",
+      samples.all fun x => plTimes x plBot == plBot && plTimes plBot x == plBot⟩,
+    ⟨carrier ++ ": plCondition _ plBot is Nothing; defined otherwise",
+      samples.all (fun x => plCondition x plBot == none)
+        && samples.all fun x => samples.all fun b =>
+             b == plBot || !(plLeq x b) || plCondition x b != none⟩,
+    ⟨carrier ++ ": coherence: plTimes (plCondition x b) b == x when x ⊑ b, b ≠ plBot",
+      samples.all fun x => samples.all fun b =>
+        if b == plBot || !(plLeq x b) then true
+        else match plCondition x b with
+          | some c => plTimes c b == x
+          | none => true⟩ ]
+
+def plausibilityConstructorCases : List Case := [
+  ⟨"Plausibility: smart constructors: mkRank rejects negative ranks", isErr (mkRank (-1))⟩,
+  ⟨"Plausibility: smart constructors: mkProbability rejects values outside [0,1]",
+    isErr (mkProbability (3/2)) && isErr (mkProbability (-1/2))⟩,
+  ⟨"Plausibility: smart constructors: mkPossibility rejects values outside [0,1]",
+    isErr (mkPossibility (3/2))⟩,
+  ⟨"Plausibility: order: ranks: lower κ is MORE plausible (order reverses the numbers)",
+    plLeq (RankedPlausibility.finiteRank 3) (.finiteRank 1) == true
+      && plLeq (RankedPlausibility.finiteRank 1) (.finiteRank 3) == false
+      && plLt RankedPlausibility.infiniteRank (.finiteRank 0) == true⟩,
+  ⟨"Plausibility: order: probability and possibility: numeric order",
+    plLeq (prob (1/4)) (prob (1/2)) == true && plLeq (poss (3/10)) (poss (1/2)) == true⟩
+]
+
+-- κ: w1 = 1, w2 = 0, w3 = 3 — the agent believes ¬{w1,w3}-ish content;
+-- w2 is the κ = 0 core.
+def rkPlM1 : PlausibilityMeasure RankedPlausibility :=
+  mkMeasure [("w1", .finiteRank 1), ("w2", .finiteRank 0), ("w3", .finiteRank 3)]
+def rkPlE : Std.TreeSet World := Std.TreeSet.ofList ["w1", "w3"]
+
+def rankedConditioningCases : List Case := [
+  ⟨"RankedPlausibility: plOf is the min rank over the event (OCF law)",
+    plOf rkPlM1 rkPlE == .finiteRank 1
+      && plOf rkPlM1 (plDomain rkPlM1) == .finiteRank 0
+      && plOf rkPlM1 (∅ : Std.TreeSet World) == .infiniteRank⟩,
+  ⟨"RankedPlausibility: conditionOn shifts the event to κ = 0 and kills the rest (Spohn Def. 5)",
+    match conditionOn rkPlM1 rkPlE with
+    | some m' => plPoint m' "w1" == .finiteRank 0
+        && plPoint m' "w3" == .finiteRank 2
+        && plPoint m' "w2" == .infiniteRank
+        && isNormalized m'
+    | none => false⟩,
+  ⟨"RankedPlausibility: round-trip: conditioning a normalized measure on its domain is identity",
+    someIs (conditionOn rkPlM1 (plDomain rkPlM1)) rkPlM1⟩,
+  ⟨"RankedPlausibility: round-trip: joint = conditional ⊗ marginal (κ(A∩E) = κ(A|E) + κ(E))",
+    match conditionOn rkPlM1 rkPlE with
+    | some m' =>
+      let a := Std.TreeSet.ofList ["w3"]
+      plTimes (plOf m' a) (plOf rkPlM1 rkPlE) == plOf rkPlM1 (a.filter fun w => rkPlE.contains w)
+    | none => false⟩,
+  ⟨"RankedPlausibility: conditioning on an impossible event is Nothing",
+    conditionOn rkPlM1 (∅ : Std.TreeSet World) == none
+      && conditionOn rkPlM1 (Std.TreeSet.ofList ["nowhere"]) == none⟩,
+  ⟨"RankedPlausibility: iterated conditioning = conditioning on the intersection",
+    let e2 := Std.TreeSet.ofList ["w3"]
+    (conditionOn rkPlM1 rkPlE).bind (conditionOn · e2)
+      == conditionOn rkPlM1 (rkPlE.filter fun w => e2.contains w)⟩
+]
+
+-- An unfair 4-sided die: P(w1)=1/2, P(w2)=1/4, P(w3)=1/8, P(w4)=1/8.
+def probPlM1 : PlausibilityMeasure ProbabilityPlausibility :=
+  mkMeasure [("w1", prob (1/2)), ("w2", prob (1/4)), ("w3", prob (1/8)), ("w4", prob (1/8))]
+def probPlE : Std.TreeSet World := Std.TreeSet.ofList ["w2", "w3", "w4"]
+
+def probabilityConditioningCases : List Case := [
+  ⟨"ProbabilityPlausibility: plOf is finite additivity",
+    plOf probPlM1 probPlE == prob (1/2) && isNormalized probPlM1⟩,
+  ⟨"ProbabilityPlausibility: conditionOn is Bayes conditioning (P(w|E) = P(w)/P(E))",
+    match conditionOn probPlM1 probPlE with
+    | some m' => plPoint m' "w2" == prob (1/2)
+        && plPoint m' "w3" == prob (1/4)
+        && plPoint m' "w1" == prob 0
+        && isNormalized m'
+    | none => false⟩,
+  ⟨"ProbabilityPlausibility: round-trip: conditioning a normalized measure on its domain is identity",
+    someIs (conditionOn probPlM1 (plDomain probPlM1)) probPlM1⟩,
+  ⟨"ProbabilityPlausibility: round-trip: chain rule P(A∩E) = P(A|E) · P(E)",
+    match conditionOn probPlM1 probPlE with
+    | some m' =>
+      let a := Std.TreeSet.ofList ["w1", "w2"]
+      plTimes (plOf m' a) (plOf probPlM1 probPlE)
+        == plOf probPlM1 (a.filter fun w => probPlE.contains w)
+    | none => false⟩,
+  ⟨"ProbabilityPlausibility: conditioning on a probability-0 event is Nothing",
+    conditionOn probPlM1 (∅ : Std.TreeSet World) == none⟩,
+  ⟨"ProbabilityPlausibility: iterated conditioning = conditioning on the intersection",
+    let e2 := Std.TreeSet.ofList ["w3", "w4"]
+    (conditionOn probPlM1 probPlE).bind (conditionOn · e2)
+      == conditionOn probPlM1 (probPlE.filter fun w => e2.contains w)⟩
+]
+
+-- π: w1 = 1, w2 = 1/2, w3 = 3/10.
+def possPlM1 : PlausibilityMeasure PossibilityPlausibility :=
+  mkMeasure [("w1", poss 1), ("w2", poss (1/2)), ("w3", poss (3/10))]
+def possPlE : Std.TreeSet World := Std.TreeSet.ofList ["w2", "w3"]
+
+def possibilityConditioningCases : List Case := [
+  ⟨"PossibilityPlausibility: plOf is maxitivity (Π(A∪B) = max)",
+    plOf possPlM1 possPlE == poss (1/2) && plOf possPlM1 (plDomain possPlM1) == plTop⟩,
+  ⟨"PossibilityPlausibility: conditionOn is min-based conditioning (Dubois-Prade)",
+    match conditionOn possPlM1 possPlE with
+    | some m' => plPoint m' "w2" == poss 1
+        && plPoint m' "w3" == poss (3/10)
+        && plPoint m' "w1" == poss 0
+        && isNormalized m'
+    | none => false⟩,
+  ⟨"PossibilityPlausibility: round-trip: conditioning a normalized measure on its domain is identity",
+    someIs (conditionOn possPlM1 (plDomain possPlM1)) possPlM1⟩,
+  ⟨"PossibilityPlausibility: round-trip: Π(A∩E) = min(Π(A|E), Π(E))",
+    match conditionOn possPlM1 possPlE with
+    | some m' =>
+      let a := Std.TreeSet.ofList ["w3"]
+      plTimes (plOf m' a) (plOf possPlM1 possPlE)
+        == plOf possPlM1 (a.filter fun w => possPlE.contains w)
+    | none => false⟩,
+  ⟨"PossibilityPlausibility: conditioning on a possibility-0 event is Nothing",
+    conditionOn possPlM1 (∅ : Std.TreeSet World) == none⟩,
+  ⟨"PossibilityPlausibility: iterated conditioning = conditioning on the intersection",
+    let e2 := Std.TreeSet.ofList ["w3"]
+    (conditionOn possPlM1 possPlE).bind (conditionOn · e2)
+      == conditionOn possPlM1 (possPlE.filter fun w => e2.contains w)⟩
+]
+
+/-- `Pl(A | E)` computed two ways: (1) condition the whole measure, then
+measure `A`; (2) `plCondition (Pl(A∩E)) (Pl(E))` directly. `false` if either
+side's `Option` fails — not exercised by the ported cases below, all of
+which are set up to succeed, matching the Haskell's `fromJust`-based
+`agreesOn`. -/
+def plAgrees {p : Type} [BEq p] [Plausibility p]
+    (m : PlausibilityMeasure p) (a e : Std.TreeSet World) : Bool :=
+  match conditionOn m e with
+  | none => false
+  | some m' =>
+    match plCondition (plOf m (a.filter fun w => e.contains w)) (plOf m e) with
+    | none => false
+    | some c => plOf m' a == c
+
+def plAgreementCases : List Case :=
+  let rkM : PlausibilityMeasure RankedPlausibility :=
+    mkMeasure [("w1", .finiteRank 1), ("w2", .finiteRank 0), ("w3", .finiteRank 3)]
+  let probM : PlausibilityMeasure ProbabilityPlausibility :=
+    mkMeasure [("w1", prob (1/2)), ("w2", prob (1/4)), ("w3", prob (1/4))]
+  let possM : PlausibilityMeasure PossibilityPlausibility :=
+    mkMeasure [("w1", poss 1), ("w2", poss (1/2)), ("w3", poss (3/10))]
+  [ ⟨"conditionOn agrees with event-level plCondition: for ranks",
+      plAgrees rkM (Std.TreeSet.ofList ["w1"]) (Std.TreeSet.ofList ["w1", "w3"])
+        && plAgrees rkM (Std.TreeSet.ofList ["w1", "w2"]) (Std.TreeSet.ofList ["w1", "w3"])⟩,
+    ⟨"conditionOn agrees with event-level plCondition: for probability",
+      plAgrees probM (Std.TreeSet.ofList ["w2"]) (Std.TreeSet.ofList ["w2", "w3"])
+        && plAgrees probM (Std.TreeSet.ofList ["w1", "w2"]) (Std.TreeSet.ofList ["w2", "w3"])⟩,
+    ⟨"conditionOn agrees with event-level plCondition: for possibility (including the boundary case Π(A∩E) = Π(E))",
+      plAgrees possM (Std.TreeSet.ofList ["w2"]) (Std.TreeSet.ofList ["w2", "w3"])
+        && plAgrees possM (Std.TreeSet.ofList ["w3"]) (Std.TreeSet.ofList ["w2", "w3"])⟩ ]
+
+def mostPlausibleCases : List Case :=
+  let m1 : PlausibilityMeasure RankedPlausibility :=
+    mkMeasure [("w1", .finiteRank 1), ("w2", .finiteRank 0), ("w3", .finiteRank 0)]
+  let m2 : PlausibilityMeasure ProbabilityPlausibility :=
+    mkMeasure [("w1", prob (1/2)), ("w2", prob (1/4)), ("w3", prob (1/4))]
+  let m3 : PlausibilityMeasure RankedPlausibility :=
+    mkMeasure [("w1", .finiteRank 0), ("w2", .finiteRank 1), ("w3", .finiteRank 2)]
+  let e3 : Std.TreeSet World := Std.TreeSet.ofList ["w2", "w3"]
+  [ ⟨"mostPlausible: ranks: the κ = 0 core",
+      mostPlausible m1 == Std.TreeSet.ofList ["w2", "w3"]⟩,
+    ⟨"mostPlausible: probability: the highest-mass worlds",
+      mostPlausible m2 == Std.TreeSet.ofList ["w1"]⟩,
+    ⟨"mostPlausible: after conditioning, the core lies inside the evidence",
+      match conditionOn m3 e3 with
+      | some m' => mostPlausible m' == Std.TreeSet.ofList ["w2"] && subsetOf (mostPlausible m') e3
+      | none => false⟩ ]
+
+-- Agent c: κ(w1) = 0, κ(w2) = 1, κ(w3) = 2; X true at w2, w3.
+def plKm : KappaModel :=
+  mkKappaModel ["w1", "w2", "w3"] [("c", [("w1", 0), ("w2", 1), ("w3", 2)])] [("X", ["w2", "w3"])]
+def plPhi : Formula := .atom "X"
+
+def agentMeasureCases : List Case := [
+  ⟨"agentMeasure: projects the κ-table as point plausibilities",
+    okIs ((agentMeasure plKm "c").map fun m =>
+      plPoint m "w1" == .finiteRank 0 && plPoint m "w3" == .finiteRank 2 && isNormalized m) true⟩,
+  ⟨"agentMeasure: errors on an unknown agent", isErr (agentMeasure plKm "nobody")⟩,
+  ⟨"agentMeasure: conditionOn on ⟦φ⟧ agrees with Spohn conditionalize on the φ-side",
+    okIs (do
+      let ePhi ← truthSet plKm plPhi
+      let am ← agentMeasure plKm "c"
+      let km' ← conditionalize plKm "c" plPhi 5
+      match conditionOn am ePhi with
+      | none => throw "conditionOn failed"
+      | some m' =>
+        ePhi.toList.allM fun w => do
+          let kv ← kappaWorld km' "c" w
+          pure (plPoint m' w == RankedPlausibility.finiteRank kv)) true⟩,
+  ⟨"agentMeasure: the conditioned core is the most plausible φ-worlds",
+    okIs (do
+      let ePhi ← truthSet plKm plPhi
+      let am ← agentMeasure plKm "c"
+      match conditionOn am ePhi with
+      | none => throw "conditionOn failed"
+      | some m' => pure (mostPlausible m' == Std.TreeSet.ofList ["w2"])) true⟩
+]
+
+def plausibilityCases : List Case :=
+  carrierLawCases "RankedPlausibility"
+    ([RankedPlausibility.finiteRank 0, .finiteRank 1, .finiteRank 2, .finiteRank 3, .finiteRank 4,
+      .infiniteRank])
+  ++ carrierLawCases "ProbabilityPlausibility" [prob 0, prob (1/4), prob (1/3), prob (1/2), prob 1]
+  ++ carrierLawCases "PossibilityPlausibility" [poss 0, poss (3/10), poss (1/2), poss (7/10), poss 1]
+  ++ plausibilityConstructorCases
+  ++ rankedConditioningCases
+  ++ probabilityConditioningCases
+  ++ possibilityConditioningCases
+  ++ plAgreementCases
+  ++ mostPlausibleCases
+  ++ agentMeasureCases
+
 /-! ## Property tests (Plausible) -/
 
 /-- Kripke-fragment formulas over atoms p, q, r. Mirrors `genFormula` in
@@ -1309,7 +1569,8 @@ def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
-      ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases ++ rankingTheoryCases do
+      ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases ++ rankingTheoryCases
+      ++ plausibilityCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -1319,6 +1580,7 @@ def main : IO UInt32 := do
     unless ok do failures := failures + 1
   let total := unitCases.length + tableauCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
-    + fragmentCases.length + doxasticCases.length + rankingTheoryCases.length + properties.length
+    + fragmentCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
+    + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

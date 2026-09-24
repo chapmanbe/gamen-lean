@@ -20,7 +20,7 @@ nothing left to port.
 |---|---:|---|---|---|
 | Formula | 446 | — | sonnet | **Mostly done** (`Gamen/Formula.lean`): all 30 constructors, printing, `atoms`, `toNNF`, `isNNF`, `isModalFree`, `hasAgentOperator`. Missing: `dstit`, `commitment`. |
 | Verdict | 68 | — | — | **Done** |
-| Kripke | 147 | Formula | sonnet | **Partial**: `Frame`, `Model`, `mkFrame`, `mkModel`. Missing: `isEquivalenceOn`, `equivalenceClasses`, `checkIndependence`. Port per `docs/assessment/lean-library-reuse-2026-09-23.md` §2: put shared reflexive/symmetric/transitive/`subsetOf` checks in `Kripke.lean`, build `isEquivalenceOn` on them, and make FrameProperties' `isReflexive`/`isSymmetric`/`isTransitive` one-line wrappers (results unchanged; its tests must stay green). Keep `equivalenceClasses` as written (order matters). |
+| Kripke | 147 | Formula | sonnet | **Done** (`Gamen/Kripke.lean`): `Frame`, `Model`, `mkFrame`, `mkModel`, plus the shared relation utilities `subsetOf`, `reflexiveOn`, `symmetricOn`, `transitiveOn`, `isEquivalenceOn`, `equivalenceClasses`, `sections` (the `List` cartesian-product helper, matching Haskell's `sequence` order), and `checkIndependence`, per `docs/assessment/lean-library-reuse-2026-09-23.md` §2: `subsetOf`/`reflexiveOn`/`symmetricOn`/`transitiveOn` now live in `Kripke.lean` (moved from `FrameProperties.lean`), and `FrameProperties.isReflexive`/`isSymmetric`/`isTransitive` are one-line wrappers over them (results unchanged). `equivalenceClasses` keeps the exact Haskell algorithm and output order. No B&D citations to check in this module (the utilities are uncited in the Haskell). |
 | Semantics | 212 | Formula, Kripke | sonnet | **Done** (`Gamen/Semantics.lean`): `satisfies`, `isTrueIn`, `isValid`, `isTautology` (via `abstractModal`), `entails`. B&D citations (Definition 1.7/1.9/1.11/1.23) checked against `notes/bd-screen.pdf`; correct as written in the Haskell. One fix: `Semantics.hs`'s `isTautology` cites "Definition 1.16", but p. 12–13 of the PDF has "tautological instance" as *Definition 1.14*; 1.16 is *Proposition 1.16* ("All tautological instances are valid"), a different claim. The Lean docstring cites both correctly. `abstractModal` includes the fix for chapmanbe/gamen-hs#31 (gamen-hs `1f9edb2`): subformulas are keyed on the formula, not its printed form, with the 4 new B5 tests plus one stronger prefix test. |
 | Tableau | 1067 | Formula, Kripke, Semantics, Verdict | opus | **Partial**: engine, blocking, all passes, driver, countermodels, closures; systems K and KDt (D rules). Missing: KT, KD, KB, K4, S4, S5 rule sets (Table 6.4). Temporal rules stay quarantined (gamen-hs issue #25). |
 | Fragment | 242 | Formula, Tableau, Verdict | — | **Done** (`Gamen/Fragment.lean`): `constructorName`, `immediateSubformulas`, `firstOffender`, `allowedInTableau`, `allowedInDS`, `checkTableauFragment`, `checkDSFragment`, split out of `Gamen/Protocol.lean` into its own module. `Validate.lean`'s `classifyConsistency` gates through `checkTableauFragment`/`checkDSFragment` directly, as `validate/Main.hs` does. No B&D citations in this module (the only citation, "Lyon & van Berkel 2024, Definition 3", is external to `bd-screen.pdf`). |
@@ -69,17 +69,17 @@ nothing left to port.
 | KripkeSemanticsSpec | 88 | **Done** (`Tests/Main.lean`, `semanticsCases`): all 9 `it`s, including the gamen-hs#3 world-existence-guard regression (checked as a genuine `Except` error, not coerced to a default). |
 | FormulaSpec, TemporalSpec, EpistemicSpec, StitSpec, XstitSpec, LacaSpec, DeonticStitSpec, RankingTheorySpec, PlausibilitySpec, WorldGuardsSpec | ~2,500 | Not started: port with each module |
 | PaperCorrespondence | 1,848 | The "Boxes & Diamonds Ch. 1 (Zach 2019)" section is **done**: the `isValidOnFrame`-exercising "Definition 1.11" slice was already in `framePropertiesCases`; `semanticsCases` now adds Definition 1.6 (model as triple), Definition 1.7 (all 8 truth clauses), Proposition 1.8 (□/◇ duality), Definition 1.9 (truth in a model), Proposition 1.19 (K is K-provable, via `systemK`), and Definition 1.23 + Example 1.24 (entailment) — 39 cases total. All of that section's B&D page/definition numbers were checked against `notes/bd-screen.pdf` and were already correct in the Haskell. The rest of the file (Lyon & van Berkel deontic-STIT, Stit/Xstit/Dcleg/ATL sections) needs modules not yet ported; port the remaining sections with each module |
-| RegressionIssue18 | 481 | "A2: fragment gating rejects out-of-fragment operators" ported in full (6 `it`s, `fragmentCases` in `Tests/Main.lean`); the rest needs modules not yet ported (doxastic/ranking, deontic-STIT, ATLir, Epistemic, Stit, Xstit, Cgs, Dcleg, Kripke/FrameProperties dangling-edge cases beyond what `FramePropertiesSpec` already covers) |
+| RegressionIssue18 | 481 | "A2: fragment gating rejects out-of-fragment operators" ported in full (6 `it`s, `fragmentCases` in `Tests/Main.lean`); "B7: Kripke / FrameProperties dangling-edge and class fixes" ported in full (4 `it`s, `kripkeCases`); the rest needs modules not yet ported (doxastic/ranking, deontic-STIT, ATLir, Epistemic, Stit, Xstit, Cgs, Dcleg) |
 
 ## Proposed order
 
 Each wave ends with its tests ported and `tools/compare/compare.py` green.
 
-1. **Finish the core.** Add `dstit`/`commitment`, the rest of `Kripke` and
-   `Semantics`, the KT–S5 rule sets. Port `FormulaSpec`,
-   `KripkeSemanticsSpec`, the rest of `TableauSpec`. (`FrameProperties` and
-   `FramePropertiesSpec` are done; `Fragment` is split out of
-   `Protocol.lean` into its own module and done.)
+1. **Finish the core.** Add `dstit`/`commitment`, the KT–S5 rule sets.
+   Port `FormulaSpec`, the rest of `TableauSpec`. (`Kripke`, `Semantics`,
+   `FrameProperties`, and `KripkeSemanticsSpec`/`FramePropertiesSpec` are
+   done; `Fragment` is split out of `Protocol.lean` into its own module
+   and done.)
 2. **Complete the `gamen-validate` tableau backend.** `Doxastic`,
    `RankingTheory` (+ `Plausibility`). After this, belief/ranked-belief
    requests stop being scope gaps in the comparison.

@@ -22,29 +22,28 @@ directly here instead of kept as an internal alias.
 -/
 namespace Gamen
 
-/-- `s` is a subset of `t`. `Std.TreeSet` has no `isSubsetOf`; this is
-Haskell's `Set.isSubsetOf` written out by hand. -/
-private def subsetOf (s t : Std.TreeSet World) : Bool :=
-  s.all fun w => t.contains w
-
 -- --------------------------------------------------------------------
 -- Basic frame properties (B&D Table 2.1, §2.2)
 -- --------------------------------------------------------------------
 
 /-- A frame is reflexive if every world accesses itself: ∀w, Rww
-(B&D Table 2.1). -/
+(B&D Table 2.1). Thin wrapper over `Kripke.reflexiveOn`, the shared
+copy used by `Kripke.isEquivalenceOn` and (when ported) `Stit`'s and
+`Temporal`'s transitivity checks — see `docs/assessment/lean-library-
+reuse-2026-09-23.md` §2. -/
 def isReflexive (fr : Frame) : Bool :=
-  fr.worlds.all fun w => (fr.accessible w).contains w
+  reflexiveOn fr.worlds fr.relation
 
-/-- A frame is symmetric if ∀w w', Rww' → Rw'w (B&D Table 2.1). -/
+/-- A frame is symmetric if ∀w w', Rww' → Rw'w (B&D Table 2.1). Thin
+wrapper over `Kripke.symmetricOn` (see `isReflexive`). -/
 def isSymmetric (fr : Frame) : Bool :=
-  fr.worlds.all fun w => (fr.accessible w).all fun v => (fr.accessible v).contains w
+  symmetricOn fr.worlds fr.relation
 
 /-- A frame is transitive if ∀w w' w'', (Rww' ∧ Rw'w'') → Rww''
-(B&D Table 2.1). -/
+(B&D Table 2.1). Thin wrapper over `Kripke.transitiveOn` (see
+`isReflexive`). -/
 def isTransitive (fr : Frame) : Bool :=
-  fr.worlds.all fun w =>
-    (fr.accessible w).all fun v => subsetOf (fr.accessible v) (fr.accessible w)
+  transitiveOn fr.worlds fr.relation
 
 /-- A frame is serial if every world has at least one successor
 (B&D Table 2.1). -/

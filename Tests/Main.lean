@@ -16,10 +16,12 @@ block of `test/PaperCorrespondence.hs` (split between `framePropertiesCases`,
 for the `isValidOnFrame`-exercising "Definition 1.11" slice, and
 `semanticsCases`, for the rest — see `semanticsCases` for the full list),
 the `toNNF` properties from `test/Properties.hs`, run with Plausible instead
-of QuickCheck, and `Gamen.Fragment` (`test/RegressionIssue18.hs`'s "A2"
+of QuickCheck, `Gamen.Fragment` (`test/RegressionIssue18.hs`'s "A2"
 describe block, plus the fragment-boundary assertions from
 `test/Properties.hs`'s "issue #25" `it` — see `fragmentCases` for what of
-that `it` is and is not ported).
+that `it` is and is not ported), and `Gamen.Kripke`'s "B7: Kripke /
+FrameProperties dangling-edge and class fixes" describe block from the
+same file (see `kripkeCases`).
 -/
 open Gamen Plausible
 
@@ -385,6 +387,115 @@ def framePropertiesCases : List Case := [
       (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) == some true⟩
 ]
 
+/-! ## Kripke (`Gamen.Kripke`)
+
+Port of `test/RegressionIssue18.hs`'s "B7: Kripke / FrameProperties
+dangling-edge and class fixes" describe block (all 4 `it`s) — the rest of
+that file needs modules not yet ported (`PORTING.md`). `mkFrame`,
+`accessible`, and `mkModel` are otherwise exercised throughout
+`framePropertiesCases`/`semanticsCases`; `isEquivalenceOn` and
+`checkIndependence` have no Haskell spec of their own (only
+`RegressionIssue18.hs` exercises `equivalenceClasses` directly — the
+callers that would exercise the other two, `Stit`/`Xstit`/`DeonticStit`,
+are not yet ported), so the extra cases below are not-in-spec sanity
+checks, each flagged as such. -/
+
+def kripkeCases : List Case := [
+  -- RegressionIssue18.hs: "B7: Kripke / FrameProperties dangling-edge
+  -- and class fixes"
+  ⟨"mkFrame errors on an edge whose endpoint is not a world",
+    match mkFrame ["w1"] [("w1", "ghost")] with
+    | .error _ => true
+    | .ok _ => false⟩,
+  ⟨"equivalenceClasses puts each world in its own class (no drops, no ∅)",
+    -- Non-reflexive rel: w1↦{w2}, w2↦{w1}. The old code dropped w1 (it
+    -- took R(w1)={w2} as w1's class) and could emit empty classes.
+    let rel : Std.TreeMap World (Std.TreeSet World) := Std.TreeMap.ofList
+      [("w1", Std.TreeSet.ofList ["w2"]), ("w2", Std.TreeSet.ofList ["w1"])]
+    let cls := equivalenceClasses (Std.TreeSet.ofList ["w1", "w2"]) rel
+    cls.all (fun c => !c.isEmpty)
+    && cls.foldl (· ∪ ·) ∅ == Std.TreeSet.ofList ["w1", "w2"]⟩,
+  -- Not in any Haskell spec, but pins the *order* of `equivalenceClasses`'s
+  -- output, which the case above does not check (it only checks the
+  -- classes as a set of sets). `equivalenceClasses`'s docstring and
+  -- `Kripke.hs`/`RegressionIssue18.hs:337` both describe the algorithm as
+  -- reverse discovery order over `ws` in ascending order; this fixture
+  -- (worlds {a,b,c,d,e}, rel = {a↦{b}, c↦{c,d}, d↦{a}, e↦∅}, b keyless)
+  -- exercises all three B7 cases at once (a non-reflexive pair a/b, a
+  -- self-looping pair c/d, and a keyless/empty-image world e) so the
+  -- order is not incidentally symmetric. Expected value obtained by
+  -- running gamen-hs's `equivalenceClasses` on this fixture in `cabal
+  -- repl` (not derived from the Lean code under test).
+  ⟨"equivalenceClasses returns classes in reverse discovery order",
+    let rel : Std.TreeMap World (Std.TreeSet World) := Std.TreeMap.ofList
+      [ ("a", Std.TreeSet.ofList ["b"])
+      , ("c", Std.TreeSet.ofList ["c", "d"])
+      , ("d", Std.TreeSet.ofList ["a"])
+      , ("e", (∅ : Std.TreeSet World)) ]
+    let cls := equivalenceClasses (Std.TreeSet.ofList ["a", "b", "c", "d", "e"]) rel
+    cls.map (·.toList) == [["e"], ["c", "d"], ["a", "b"]]⟩,
+  ⟨"isUniversal checks coverage, not successor count (dangling edge)",
+    -- w1 reaches {w1, ghost}: count 2 = |worlds| but w2 is uncovered.
+    -- Built with the raw `Frame` constructor (as the Haskell does), since
+    -- `mkFrame` would itself reject the dangling edge.
+    let fr : Frame :=
+      { worlds := Std.TreeSet.ofList ["w1", "w2"]
+        relation := Std.TreeMap.ofList
+          [ ("w1", Std.TreeSet.ofList ["w1", "ghost"])
+          , ("w2", Std.TreeSet.ofList ["w1", "w2"]) ] }
+    isUniversal fr == false⟩,
+  ⟨"isFunctional rejects a lone dangling successor",
+    -- w1's single successor is a non-world.
+    let fr : Frame :=
+      { worlds := Std.TreeSet.ofList ["w1"]
+        relation := Std.TreeMap.ofList [("w1", Std.TreeSet.ofList ["ghost"])] }
+    isFunctional fr == false⟩,
+  -- Not in any Haskell spec: `isEquivalenceOn` is `FrameProperties.
+  -- isEquivalenceRelation` applied to a bare `(worlds, relation)` pair
+  -- rather than a `Frame`; check it agrees, on both a genuine
+  -- equivalence relation and a non-equivalence one.
+  ⟨"isEquivalenceOn agrees with isEquivalenceRelation on a Frame",
+    let ws := Std.TreeSet.ofList ["w1", "w2", "w3"]
+    let equivRel : Std.TreeMap World (Std.TreeSet World) := Std.TreeMap.ofList
+      [ ("w1", Std.TreeSet.ofList ["w1", "w2", "w3"])
+      , ("w2", Std.TreeSet.ofList ["w1", "w2", "w3"])
+      , ("w3", Std.TreeSet.ofList ["w1", "w2", "w3"]) ]
+    let nonEquivRel : Std.TreeMap World (Std.TreeSet World) := Std.TreeMap.ofList
+      [("w1", Std.TreeSet.ofList ["w2"]), ("w2", Std.TreeSet.ofList ["w1"])]
+    isEquivalenceOn ws equivRel == true
+    && isEquivalenceRelation { worlds := ws, relation := equivRel } == true
+    && isEquivalenceOn ws nonEquivRel == false
+    && isEquivalenceRelation { worlds := ws, relation := nonEquivRel } == false⟩,
+  -- Not in any Haskell spec: two agents with independent choice cells at
+  -- every world of the moment (any pairing has a non-empty joint
+  -- outcome) versus two agents whose choices can conflict.
+  ⟨"checkIndependence accepts independent choice cells, rejects conflicting ones",
+    let mom := Std.TreeSet.ofList ["w1", "w2", "w3", "w4"]
+    -- Agent a's cells: {w1,w2} or {w3,w4}; agent b's cells: {w1,w3} or
+    -- {w2,w4}. Every pairing of one a-cell and one b-cell meets in
+    -- exactly one world.
+    let independentCell (agent : String) (w : String) : Std.TreeSet World :=
+      if agent == "a" then
+        if w == "w1" || w == "w2" then Std.TreeSet.ofList ["w1", "w2"]
+        else Std.TreeSet.ofList ["w3", "w4"]
+      else
+        if w == "w1" || w == "w3" then Std.TreeSet.ofList ["w1", "w3"]
+        else Std.TreeSet.ofList ["w2", "w4"]
+    -- Agent a's cells: {w1,w2} or {w3,w4}; agent b's cells: {w1,w2} or
+    -- {w3,w4} too — picking a's {w1,w2} and b's {w3,w4} meets in ∅.
+    let conflictingCell (agent : String) (w : String) : Std.TreeSet World :=
+      if w == "w1" || w == "w2" then Std.TreeSet.ofList ["w1", "w2"]
+      else Std.TreeSet.ofList ["w3", "w4"]
+    checkIndependence independentCell ["a", "b"] mom == true
+    && checkIndependence conflictingCell ["a", "b"] mom == false
+    -- No agents: vacuously independent (Haskell's explicit `[] -> True`
+    -- case, guarding the otherwise-partial `foldl1`).
+    && checkIndependence independentCell ([] : List String) mom == true
+    -- Empty moment: `sequence` over empty cell lists is `[]`, so `all`
+    -- is vacuously true (Haskell behavior, not a special case).
+    && checkIndependence independentCell ["a", "b"] ∅ == true⟩
+]
+
 /-! ## Semantics (`Gamen.Semantics`)
 
 Port of `test/KripkeSemanticsSpec.hs` (all 9 `it`s), the rest of
@@ -722,8 +833,8 @@ where
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
-  for c in unitCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases ++ semanticsCases
-      ++ fragmentCases do
+  for c in unitCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases ++ kripkeCases
+      ++ semanticsCases ++ fragmentCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -732,6 +843,7 @@ def main : IO UInt32 := do
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
   let total := unitCases.length + widgetCases.length + answerKeyCases.length
-    + framePropertiesCases.length + semanticsCases.length + fragmentCases.length + properties.length
+    + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
+    + fragmentCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

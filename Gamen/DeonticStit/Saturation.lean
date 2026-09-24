@@ -11,10 +11,10 @@ Port of `gamen-hs/src/Gamen/DeonticStit/Saturation.hs`: saturation
 conditions, generation tree, and blocking for the deontic STIT proof-search
 procedure (Lyon & van Berkel, "Proof Theory and Decision Procedures for
 Deontic STIT Logics", *JAIR* 81 (2024), Definitions 14, 16, 18 and
-Remark 17, pp. 853–856; all checked against
-`pdftotext notes/LyonBerkel2024.pdf -`).
+Remark 17, pp. 854–856; all checked against
+`pdftotext gamen-hs/notes/LyonBerkel2024.pdf -`).
 
-*Generation tree (Definition 14, p. 853).* A tree of label introductions
+*Generation tree (Definition 14, p. 854).* A tree of label introductions
 recorded as a parent map. Used by the blocking mechanism to detect loop
 nodes during proof search. IOA^T-labels are tracked separately (per
 Remark 17, p. 855, they never become tree nodes and are always considered
@@ -27,20 +27,26 @@ content at `u` equals the formula content at `v`. A label is *indirectly
 blocked* if some proper ancestor of it is directly blocked. `isBlocked` is
 the union of the two.
 
-*Saturation (Definition 18, pp. 855–856).* Fourteen predicates, one per
+*Saturation (Definition 18, p. 856).* Fourteen predicates, one per
 rule. `isStable` is their conjunction (modulo IOA-tuple-satisfaction, which
 lives with the proof-search driver).
 
 *Deviation from the Haskell: `Except`.* Haskell's `ancestors` recurses
 through the parent map without a bound, so on a parent map with a cycle
-(which `addGenChild` does not prevent) it produces an infinite list and
-every predicate built on it diverges — there is no definite Haskell answer
-to reproduce. The Lean `ancestors` walks with fuel `gtParent.size + 1` (a
-cycle-free path visits each of the `size` children at most once, so the
-`size + 1`-th step can only be a revisit) and returns `Except`: running out
-of fuel is reported as an error, never as a truncated list. The blocking
-predicates and the four saturation predicates that consult the tree
-(`satBox`, `satStit`, `satOught`, `satD2`) therefore return
+(which `addGenChild` does not prevent) it produces an infinite list. The
+lazy `any` in `isDirectlyBlocked`/`isIndirectlyBlocked` then returns `True`
+as soon as a matching ancestor appears in that list, and diverges only when
+no ancestor matches. The Lean `ancestors` walks with fuel
+`gtParent.size + 1` (a cycle-free path visits each of the `size` children
+at most once, so the `size + 1`-th step can only be a revisit) and returns
+`Except`; it materializes the whole list before any predicate inspects it,
+so on a cyclic map Lean always reports an error, including in the cases
+where Haskell's lazy search would have returned `True` early. Running out
+of fuel is never turned into a truncated list. Cycles cannot arise through
+`Gamen.DeonticStit.Prove`: every edge it adds (`Prove.hs`, `applyEdges`,
+line 166) parents a fresh label, so the walk is unaffected there. The
+blocking predicates and the four saturation predicates that consult the
+tree (`satBox`, `satStit`, `satOught`, `satD2`) therefore return
 `Except String Bool`, as does `isStable`. The ten predicates that do not
 look at the tree stay `Bool`, matching the Haskell.
 

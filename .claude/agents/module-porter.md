@@ -24,6 +24,9 @@ and keep its last line: that is the report's "before" count. Never use
 `git stash`: the stash is shared with the main checkout and every other
 worktree. To set work aside, make a WIP commit on your branch.
 
+Run every command in the foreground and wait for it to finish before you
+report. Leave nothing running in the background.
+
 ## What to port
 
 First read the module's row in `PORTING.md`. If it is partly done, or done

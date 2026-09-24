@@ -11,12 +11,15 @@ import Validate.Core
 
 Ports of `test/TableauSpec.hs` (system K cases and countermodel extraction),
 `test/FormulaSpec.hs`-style printing checks, `test/FramePropertiesSpec.hs`,
-the `Definition 1.11` / `Proposition 1.19` slice of `test/PaperCorrespondence.hs`
-that exercises `isValidOnFrame`, the `toNNF` properties from
-`test/Properties.hs`, run with Plausible instead of QuickCheck, and
-`Gamen.Fragment` (`test/RegressionIssue18.hs`'s "A2" describe block, plus
-the fragment-boundary assertions from `test/Properties.hs`'s "issue #25"
-`it` — see `fragmentCases` for what of that `it` is and is not ported).
+`test/KripkeSemanticsSpec.hs`, the "Boxes & Diamonds Ch. 1 (Zach 2019)"
+block of `test/PaperCorrespondence.hs` (split between `framePropertiesCases`,
+for the `isValidOnFrame`-exercising "Definition 1.11" slice, and
+`semanticsCases`, for the rest — see `semanticsCases` for the full list),
+the `toNNF` properties from `test/Properties.hs`, run with Plausible instead
+of QuickCheck, and `Gamen.Fragment` (`test/RegressionIssue18.hs`'s "A2"
+describe block, plus the fragment-boundary assertions from
+`test/Properties.hs`'s "issue #25" `it` — see `fragmentCases` for what of
+that `it` is and is not ported).
 -/
 open Gamen Plausible
 
@@ -354,7 +357,8 @@ def framePropertiesCases : List Case := [
     && validOn equiv2 (.implies (.diamond p) (.box (.diamond p))) == some true⟩,
   -- PaperCorrespondence: Definition 1.11 (p. 11), validity in a class of
   -- models — the isValidOnFrame-exercising `it`s only (the "entailment"
-  -- describe block in that file needs `entails`, not yet ported).
+  -- describe block in that file is ported in `semanticsCases` instead,
+  -- alongside the rest of "Boxes & Diamonds Ch. 1").
   ⟨"Def 1.11: □p is true at an isolated world (no successors, vacuously)",
     if let some fr := frame ["w"] [] then
     let m := mkModel fr []
@@ -379,6 +383,174 @@ def framePropertiesCases : List Case := [
   ⟨"Prop 1.19: K axiom valid on reflexive singleton frame {w1→w1}",
     validOn (frame ["w1"] [("w1","w1")])
       (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) == some true⟩
+]
+
+/-! ## Semantics (`Gamen.Semantics`)
+
+Port of `test/KripkeSemanticsSpec.hs` (all 9 `it`s), the rest of
+`test/PaperCorrespondence.hs`'s "Boxes & Diamonds Ch. 1 (Zach 2019)" block
+that was not already covered by `framePropertiesCases`'s "Definition 1.11"
+slice: Definition 1.6 (model as a triple), Definition 1.7 (all 8 truth
+clauses), Proposition 1.8 (□/◇ duality), Definition 1.9 (truth in a
+model), Proposition 1.19 (K is K-provable, via the already-ported
+`systemK` tableau), and Definition 1.23 + Example 1.24 (entailment); plus
+`test/RegressionIssue18.hs`'s "B5: isTautology abstracts modal
+subformulas" block (all 4 `it`s) and two `isValid` cases (not in any
+Haskell spec — `isValid` is exercised only indirectly there, via
+`isValidOnFrame`/`isValidDSFrame`/`isValidStitFrame`/`isValidXstitFrame`
+in other modules), one with an expected-`false` result so a planted
+`throw` cannot slip past under either polarity. Every B&D citation in
+this block was checked against `notes/bd-screen.pdf` (`Definition 1.6`
+p.7, `Definition 1.7`/`Proposition 1.8` p.9, `Definition 1.9` p.10,
+`Proposition 1.19` p.15, `Definition 1.23` p.16, `Example 1.24` p.17,
+`Definition 1.14`/`Proposition 1.16` p.12–14) — one fix: `Semantics.hs`
+cites "Definition 1.16" for `isTautology`, but the PDF's Definition 1.16
+is `Proposition 1.16` ("All tautological instances are valid"); the
+"tautological instance" it actually defines is *Definition 1.14*. Fixed
+in `Gamen/Semantics.lean`'s docstring. The three Proposition 1.8 cases
+compare each side against an explicit `some true`/`some false` rather
+than against each other, so a planted error on both sides (`none ==
+none`) cannot pass. -/
+
+def r : Formula := .atom "r"
+
+/-- Figure 1.1 (B&D p. 8): W={w1,w2,w3}, R={(w1,w2),(w1,w3)}, V(p)={w1,w2},
+V(q)={w2}. Shared by both `KripkeSemanticsSpec.hs`'s `frame11`/`model11`
+and `PaperCorrespondence.hs`'s `fig11frame`/`fig11model` — identical
+constructions in both Haskell files. -/
+private def fig11frame : Option Frame := frame ["w1", "w2", "w3"] [("w1", "w2"), ("w1", "w3")]
+private def fig11model : Option Model := fig11frame.map (mkModel · [("p", ["w1", "w2"]), ("q", ["w2"])])
+
+/-- Figure 1.2 (B&D p. 17): same frame as Figure 1.1, V(p)={w2,w3}.
+Counterexample to `p → ◇p ⊨ □p → p`. -/
+private def fig12model : Option Model := fig11frame.map (mkModel · [("p", ["w2", "w3"])])
+
+/-- `Except`-safe: `none` (from either a malformed fixture or a genuine
+`satisfies` error) matches neither `some true` nor `some false`. -/
+private def sat (m : Option Model) (w : String) (f : Formula) : Option Bool :=
+  m.bind fun m => (satisfies m w f).toOption
+
+/-- `true` only when `satisfies` actually throws (not when the fixture
+itself is malformed) — used for the gamen-hs#3 regression, where the
+Haskell test asserts `evaluate (satisfies m "c" f) \`shouldThrow\` anyErrorCall`. -/
+private def satErrs (m : Option Model) (w : String) (f : Formula) : Bool :=
+  match m with
+  | none => false
+  | some m => (satisfies m w f).toOption == none
+
+private def trueIn (m : Option Model) (f : Formula) : Option Bool :=
+  m.bind fun m => (isTrueIn m f).toOption
+
+private def ent (m : Option Model) (prem : List Formula) (concl : Formula) : Option Bool :=
+  m.bind fun m => (entails m prem concl).toOption
+
+/-- `Except`-safe `isValid` over a list of possibly-malformed fixtures:
+`none` if any model in `ms` is malformed or if `isValid` itself errors. -/
+private def valid (ms : List (Option Model)) (f : Formula) : Option Bool :=
+  (ms.mapM id).bind fun ms => (isValid ms f).toOption
+
+private def tautology (f : Formula) : Option Bool := (isTautology f).toOption
+
+def semanticsCases : List Case := [
+  -- KripkeSemanticsSpec.hs: "Kripke structures (Definition 1.6)"
+  ⟨"constructs frames",
+    (fig11frame.map (·.worlds.size) == some 3)
+    && (fig11frame.map (·.accessible "w1") == fig11frame.map (fun _ => Std.TreeSet.ofList ["w2", "w3"]))
+    && (fig11frame.map (·.accessible "w2") == fig11frame.map (fun _ => (∅ : Std.TreeSet World)))⟩,
+  -- KripkeSemanticsSpec.hs: "Semantics (Definition 1.7)"
+  ⟨"evaluates atoms",
+    sat fig11model "w1" p == some true && sat fig11model "w3" p == some false
+    && sat fig11model "w2" q == some true && sat fig11model "w1" q == some false⟩,
+  ⟨"evaluates negation",
+    sat fig11model "w3" (.not p) == some true && sat fig11model "w1" (.not p) == some false⟩,
+  ⟨"evaluates Box",
+    sat fig11model "w1" (.box p) == some false && sat fig11model "w2" (.box p) == some true⟩,
+  ⟨"evaluates Diamond",
+    sat fig11model "w1" (.diamond q) == some true && sat fig11model "w3" (.diamond q) == some false⟩,
+  ⟨"evaluates complex formulas",
+    sat fig11model "w1" (.implies (.box p) p) == some true
+    && sat fig11model "w1" (.and (.diamond p) (.diamond q)) == some true⟩,
+  ⟨"errors on world not in model (gamen-hs#3)",
+    let fr := frame ["a", "b"] [("a", "a"), ("a", "b"), ("b", "b")]
+    let m := fr.map (mkModel · [("p", ["a", "b"]), ("q", ["b"]), ("r", ["a"])])
+    let f := Formula.implies (.or (.atom "p") (.atom "q")) (.and (.not (.atom "q")) (.atom "r"))
+    sat m "a" f == some true && sat m "b" f == some false && satErrs m "c" f⟩,
+  -- KripkeSemanticsSpec.hs: "Truth in models (Definition 1.9)"
+  ⟨"checks truth in a model",
+    trueIn fig11model p == some false && trueIn fig11model (.implies .bot p) == some true⟩,
+  -- KripkeSemanticsSpec.hs: "Entailment (Definition 1.23)"
+  ⟨"checks entailment",
+    ent fig11model [p] (.or p q) == some true && ent fig11model [p] q == some false⟩,
+  -- PaperCorrespondence.hs: "Definition 1.6 (p. 7): model as triple ⟨W,R,V⟩"
+  ⟨"Figure 1.1 (p. 8): |W| = 3", fig11frame.map (·.worlds.size) == some 3⟩,
+  ⟨"Figure 1.1 (p. 8): R(w1) = {w2,w3} — w1 sees w2 and w3",
+    fig11frame.map (·.accessible "w1") == fig11frame.map (fun _ => Std.TreeSet.ofList ["w2", "w3"])⟩,
+  ⟨"Figure 1.1 (p. 8): R(w2) = ∅ — w2 is a dead end",
+    fig11frame.map (·.accessible "w2") == fig11frame.map (fun _ => (∅ : Std.TreeSet World))⟩,
+  ⟨"Figure 1.1 (p. 8): R(w3) = ∅ — w3 is a dead end",
+    fig11frame.map (·.accessible "w3") == fig11frame.map (fun _ => (∅ : Std.TreeSet World))⟩,
+  -- PaperCorrespondence.hs: "Definition 1.7 (p. 9): truth of a formula at a world"
+  ⟨"clause 2 (atom): p = True at w1 (w1 ∈ V(p))", sat fig11model "w1" p == some true⟩,
+  ⟨"clause 2 (atom): p = True at w2 (w2 ∈ V(p))", sat fig11model "w2" p == some true⟩,
+  ⟨"clause 2 (atom): p = False at w3 (w3 ∉ V(p))", sat fig11model "w3" p == some false⟩,
+  ⟨"clause 1 (⊥): ⊥ = False at w1 (⊥ is false everywhere)", sat fig11model "w1" .bot == some false⟩,
+  ⟨"clause 1 (⊥): ⊥ = False at w3 (⊥ is false everywhere)", sat fig11model "w3" .bot == some false⟩,
+  ⟨"clause 3 (¬): ¬p = True at w3 (w3 ∉ V(p))", sat fig11model "w3" (.not p) == some true⟩,
+  ⟨"clause 3 (¬): ¬p = False at w1 (w1 ∈ V(p))", sat fig11model "w1" (.not p) == some false⟩,
+  ⟨"clause 4 (∧): p∧q = True at w2 (w2 ∈ V(p) and w2 ∈ V(q))", sat fig11model "w2" (.and p q) == some true⟩,
+  ⟨"clause 4 (∧): p∧q = False at w1 (w1 ∈ V(p) but w1 ∉ V(q))", sat fig11model "w1" (.and p q) == some false⟩,
+  ⟨"clause 5 (∨): p∨q = False at w3 (w3 ∉ V(p) and w3 ∉ V(q))", sat fig11model "w3" (.or p q) == some false⟩,
+  ⟨"clause 5 (∨): p∨q = True at w1 (w1 ∈ V(p))", sat fig11model "w1" (.or p q) == some true⟩,
+  ⟨"clause 6 (→): p→q = False at w1 (p true, q false)", sat fig11model "w1" (.implies p q) == some false⟩,
+  ⟨"clause 6 (→): p→q = True at w3 (p false, so implication holds)", sat fig11model "w3" (.implies p q) == some true⟩,
+  ⟨"clause 7 (□): □p = False at w1 (w3 accessible but w3 ∉ V(p))", sat fig11model "w1" (.box p) == some false⟩,
+  ⟨"clause 7 (□): □p = True at w2 (dead end — vacuously true, B&D p. 9)", sat fig11model "w2" (.box p) == some true⟩,
+  ⟨"clause 8 (◇): ◇q = True at w1 (w2 accessible and w2 ∈ V(q))", sat fig11model "w1" (.diamond q) == some true⟩,
+  ⟨"clause 8 (◇): ◇q = False at w3 (dead end, no successors)", sat fig11model "w3" (.diamond q) == some false⟩,
+  -- PaperCorrespondence.hs: "Proposition 1.8 (p. 9): □/◇ duality  □A ↔ ¬◇¬A"
+  ⟨"Prop 1.8: □p = False and ¬◇¬p = False at w1 (w3 accessible lacks p)",
+    sat fig11model "w1" (.box p) == some false
+    && sat fig11model "w1" (.not (.diamond (.not p))) == some false⟩,
+  ⟨"Prop 1.8: □p = True and ¬◇¬p = True at w2 (dead end — both vacuously true)",
+    sat fig11model "w2" (.box p) == some true
+    && sat fig11model "w2" (.not (.diamond (.not p))) == some true⟩,
+  ⟨"Prop 1.8: □p = True and ¬◇¬p = True at w3 (dead end — both vacuously true)",
+    sat fig11model "w3" (.box p) == some true
+    && sat fig11model "w3" (.not (.diamond (.not p))) == some true⟩,
+  -- PaperCorrespondence.hs: "Definition 1.9 (p. 10): truth in a model  M ⊩ A"
+  ⟨"⊥→p is true in Figure 1.1 (ex falso, true at all worlds)",
+    trueIn fig11model (.implies .bot p) == some true⟩,
+  ⟨"p is NOT true in Figure 1.1 (false at w3 ∉ V(p))", trueIn fig11model p == some false⟩,
+  -- PaperCorrespondence.hs: "Proposition 1.19 (p. 15): K axiom is K-provable"
+  ⟨"¬K is K-inconsistent (negation of K has a closed tableau)",
+    consistent [.not (.implies (.box (.implies p q)) (.implies (.box p) (.box q)))] == .definitely false⟩,
+  -- PaperCorrespondence.hs: "Definition 1.23 (p. 16) + Example 1.24 (p. 17): entailment"
+  ⟨"Example 1.24: p→◇p = True at w1 in Figure 1.2 (p false, so implication holds)",
+    sat fig12model "w1" (.implies p (.diamond p)) == some true⟩,
+  ⟨"Example 1.24: □p→p = False at w1 in Figure 1.2 (□p true but p false)",
+    sat fig12model "w1" (.implies (.box p) p) == some false⟩,
+  ⟨"Example 1.24: {p→◇p} ⊭ □p→p — w1 witnesses the failure of entailment",
+    ent fig12model [.implies p (.diamond p)] (.implies (.box p) p) == some false⟩,
+  -- RegressionIssue18.hs: "B5: isTautology abstracts modal subformulas" (all 4 `it`s)
+  ⟨"□⊥ is not a tautology", tautology (.box .bot) == some false⟩,
+  ⟨"¬◇p is not a tautology", tautology (.not (.diamond p)) == some false⟩,
+  ⟨"p ∨ ¬p is a tautology", tautology (.or p (.not p)) == some true⟩,
+  ⟨"□p ∨ ¬□p is a tautology (same modal subformula abstracts alike)",
+    tautology (.or (.box p) (.not (.box p))) == some true⟩,
+  -- isValid (B&D Definition 1.11), not covered by any Haskell spec. Both
+  -- cases use a genuine two-model class where the models disagree on the
+  -- test formula, so `isValid` really exercises "true in *every* model
+  -- in the class" (Definition 1.11) rather than degenerating to a single
+  -- model's `isTrueIn` — a single-model class would not catch, e.g.,
+  -- `allM` mistakenly swapped for `anyM`.
+  ⟨"isValid: schema K holds in the class {Figure 1.1, Figure 1.2} \
+    (frame-valid by Prop 1.19, so true regardless of valuation)",
+    valid [fig11model, fig12model]
+      (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) == some true⟩,
+  ⟨"isValid: ¬q fails in the class {Figure 1.1, Figure 1.2} — fig11model's \
+    w2 (q true) witnesses invalidity even though fig12model (q unvalued, \
+    so false everywhere) satisfies ¬q vacuously",
+    valid [fig11model, fig12model] (.not q) == some false⟩
 ]
 
 /-! ## Fragment gating (`Gamen.Fragment`) -/
@@ -534,7 +706,8 @@ where
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
-  for c in unitCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases ++ fragmentCases do
+  for c in unitCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases ++ semanticsCases
+      ++ fragmentCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -543,6 +716,6 @@ def main : IO UInt32 := do
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
   let total := unitCases.length + widgetCases.length + answerKeyCases.length
-    + framePropertiesCases.length + fragmentCases.length + properties.length
+    + framePropertiesCases.length + semanticsCases.length + fragmentCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

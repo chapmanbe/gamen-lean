@@ -72,4 +72,74 @@ termination_by f
 def isTrueIn (m : Model) (f : Formula) : Except String Bool :=
   m.frame.worlds.toList.allM (satisfies m · f)
 
+/-- A formula is valid in a class of models if true in every model
+(B&D Definition 1.11). -/
+def isValid (models : List Model) (f : Formula) : Except String Bool :=
+  models.allM (isTrueIn · f)
+
+open Formula in
+/-- Replace every maximal non-propositional subformula with a fresh
+atom, keyed by the subformula's printed form so that identical
+subformulas map to the same atom (e.g. both occurrences of `□p` in
+`□p ∨ ¬□p` become the same variable, keeping the disjunction a
+tautology). The result is a purely propositional formula.
+
+Known gamen-hs bug, chapmanbe/gamen-hs#31; kept identical here until it
+is fixed upstream (the Lean's contract is to match gamen-hs, not to fix
+it silently): keying by the *printed* form lets unrelated operators
+collide when their `Show`/`toString` renderings coincide. `Stit agent
+f`'s `toString` is `"[" ++ agent ++ "]" ++ f.toString`, and `Announce b
+c`'s is `"[" ++ b.toString ++ "]" ++ c.toString` — the same `[…]…`
+shape. So `Stit "a" p` and `Announce (Atom "a") p` both print as
+`"[a]p"` and abstract to the same atom, even though STIT and public
+announcement have unrelated semantics:
+`isTautology (Or (Stit "a" p) (Not (Announce (Atom "a") p)))` reduces to
+`X ∨ ¬X` under abstraction and reports `true`. Not pinned by a test:
+that would pin the wrong answer. -/
+def abstractModal : Formula → Formula
+  | .bot => .bot
+  | .atomF a => .atomF a
+  | .not a => .not (abstractModal a)
+  | .and l r => .and (abstractModal l) (abstractModal r)
+  | .or l r => .or (abstractModal l) (abstractModal r)
+  | .implies l r => .implies (abstractModal l) (abstractModal r)
+  | .iff l r => .iff (abstractModal l) (abstractModal r)
+  -- Any non-propositional constructor is opaque at the propositional
+  -- level: abstract the whole subformula to one variable.
+  | f => .atomF ⟨s!"__modal:{f.toString}"⟩
+
+/-- Is the formula a propositional tautology — a substitution instance
+of a tautology of classical propositional logic (B&D Definition 1.14;
+Proposition 1.16 is that every tautological instance is valid)?
+
+Each *maximal* non-propositional subformula (any `box`, `diamond`,
+temporal, epistemic, deontic, STIT, or ATL node) is first abstracted to
+a fresh propositional atom via `abstractModal`, then all `2^n` truth
+assignments to the resulting atoms are enumerated. Abstraction is
+essential: evaluating a modal subformula at a dead-end world (the
+previous gamen-hs approach) made `□⊥` vacuously true and reported it —
+and `¬◇p` — as tautologies (adversarial review B5). For modal-validity
+questions, build explicit Kripke models and use `isValid`. -/
+def isTautology (phi0 : Formula) : Except String Bool := do
+  let phi := abstractModal phi0
+  let atomList := phi.atoms.toList
+  let n := atomList.length
+  let cases := 2 ^ n
+  let indexed := atomList.zip (List.range n)
+  (List.range cases).allM fun k => do
+    let trueAtoms := indexed.filterMap fun (a, i) =>
+      if k.testBit i then some (a.name, ["w"]) else none
+    let fr ← mkFrame ["w"] []
+    isTrueIn (mkModel fr trueAtoms) phi
+
+/-- Γ entails A in model M if: for every world w, if all premises
+hold at w then the conclusion holds at w (B&D Definition 1.23). -/
+def entails (m : Model) (premises : List Formula) (conclusion : Formula) :
+    Except String Bool :=
+  m.frame.worlds.toList.allM fun w => do
+    if (← premises.allM (satisfies m w ·)) then
+      satisfies m w conclusion
+    else
+      return true
+
 end Gamen

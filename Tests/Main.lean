@@ -531,12 +531,28 @@ def semanticsCases : List Case := [
     sat fig12model "w1" (.implies (.box p) p) == some false⟩,
   ⟨"Example 1.24: {p→◇p} ⊭ □p→p — w1 witnesses the failure of entailment",
     ent fig12model [.implies p (.diamond p)] (.implies (.box p) p) == some false⟩,
-  -- RegressionIssue18.hs: "B5: isTautology abstracts modal subformulas" (all 4 `it`s)
+  -- RegressionIssue18.hs: "B5: isTautology abstracts modal subformulas" (all 8 `it`s,
+  -- including the 4 added with the gamen-hs#31 fix)
   ⟨"□⊥ is not a tautology", tautology (.box .bot) == some false⟩,
   ⟨"¬◇p is not a tautology", tautology (.not (.diamond p)) == some false⟩,
   ⟨"p ∨ ¬p is a tautology", tautology (.or p (.not p)) == some true⟩,
   ⟨"□p ∨ ¬□p is a tautology (same modal subformula abstracts alike)",
     tautology (.or (.box p) (.not (.box p))) == some true⟩,
+  -- gamen-hs#31: distinct subformulas that print alike must not share a variable.
+  ⟨"[a]p ∨ ¬[a!]p is not a tautology (Stit vs Announce print alike)",
+    tautology (.or (.stit "a" p) (.not (.announce (.atomF ⟨"a"⟩) p))) == some false⟩,
+  ⟨"[Agt]p ∨ ¬[Agt!]p is not a tautology (GroupStit vs Announce print alike)",
+    tautology (.or (.groupStit p) (.not (.announce (.atomF ⟨"Agt"⟩) p))) == some false⟩,
+  ⟨"[a]p ∨ ¬[a]p is a tautology (control)",
+    tautology (.or (.stit "a" p) (.not (.stit "a" p))) == some true⟩,
+  ⟨"a generated atom cannot collide with a user atom of the same name",
+    tautology (.or (.box p) (.not (.atomF ⟨s!"__modal:{(Formula.box p).toString}"⟩))) == some false⟩,
+  -- Not in gamen-hs: its collision test above uses an old-scheme name, which
+  -- the fixed naming (`__modal:0`, …) can never produce, so it passes even
+  -- without `modalPrefix`. A user atom named like a new-scheme atom does
+  -- exercise the prefix. gamen-hs answers False here too (checked in GHCi).
+  ⟨"a user atom named like a generated one (__modal:0) is not merged with it",
+    tautology (.or (.box p) (.not (.atomF ⟨"__modal:0"⟩))) == some false⟩,
   -- isValid (B&D Definition 1.11), not covered by any Haskell spec. Both
   -- cases use a genuine two-model class where the models disagree on the
   -- test formula, so `isValid` really exercises "true in *every* model

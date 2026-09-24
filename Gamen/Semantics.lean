@@ -78,35 +78,64 @@ def isValid (models : List Model) (f : Formula) : Except String Bool :=
   models.allM (isTrueIn · f)
 
 open Formula in
-/-- Replace every maximal non-propositional subformula with a fresh
-atom, keyed by the subformula's printed form so that identical
-subformulas map to the same atom (e.g. both occurrences of `□p` in
-`□p ∨ ¬□p` become the same variable, keeping the disjunction a
-tautology). The result is a purely propositional formula.
+/-- The maximal non-propositional subformulas of a formula: the `opaque`
+helper inside gamen-hs's `abstractModal`. -/
+def opaqueSubformulas : Formula → Std.TreeSet Formula
+  | .bot => ∅
+  | .atomF _ => ∅
+  | .not a => opaqueSubformulas a
+  | .and l r | .or l r | .implies l r | .iff l r =>
+    (opaqueSubformulas l).insertMany (opaqueSubformulas r).toList
+  | f => (∅ : Std.TreeSet Formula).insert f
 
-Known gamen-hs bug, chapmanbe/gamen-hs#31; kept identical here until it
-is fixed upstream (the Lean's contract is to match gamen-hs, not to fix
-it silently): keying by the *printed* form lets unrelated operators
-collide when their `Show`/`toString` renderings coincide. `Stit agent
-f`'s `toString` is `"[" ++ agent ++ "]" ++ f.toString`, and `Announce b
-c`'s is `"[" ++ b.toString ++ "]" ++ c.toString` — the same `[…]…`
-shape. So `Stit "a" p` and `Announce (Atom "a") p` both print as
-`"[a]p"` and abstract to the same atom, even though STIT and public
-announcement have unrelated semantics:
-`isTautology (Or (Stit "a" p) (Not (Announce (Atom "a") p)))` reduces to
-`X ∨ ¬X` under abstraction and reports `true`. Not pinned by a test:
-that would pin the wrong answer. -/
-def abstractModal : Formula → Formula
-  | .bot => .bot
-  | .atomF a => .atomF a
-  | .not a => .not (abstractModal a)
-  | .and l r => .and (abstractModal l) (abstractModal r)
-  | .or l r => .or (abstractModal l) (abstractModal r)
-  | .implies l r => .implies (abstractModal l) (abstractModal r)
-  | .iff l r => .iff (abstractModal l) (abstractModal r)
-  -- Any non-propositional constructor is opaque at the propositional
-  -- level: abstract the whole subformula to one variable.
-  | f => .atomF ⟨s!"__modal:{f.toString}"⟩
+/-- The prefix for `abstractModal`'s generated atoms: the shortest
+`"__modal:"`, `"___modal:"`, … that no atom name in `names` starts with.
+gamen-hs gets it with `until`, adding one `_` at a time; here it is
+computed directly. A name blocks exactly one candidate (its leading
+underscores, when at least two are followed by `"modal:"`), so the
+answer is the smallest count ≥ 2 not blocked. -/
+def modalPrefix (names : List String) : String :=
+  let blocked := names.filterMap fun n =>
+    let k := (n.toList.takeWhile (· == '_')).length
+    if k ≥ 2 && (String.ofList (n.toList.drop k)).startsWith "modal:" then some k else none
+  let sorted := (blocked.mergeSort (· ≤ ·)).eraseDups
+  let k := sorted.foldl (fun k b => if b == k then k + 1 else k) 2
+  String.ofList (List.replicate k '_') ++ "modal:"
+
+open Formula in
+/-- Replace every maximal non-propositional subformula with a fresh atom.
+Identical subformulas map to the same atom (both occurrences of `□p` in
+`□p ∨ ¬□p` become one variable, keeping it a tautology); distinct
+subformulas get distinct atoms. Port of gamen-hs's `abstractModal` after
+the fix for chapmanbe/gamen-hs#31: the key is the `Formula` itself, not
+its printed form, which is not injective (`Stit "a" p` and
+`Announce (Atom "a") p` both print as `[a]p`). Subformulas are numbered in
+`Ord` order; `Formula`'s constructors are declared in the same order as the
+Haskell's, so the derived orders agree and the generated names match
+gamen-hs's. The prefix comes from `modalPrefix`, so a generated atom cannot
+collide with a user-written one.
+
+Returns `Except` because the table lookup cannot fail for a subformula of
+the input, but Lean does not know that; an error here is a bug, not a
+`false`. -/
+def abstractModal (f0 : Formula) : Except String Formula :=
+  let table : Std.TreeMap Formula Nat :=
+    (opaqueSubformulas f0).toList.zipIdx.foldl (fun m (f, i) => m.insert f i) ∅
+  go table (modalPrefix ((atoms f0).toList.map (·.name))) f0
+where
+  go (table : Std.TreeMap Formula Nat) (pre : String) : Formula → Except String Formula
+    | .bot => pure .bot
+    | .atomF a => pure (.atomF a)
+    | .not a => return .not (← go table pre a)
+    | .and l r => return .and (← go table pre l) (← go table pre r)
+    | .or l r => return .or (← go table pre l) (← go table pre r)
+    | .implies l r => return .implies (← go table pre l) (← go table pre r)
+    | .iff l r => return .iff (← go table pre l) (← go table pre r)
+    -- Any non-propositional constructor is opaque at the propositional
+    -- level: abstract the whole subformula to one variable.
+    | f => match table.get? f with
+      | some i => pure (.atomF ⟨pre ++ toString i⟩)
+      | none => throw s!"abstractModal: {f} missing from its own subformula table"
 
 /-- Is the formula a propositional tautology — a substitution instance
 of a tautology of classical propositional logic (B&D Definition 1.14;
@@ -121,7 +150,7 @@ previous gamen-hs approach) made `□⊥` vacuously true and reported it —
 and `¬◇p` — as tautologies (adversarial review B5). For modal-validity
 questions, build explicit Kripke models and use `isValid`. -/
 def isTautology (phi0 : Formula) : Except String Bool := do
-  let phi := abstractModal phi0
+  let phi ← abstractModal phi0
   let atomList := phi.atoms.toList
   let n := atomList.length
   let cases := 2 ^ n

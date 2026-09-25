@@ -1972,8 +1972,8 @@ skipped; port both with `.CounterModel`. `dsSatisfies` returns `Except`,
 so its results are compared with `okIs` or with `==` against another
 `dsSatisfies` call (both sides `Except`), never unwrapped to `Bool`. -/
 
-/-- The cycling example from Lyon & van Berkel (2024), Figure 1/2 (pp.
-844–845): Jade (j) and Kai (k) cycling on a two-lane road. -/
+/-- The cycling example from Lyon & van Berkel (2024), Figure 1 (p. 846):
+Jade (j) and Kai (k) cycling on a two-lane road. -/
 def dsFrame' : DSFrame :=
   mkDSFrame ["w1", "w2", "w3", "w4"]
     -- Jade's choice relation (equivalence classes: {w1,w3}, {w2,w4})

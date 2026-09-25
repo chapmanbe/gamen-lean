@@ -2051,8 +2051,14 @@ def deonticStitCases : List Case :=
       , .not (.implies (.box (.or lj rj)) (.stit "j" lj))
       , .not (.choiceDiamond "k" coll) ]
     let worlds_ := ["w1", "w2", "w3", "w4"]
+    -- Comparing the two `Except` results directly would let a planted
+    -- `dsSatisfies` that always throws pass vacuously (`error == error`);
+    -- requiring the left side to be `.ok` rules that out.
     phis.all fun phi =>
-      worlds_.all fun w => dsSatisfies dsModel' w phi == dsSatisfies dsModel' w phi.toNNF⟩,
+      worlds_.all fun w =>
+        match dsSatisfies dsModel' w phi with
+        | .ok v => dsSatisfies dsModel' w phi.toNNF == .ok v
+        | .error _ => false⟩,
   -- Normative reasoning applications (Section 5)
   ⟨"duty checking: identifies Jade's obligations",
     okIs (dutyCheck dsModel' "w1" "j" [lj, rj, lk, rk]) [lj]⟩,

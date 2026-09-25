@@ -7,6 +7,7 @@ import Gamen.Tableau
 import Gamen.Doxastic
 import Gamen.RankingTheory
 import Gamen.Plausibility
+import Gamen.DeonticStit
 import Gamen.DeonticStit.Sequent
 import Gamen.DeonticStit.Rules
 import Gamen.DeonticStit.Saturation

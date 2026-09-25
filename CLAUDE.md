@@ -10,6 +10,8 @@ Plan and per-module status: `PORTING.md`. Why Lean, and the evidence:
 
 - `lake build`: library, widgets, notebooks, `gamen-validate`
 - `lake test`: unit, widget, answer-key, and property tests
+- `lake exe slowtests`: slow property cross-checks (~10 min); run after
+  touching Tableau, Semantics, RankingTheory, or the DeonticStit prover
 - `python3 tools/compare/compare.py`: side-by-side against gamen-hs's
   `gamen-validate` (build both first)
 - Toolchain pinned in `lean-toolchain` (4.34.0); Plausible and ProofWidgets

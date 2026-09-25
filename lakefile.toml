@@ -53,3 +53,10 @@ root = "Validate"
 [[lean_exe]]
 name = "tests"
 root = "Tests.Main"
+
+# `lake exe slowtests`: the seven `==>`-shaped properties from
+# `test/Properties.hs` at Haskell's full sizes/counts/discard-caps
+# (~460s in gamen-hs; kept out of `lake test` for the same reason).
+[[lean_exe]]
+name = "slowtests"
+root = "Tests.SlowMain"

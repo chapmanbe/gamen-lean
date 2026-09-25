@@ -3,19 +3,24 @@
 
 ## Objective
 Keep porting gamen-hs modules to Lean in `PORTING.md` order, one module per
-`/port-module` run, merged only on the user's word. **Waves 1 and 2 are
-done; wave 3 is down to the base `DeonticStit` module and `CounterModel`** . A module is done when its tests are ported, `lake test`
+`/port-module` run, merged only on the user's word. **Waves 1–3 are
+done. Next: property tests (Properties.hs generators), then wave 4** . A module is done when its tests are ported, `lake test`
 is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
 
-## Where things stand (updated 2026-09-24, after wiring G3DS)
-- **Waves 1–2 done.** Wave 3: `DeonticStit.Sequent`, `.Rules`,
-  `.Saturation`, `.Prove` done; Prove is wired into `gamen-validate`,
-  which is now complete.
-- `lake test`: 419/419. compare.py: 4,470 requests, 4,456 identical, 14
+## Where things stand (updated 2026-09-25, after wave 3)
+- **Waves 1–3 done.** All of `DeonticStit` (base, Sequent, Rules,
+  Saturation, Prove, CounterModel) is ported; Prove is wired into
+  `gamen-validate`, which is complete.
+- `lake test`: 455/455. compare.py: 4,470 requests, 4,456 identical, 14
   equivalent, **0 scope_gap, 0 DISAGREE**.
-- Upstream issues filed this session: gamen-hs#35 (Spohn page), #36
-  (`applyD2` "Note 4"), #37 (Prove page citations + untested `applyOughtB`
-  ideal check). Lean already has the fixes and a "Not in gamen-hs" test.
+- Shared fixpoint helper `iterateToFixpoint` now exists (`Kripke.lean`);
+  `DeonticStit.euclideanClose` and `Tableau.transitiveClose` use it.
+  Remaining unbounded loops to route through it as their modules land:
+  `lfp`, `gfp`, `largestBisimulation`, `Laca.trajectory`.
+- `Semantics.satisfies` and `DeonticStit.dsSatisfies` now short-circuit
+  `And`/`Or`/`Implies` like Haskell's lazy `&&`/`||` (found in review; any
+  future `satisfies`-style evaluator must do the same).
+- Upstream issues filed: gamen-hs#35, #36, #37.
 - Push only when the user asks.
 
 ## Decisions (do not relitigate)
@@ -74,26 +79,21 @@ is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
 - `Data.Map.Strict` forces values at construction: check the import before
   calling any Haskell evaluation "lazy".
 
-## Wave 3: specifics for the next run
-- Next: the base `DeonticStit` module (277 lines, `sonnet`, needs only
-  Formula and Kripke; the `PORTING.md` order omitted it), then
-  `DeonticStit.CounterModel` (`opus`). CounterModel unblocks
-  PaperCorrespondence's L&vB "Definition 20" block (3 cases), skipped in
-  the Prove port.
-- G3DS wiring record: plant "always consistent" → 8 DISAGREE (section D);
-  plant "D2 rule dropped" → 15 (sections C, D). Only 26 corpus requests
-  reach G3DS, so a dedicated compare.py section (at the END of
-  `build_corpus`) would strengthen coverage; not done yet.
-- Lean-only reply `"prover error: …"` (from `ancestors` fuel) is
-  unreachable via Prove; documented in `Validate/Core.lean`.
-- Lessons from wave 3 reviews: porters invent or mis-page paper citations
-  (now forbidden in `module-porter.md`); a porter's own plant found the
-  `applyOughtB` gap both reviewers missed, so keep asking porters for
-  per-rule plants.
-- Coordinator gotcha: never revert a plant with `git checkout <file>` when
-  that file also holds uncommitted work; copy a clean file aside and
-  restore it. The RTK `diff` wrapper once misreported two differing files
-  as identical; use `/usr/bin/diff`.
+## Wave 3: record
+- Porter ratings held: Sonnet modules needed one review round; the two
+  `opus` modules Rules and CounterModel needed none, Prove one; `fable`
+  Saturation one (doc-only). Consider `sonnet` for similar `opus` modules
+  if a third passes clean.
+- G3DS wiring plants: "always consistent" → 8 DISAGREE; "D2 dropped" → 15.
+  Only 26 corpus requests reach G3DS (optional compare.py section, task 3).
+- Lean-only reply `"prover error: …"` is unreachable via Prove.
+- Review lessons: porters invent or mis-page paper citations (now forbidden
+  in `module-porter.md`); a porter's own plant found the `applyOughtB` gap
+  both reviewers missed; `(← a) && (← b)` in `do` is strict (both sides run).
+- Coordinator gotchas: never revert a plant with `git checkout <file>` when
+  the file holds uncommitted work; copy a clean file aside and restore it.
+  The RTK `diff` wrapper once misreported differing files as identical; use
+  `/usr/bin/diff`.
 
 ## Process gotchas (already in the agent files; watch the coordinator side too)
 - Worktrees branch from `origin/main`. The porter fast-forwards to local
@@ -137,28 +137,22 @@ is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
       (saturation loop fuel; the explicit lazy memo, `Epistemic.hs` ~148–158).
 
 ## Task list (ordered)
-1. ~~`/port-module DeonticStit`~~ (base module, merged `83eb0e5`; also fixed
-   `Semantics.satisfies` short-circuiting).
-2. `/port-module DeonticStit.CounterModel`; port the L&vB Definition 20
-   block with it.
-3. Port `test/Properties.hs`'s model generators (`ArbModel`,
-   `ArbKappaModel`, `ArbEpistemicModel` as each module lands) and its
-   tableau-vs-Kripke-semantics properties (K, KT, K4) to Plausible. This
-   also unblocks the two deferred RankingTheory properties.
-4. Lean-only extension, prompted by Gamen.jl#20: cross-check every
-   tableau system (K, KT, KD, KTB, K4, S4, S5) against exhaustive frame
-   enumeration up to 4 worlds, and check that every extracted countermodel
-   really falsifies the formula. Print the seed on failure. Do the same for
-   G3DS once CounterModel lands. gamen-hs has only the K/KT/K4 soundness
-   properties, so offer to file the stronger check there too (ask first).
-5. Optional: a compare.py G3DS section to raise coverage above 26 requests.
-6. Deferred, prompted by Gamen.jl#19: a runtime string → `Formula` parser.
-   Not part of the port (gamen-hs has none; the wire format is JSON), and
-   `ml[…]` already covers notebooks. Do it when a widget or the web editor
-   needs typed formula input, with a round-trip property against the
-   printer using the random formulas from task 3. Meanwhile extend `ml[…]`
-   with temporal/epistemic operators as those modules land.
-7. Wave 4: Temporal, Epistemic (`fable`, explicit lazy memo), Stit,
+1. Port `test/Properties.hs`'s model generators (`ArbModel`, and
+   `ArbKappaModel` now that RankingTheory is ported; `ArbEpistemicModel`
+   waits for Epistemic) and its tableau-vs-Kripke-semantics properties
+   (K, KT, K4) to Plausible. Unblocks the two deferred RankingTheory
+   properties. Not a `/port-module` module: run a porter in a worktree,
+   Opus review.
+2. Lean-only, prompted by Gamen.jl#20: cross-check every tableau system
+   (K, KT, KD, KTB, K4, S4, S5) against exhaustive frame enumeration up to
+   4 worlds, and check every extracted countermodel falsifies the formula;
+   same for G3DS via CounterModel. Print the seed on failure. This also
+   covers K4/S4/S5 countermodel extraction, which no test reaches today.
+   Offer to file the stronger check on gamen-hs (ask first).
+3. Optional: a compare.py G3DS section (coverage is 26 requests).
+4. Deferred (Gamen.jl#19): runtime string → `Formula` parser, when a widget
+   or the web editor needs it; extend `ml[…]` as operators land.
+5. Wave 4: Temporal, Epistemic (`fable`, explicit lazy memo), Stit,
    Xstit, Cgs, Laca, Coalition, Atl.*, Atel.
 
 ## Suggested implementer model

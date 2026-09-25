@@ -2213,13 +2213,75 @@ def counterModelCases : List Case :=
       .ok [(l 0, l 1), (l 0, l 2), (l 1, l 1), (l 1, l 2), (l 2, l 1), (l 2, l 2)]⟩
   ]
 
+/-! ## Tableau countermodel closure
+
+* `test/RegressionIssue18.hs`, "B6: counter-models are verified, not
+  trusted": its three tableau `it`s (the two G3DS `it`s are in
+  `counterModelCases`).
+* Not in gamen-hs: `Tableau.transitiveClose` now goes through the shared
+  `iterateToFixpoint`. One case checks it against a reference closure on all
+  512 relations over three worlds; another checks that running out of fuel
+  is an error, where the old loop returned a partly closed relation. -/
+
+/-- B6's `openBranchesOf`, keeping only the first open branch. -/
+def firstOpenBranch (sys : System) (steps : Nat) (as : List PrefixedFormula) : Option Branch :=
+  match buildTableau sys steps as with
+  | .stillOpen (b :: _) => some b
+  | _ => none
+
+/-- Reference transitive closure (Warshall) over a fixed world list. -/
+def warshall (ws : List World) (r : List (World × World)) : List (World × World) := Id.run do
+  let mut reach := r
+  for k in ws do
+    for i in ws do
+      for j in ws do
+        if !reach.contains (i, j) && reach.contains (i, k) && reach.contains (k, j) then
+          reach := reach ++ [(i, j)]
+  return reach
+
+/-- Every relation over `{a, b, c}`, as a list of pairs (512 of them). -/
+def allRelations3 : List (List (World × World)) :=
+  let ws := ["a", "b", "c"]
+  let pairs := ws.flatMap fun x => ws.map fun y => (x, y)
+  (List.range (2 ^ pairs.length)).map fun mask =>
+    (pairs.zipIdx.filter fun (_, i) => mask.testBit i).map (·.1)
+
+def closureCases : List Case :=
+  let ws := ["a", "b", "c"]
+  let rel (ps : List (World × World)) : Rel := Std.TreeSet.ofList ps lexOrd.compare
+  [ ⟨"tableau: open branch yields a Right model that falsifies the goal",
+      match firstOpenBranch systemK 1000 [pfFalse .root (.implies (.box p) p)] with
+      | some b => (extractCountermodel systemK b >>= (isTrueIn · (.implies (.box p) p))) == .ok false
+      | none => false⟩,
+    ⟨"tableau: a closed branch has no counter-model (Left)",
+      match extractCountermodel systemK (Branch.ofList [pfTrue .root p, pfFalse .root p]) with
+      | .error _ => true
+      | .ok _ => false⟩,
+    ⟨"tableau: per-system closure makes the KT model reflexive",
+      match firstOpenBranch systemKT 1000 [pfFalse .root (.implies p (.box p))] with
+      | some b =>
+        match extractCountermodel systemKT b with
+        | .ok cm => cm.frame.worlds.toList.all fun w => (cm.frame.accessible w).contains w
+        | .error _ => false
+      | none => false⟩,
+    ⟨"Not in gamen-hs: transitiveClose matches Warshall on all 512 relations over 3 worlds",
+      allRelations3.all fun ps =>
+        (transitiveClose ws (rel ps)).map (·.toList) == .ok (rel (warshall ws ps)).toList⟩,
+    ⟨"Not in gamen-hs: transitiveClose errors when fuel runs out (no partial relation)",
+      -- `ws = []` gives fuel 1: one composition adds (a, c), so no fixpoint
+      -- is confirmed within the bound.
+      match transitiveClose [] (rel [("a", "b"), ("b", "c")]) with
+      | .error _ => true
+      | .ok _ => false⟩
+  ]
+
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
       ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases ++ rankingTheoryCases
       ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
-      ++ deonticStitCases ++ counterModelCases do
+      ++ deonticStitCases ++ counterModelCases ++ closureCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -2231,6 +2293,6 @@ def main : IO UInt32 := do
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
     + fragmentCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
-    + deonticStitCases.length + counterModelCases.length + properties.length
+    + deonticStitCases.length + counterModelCases.length + closureCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

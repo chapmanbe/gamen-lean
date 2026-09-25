@@ -2143,8 +2143,11 @@ private def genSublist (xs : List α) : Gen (List α) :=
 /-- 1–4 worlds, a random edge subset of `ws ×ˢ ws`, and a random valuation
 over {p,q,r}. Mirrors `genKripkeModel`. `mkFrame`'s endpoint check can
 never fire here — every edge is drawn from `ws ×ˢ ws` — so a failure
-would be a real generator bug; it surfaces as a `Gen` failure, never a
-silently-substituted default model. -/
+would be a real generator bug: `throw`s a `GenError`, never substitutes a
+default model. A thrown `GenError` is *not* automatically a failing test
+by itself, though — every caller (`run`, `checkGuarded`) must turn it into
+one explicitly, because Plausible's own `.gaveUp` (what a `GenError`
+becomes once it reaches `Testable.checkIO`) used to read as a pass here. -/
 def genKripkeModel : Gen Model := do
   let ⟨n, _⟩ ← Gen.choose Nat 1 4 (by omega)
   let ws := (List.range n).map fun i => s!"w{i + 1}"
@@ -2361,11 +2364,11 @@ instance : Arbitrary S5Formula := ⟨S5Formula.mk <$> genS5Formula⟩
 instance : Shrinkable S5Formula where shrink _ := []
 
 /-- Propositional-fragment-only formulas (no Box/Diamond), safe to use as
-the operand of `tau`/`conditionalize`. Mirrors `ArbPropFormula`. -/
-structure PropFormula where
-  getFormula : Formula
-  deriving Repr
-
+the operand of `tau`/`conditionalize`. Mirrors `ArbPropFormula`/
+`genPropFormula`. Used directly (not through an `Arbitrary` wrapper): the
+two `Gamen.RankingTheory` properties below draw it through `checkGuarded`,
+sized exactly like Haskell's `sized genPropFormula` (no cap) rather than
+the `Arbitrary Formula` instance's `min n 12`. -/
 partial def genPropFormula : Nat → Gen Formula
   | 0 => Gen.frequency (pure .bot) [(1, pure .bot), (4, genAtom)]
   | n + 1 =>
@@ -2381,10 +2384,6 @@ where
     let ⟨i, _⟩ ← Gen.choose Nat 0 2 (by omega)
     return .atom (propAtomNames.getD i "p")
 
-instance : Arbitrary PropFormula :=
-  ⟨PropFormula.mk <$> Gen.sized fun n => genPropFormula (min n 12)⟩
-instance : Shrinkable PropFormula where shrink _ := []
-
 /-- True when φ is neither a tautology nor a contradiction in `m`.
 Mirrors `isContingent`, but stays in `Except`: for the propositional
 fragment `PropFormula` generates, `truthSet` can never actually error, so
@@ -2396,11 +2395,129 @@ def isContingentK (m : KappaModel) (f : Formula) : Except String Bool := do
   let t ← truthSet m f
   return !t.isEmpty && t.toList != m.kWorlds.toList
 
+/-! ### QuickCheck's `==>`, done by hand
+
+`Testable`'s own guard support (`decGuardTestable`, used by the `NamedBinder
+∀ h : p, …` shape) does not reproduce QuickCheck's `==>`: it retries a
+*single* sample slot up to `Configuration.numRetries` (10) times, and once
+`Configuration.numInst` slots have gone by — whether or not any of them
+ever satisfied the guard — the run ends, reporting whatever it has (often
+`.gaveUp`, occasionally a lone `.success` if one slot got lucky). It never
+keeps drawing until it has collected `numInst` *real* (guard-true) checks,
+which is what QuickCheck's `maxSuccess` promises and what `run`'s
+`numInst` parameter above was actually claiming to deliver. Concretely:
+making `genKripkeModel` throw showed every property with an inner
+`m : Model` binder going green, because generation failure and guard
+failure both collapse to the same `.gaveUp` here — and separately, even
+under a correct generator, direct measurement found several of these
+properties performing far fewer real checks than their stated count (as
+few as 29 of 300) while still reporting a pass.
+
+`checkGuarded` restores both guarantees for the seven properties that use
+`==>` (`test/Properties.hs`'s `unsatisfiable ⇒ …`, `satisfied in some
+model ⇒ …`, `provable entailment ⇒ …`, `S5 unsatisfiable ⇒ …`, `extracted
+countermodel …`'s two discard points, and `Gamen.RankingTheory`'s two
+`isContingent ⇒ …` properties): draw samples directly through `Gen`,
+outside the `Testable`/`NamedBinder` machinery, counting a real check on
+every guard-true draw and a discard otherwise. The run ends when it has
+`target` real checks (pass), when discards reach `maxDiscardRatio *
+target` (QuickCheck's own formula; its default ratio is 10, and
+`Gamen.RankingTheory`'s two properties use Haskell's
+`modifyMaxDiscardRatio 20`), or immediately on a real check that fails or
+on any `Except` error from the generator, the guard, or the check itself
+— none of those is a discard, all are a definite failure. -/
+
+/-- Grow the sample size with the *real-check* count, capped at
+Plausible's own default `Configuration.maxSize` (100) — QuickCheck's own
+size formula is `numSuccessTests * maxSize / maxSuccessTests` (real checks
+only), which is why a long discard streak in Haskell stays cheap: size
+only grows once a check actually counts. Keying this to `checks +
+discards` instead (attempts) was tried first and made every discard after
+the first ~100 attempts draw a near-maximum-size sample regardless of how
+many of those attempts were discards, which is what made the discard-cap
+case of these properties (up to `maxDiscardRatio * target` discards)
+minutes slower than it needed to be. -/
+private def guardedSampleSize (target checks : Nat) : Nat :=
+  min 100 (checks * 100 / target + 1)
+
+private def checkGuardedLoop {α : Type} (name : String) (target maxDiscardRatio : Nat)
+    (gen : Nat → Gen α) (guard check : α → Except String Bool) :
+    Nat → Nat → Nat → IO (Nat × Bool)
+  | 0, checks, _ => do
+      IO.println s!"    {name}: out of fuel ({checks}/{target} real checks)"
+      return (checks, false)
+  | fuel + 1, checks, discards => do
+      if checks ≥ target then return (checks, true)
+      else if discards ≥ maxDiscardRatio * target then
+        IO.println s!"    {name}: gave up after {discards} discards ({checks}/{target} real checks)"
+        return (checks, false)
+      else
+        let size := guardedSampleSize target checks
+        match ← (try pure (some (← Gen.run (gen size) 0)) catch _ => pure none) with
+        | none =>
+            IO.println s!"    {name}: generator failed ({checks}/{target} real checks so far)"
+            return (checks, false)
+        | some x =>
+          match guard x with
+          | .error e =>
+              IO.println s!"    {name}: guard errored: {e} ({checks}/{target} real checks so far)"
+              return (checks, false)
+          | .ok false => checkGuardedLoop name target maxDiscardRatio gen guard check fuel checks (discards + 1)
+          | .ok true =>
+            match check x with
+            | .ok true => checkGuardedLoop name target maxDiscardRatio gen guard check fuel (checks + 1) discards
+            | .ok false =>
+                IO.println s!"    {name}: counterexample on real check {checks + 1}"
+                return (checks + 1, false)
+            | .error e =>
+                IO.println s!"    {name}: check errored on real check {checks + 1}: {e}"
+                return (checks + 1, false)
+
+/-- Fuel: enough rounds for `target` real checks plus the full discard
+budget, so the loop only runs out of fuel if both its own stopping
+conditions somehow failed to fire — an internal-consistency backstop, not
+a real limit. -/
+def checkGuarded {α : Type} (name : String) (target maxDiscardRatio : Nat) (gen : Nat → Gen α)
+    (guard check : α → Except String Bool) : IO (Nat × Bool) :=
+  checkGuardedLoop name target maxDiscardRatio gen guard check (target + maxDiscardRatio * target + 1) 0 0
+
+/-- The countermodels `extractCountermodel` recovers from every open,
+saturated branch of the tableau on `{1 T f}` — `[]` if the tableau closes
+or exhausts its budget, matching Haskell's `case … of TOpen branches -> …;
+_ -> discard` (a discard, in `checkGuarded`, is exactly the guard `!=
+[]` reading `false`). -/
+private def extractedModelsFor (f : Formula) : List Model :=
+  match buildTableau systemK defaultMaxSteps [pfTrue .root f] with
+  | .stillOpen branches => branches.filterMap fun b => (extractCountermodel systemK b).toOption
+  | _ => []
+
 def properties : List (String × IO Bool) :=
+  -- `.gaveUp` (Plausible could not draw enough well-formed examples — the
+  -- same outcome a thrown `GenError` produces) must fail here too: it used
+  -- to fall through the catch-all `| _ => return true` and read as a pass,
+  -- which is exactly how "unsatisfiable ⇒ no random model satisfies it (K)"
+  -- and eight sibling properties with an inner `m : Model` binder stayed
+  -- green when `genKripkeModel` was made to always throw. A `GenError` at
+  -- an *inner* binder (`NamedBinder "f" <| ∀ f : Formula, NamedBinder "m" <|
+  -- ∀ m : Model, …`) is caught by Plausible's own `runPropE` and turned
+  -- into `.gaveUp` before it ever reaches here — but at the outermost
+  -- binder (a property with no other variable ahead of the one whose
+  -- generator throws, e.g. "□(p→q)→(□p→□q) …"'s `∀ m : Model`),
+  -- `Testable.checkIO`'s own top-level call to `Testable.runProp` has no
+  -- such wrapper, and the exception reaches `IO` uncaught, aborting the
+  -- whole test binary rather than failing just this one property. `run`
+  -- must catch it itself.
   let run (p : Prop) (numInst : Nat := 300) [Testable p] : IO Bool := do
-    match ← Testable.checkIO p { numInst := numInst, quiet := true } with
-    | .failure _ xs _ => IO.println s!"    counterexample: {xs}"; return false
-    | _ => return true
+    match ← (try some <$> Testable.checkIO p { numInst := numInst, quiet := true }
+              catch e => do
+                IO.println s!"    generator errored: {e}"
+                pure none) with
+    | none => return false
+    | some (.failure _ xs _) => IO.println s!"    counterexample: {xs}"; return false
+    | some (.gaveUp n) => do
+        IO.println s!"    gave up: {n} well-formed example(s) could not be drawn"
+        return false
+    | some (.success _) => return true
   -- Plausible's `Testable` instances match `NamedBinder name (∀ x, …)`; the
   -- `plausible` tactic inserts the binder names itself, but `checkIO` from
   -- plain `IO` needs them spelled out.
@@ -2427,13 +2544,13 @@ def properties : List (String × IO Bool) :=
     -- quarantined temporal property and its "issue #25" `it` (both need
     -- `Gamen.Temporal`, not ported).
     ("unsatisfiable ⇒ no random model satisfies it (K)",
-      run (NamedBinder "f" <| ∀ f : Formula, NamedBinder "m" <| ∀ m : Model,
-        (if tableauConsistent systemK defaultMaxSteps [f] == .definitely false then
-           match anySatisfies m f with
-           | .ok false => true    -- confirmed: no witnessing world
-           | .ok true => false    -- a world satisfies it: soundness bug
-           | .error _ => false    -- unreachable for this fragment; an error is a bug
-         else true) = true) 300),
+      do
+        let (checks, ok) ← checkGuarded "unsatisfiable ⇒ no random model satisfies it (K)" 300 10
+          (fun size => do let f ← genFormula size; let m ← genKripkeModel; pure (f, m))
+          (fun (f, _) => pure (tableauConsistent systemK defaultMaxSteps [f] == .definitely false))
+          (fun (f, m) => do let b ← anySatisfies m f; pure (!b))
+        IO.println s!"    real checks: {checks}/300"
+        return ok),
     ("axiom-scheme instances: prover proves them and they hold in every model (K)",
       run (NamedBinder "f" <| ∀ f : ValidFormula, NamedBinder "m" <| ∀ m : Model,
         (match allSatisfies m f.getFormula with
@@ -2441,18 +2558,25 @@ def properties : List (String × IO Bool) :=
                             == .definitely false)
           | _ => false) = true) 300),
     ("provable entailment ⇒ holds pointwise in random models (K)",
-      run (NamedBinder "p" <| ∀ p : Formula, NamedBinder "c" <| ∀ c : Formula,
-        NamedBinder "m" <| ∀ m : Model,
-          (if tableauProves systemK defaultMaxSteps [p] c == .definitely true then
-             isOkTrue (allSatisfies m (.implies p c))
-           else true) = true) 300),
+      do
+        let (checks, ok) ← checkGuarded "provable entailment ⇒ holds pointwise in random models (K)" 300 10
+          (fun size => do
+            let p ← genFormula size
+            let c ← genFormula size
+            let m ← genKripkeModel
+            pure (p, c, m))
+          (fun (p, c, _) => pure (tableauProves systemK defaultMaxSteps [p] c == .definitely true))
+          (fun (p, c, m) => allSatisfies m (.implies p c))
+        IO.println s!"    real checks: {checks}/300"
+        return ok),
     ("satisfied in some model ⇒ prover does not call it unsatisfiable (K)",
-      run (NamedBinder "f" <| ∀ f : Formula, NamedBinder "m" <| ∀ m : Model,
-        (match anySatisfies m f with
-          | .error _ => false    -- guard itself errored: a bug, not a discard
-          | .ok false => true    -- guard false: vacuous pass, as Haskell's `==>`
-          | .ok true =>
-              !(tableauConsistent systemK defaultMaxSteps [f] == .definitely false)) = true) 300),
+      do
+        let (checks, ok) ← checkGuarded "satisfied in some model ⇒ prover does not call it unsatisfiable (K)" 300 10
+          (fun size => do let f ← genFormula size; let m ← genKripkeModel; pure (f, m))
+          (fun (f, m) => anySatisfies m f)
+          (fun (f, _) => pure (!(tableauConsistent systemK defaultMaxSteps [f] == .definitely false)))
+        IO.println s!"    real checks: {checks}/300"
+        return ok),
     ("K-valid instances and the T axiom hold in every reflexive model (KT)",
       run (NamedBinder "f" <| ∀ f : ValidFormula, NamedBinder "g" <| ∀ g : Formula,
         NamedBinder "m" <| ∀ m0 : Model,
@@ -2493,26 +2617,30 @@ def properties : List (String × IO Bool) :=
                   && !(tableauProves systemS5 2000 [] f.getFormula == .definitely false)
             | _ => false) = true) 200),
     ("S5 unsatisfiable ⇒ no equivalence-frame model satisfies it",
-      run (NamedBinder "f" <| ∀ f : Formula, NamedBinder "m" <| ∀ m0 : Model,
-        (if tableauConsistent systemS5 2000 [f] == .definitely false then
-           match s5ClosureModel m0 with
-           | .error _ => false
-           | .ok m =>
-             match anySatisfies m f with
-             | .ok false => true
-             | .ok true => false
-             | .error _ => false
-         else true) = true) 200),
+      do
+        let (checks, ok) ← checkGuarded "S5 unsatisfiable ⇒ no equivalence-frame model satisfies it" 200 10
+          (fun size => do let f ← genFormula size; let m0 ← genKripkeModel; pure (f, m0))
+          (fun (f, _) => pure (tableauConsistent systemS5 2000 [f] == .definitely false))
+          (fun (f, m0) => do
+            let m ← s5ClosureModel m0
+            let b ← anySatisfies m f
+            pure (!b))
+        IO.println s!"    real checks: {checks}/200"
+        return ok),
     ("extracted countermodel actually satisfies the formula (K)",
-      run (NamedBinder "f" <| ∀ f : Formula,
-        (match buildTableau systemK defaultMaxSteps [pfTrue .root f] with
-          | .stillOpen branches =>
-              let extracted := branches.filterMap fun b => (extractCountermodel systemK b).toOption
-              if extracted.isEmpty then true   -- Haskell's `discard`: vacuous pass here too
-              else extracted.all fun m => match anySatisfies m f with
-                | .ok true => true
-                | _ => false
-          | _ => true) = true) 200),   -- Haskell's `_ -> discard`
+      do
+        -- `gen` precomputes `extractedModelsFor f` once per attempt (not
+        -- once in the guard and again in the check): `buildTableau` runs
+        -- to `defaultMaxSteps`, so recomputing it per attempt was doubling
+        -- the cost of this property's whole discard budget.
+        let (checks, ok) ← checkGuarded "extracted countermodel actually satisfies the formula (K)" 200 10
+          (fun size => do let f ← genFormula size; pure (f, extractedModelsFor f))
+          (fun (_, ms) => pure (!ms.isEmpty))
+          (fun (f, ms) => do
+            let oks ← ms.mapM fun m => anySatisfies m f
+            pure (oks.all id))
+        IO.println s!"    real checks: {checks}/200"
+        return ok),
     -- Gamen.Semantics: K distribution axiom.
     ("□(p→q)→(□p→□q) holds at every world of every random model",
       run (NamedBinder "m" <| ∀ m : Model,
@@ -2522,24 +2650,32 @@ def properties : List (String × IO Bool) :=
     -- Gamen.RankingTheory: structural invariants — the two properties
     -- deferred for lack of a `KappaModel` generator.
     ("negation symmetry (Spohn Thm 2a, p.115): τ(¬φ) = −τ(φ) for contingent φ",
-      run (NamedBinder "m" <| ∀ m : KappaModel, NamedBinder "f" <| ∀ f : PropFormula,
-        (match isContingentK m f.getFormula with
-          | .error _ => false   -- unreachable for this fragment; an error here is a bug
-          | .ok false => true   -- legitimately not contingent: vacuous pass, as Haskell's `==>`
-          | .ok true =>
-            match tau m "c" (.not f.getFormula), tau m "c" f.getFormula with
-            | .ok l, .ok r => l == -r
-            | _, _ => false) = true) 100),
+      do
+        let (checks, ok) ← checkGuarded
+          "negation symmetry (Spohn Thm 2a, p.115): τ(¬φ) = −τ(φ) for contingent φ" 100 20
+          (fun size => do let m ← genKappaModel; let f ← genPropFormula size; pure (m, f))
+          (fun (m, f) => isContingentK m f)
+          (fun (m, f) => do
+            let l ← tau m "c" (.not f)
+            let r ← tau m "c" f
+            pure (l == -r))
+        IO.println s!"    real checks: {checks}/100"
+        return ok),
     ("conditionalize preserves wellFormed for contingent φ, any rank n",
-      run (NamedBinder "m" <| ∀ m : KappaModel, NamedBinder "f" <| ∀ f : PropFormula,
-        NamedBinder "n" <| ∀ n : Int,
-          (match isContingentK m f.getFormula with
-            | .error _ => false
-            | .ok false => true
-            | .ok true =>
-              match conditionalize m "c" f.getFormula n with
-              | .ok m' => wellFormed m'
-              | .error _ => false) = true) 100) ]
+      do
+        let (checks, ok) ← checkGuarded
+          "conditionalize preserves wellFormed for contingent φ, any rank n" 100 20
+          (fun size => do
+            let m ← genKappaModel
+            let f ← genPropFormula size
+            let ⟨n, _⟩ ← Gen.choose Int (-(size : Int)) (size : Int) (by omega)
+            pure (m, f, n))
+          (fun (m, f, _) => isContingentK m f)
+          (fun (m, f, n) => do
+            let m' ← conditionalize m "c" f n
+            pure (wellFormed m'))
+        IO.println s!"    real checks: {checks}/100"
+        return ok) ]
 where
   toNNF := Formula.toNNF
   isNNF := Formula.isNNF

@@ -2229,6 +2229,38 @@ partly-closed relation, unlike Haskell's unbounded `go`). -/
 def transitiveClosureModel (m : Model) : Except String Model :=
   return withEdges m (← transitiveClose m.frame.worlds.toList (edgesOf m))
 
+/-- Reflexive + transitive closure — the S4 frame class. Mirrors
+`s4ClosureModel`: transitive-close the raw edges first, then add the
+reflexive edges (matching Haskell's `reflClose m (transClose (edgesOf m))`
+evaluation order). -/
+def s4ClosureModel (m : Model) : Except String Model := do
+  let trans ← transitiveClose m.frame.worlds.toList (edgesOf m)
+  return withEdges m (reflexiveClose m.frame.worlds.toList trans)
+
+/-- One round of `s5ClosureModel`'s fixpoint: symmetric-close, then
+transitive-close, then reflexive-close. -/
+private def s5Step (ws : List World) (r : Rel) : Except String Rel := do
+  let r' ← transitiveClose ws (symmetricClose r)
+  return reflexiveClose ws r'
+
+/-- Iterate `s5Step` to a fixpoint (Haskell's unbounded `go`), through an
+explicit fuel bound: each round either reaches the fixpoint or adds at
+least one of at most `|ws|²` pairs, so `|ws|² + 1` rounds suffice, as with
+`Tableau.transitiveClose`. Running out of fuel is an `Except`, never a
+partly-closed relation. -/
+private def s5Iterate : Nat → List World → Rel → Except String Rel
+  | 0, _, _ => throw "s5ClosureModel: no fixpoint within the fuel bound"
+  | fuel + 1, ws, r => do
+      let r' ← s5Step ws r
+      if r'.toList == r.toList then pure r else s5Iterate fuel ws r'
+
+/-- Reflexive + transitive + symmetric closure = an equivalence relation
+— the S5 frame class. Mirrors `s5ClosureModel`. -/
+def s5ClosureModel (m : Model) : Except String Model := do
+  let ws := m.frame.worlds.toList
+  let r ← s5Iterate (ws.length * ws.length + 1) ws (edgesOf m)
+  return withEdges m r
+
 /-- A formula that is K-valid BY CONSTRUCTION: axiom schemes instantiated
 with random small subformulas. Mirrors `ArbValidFormula`/`genValidFormula`
 — see that Haskell docstring for why (valid formulas are too rare in the
@@ -2280,6 +2312,53 @@ def gen4Formula : Gen Formula := do
 
 instance : Arbitrary FourFormula := ⟨FourFormula.mk <$> gen4Formula⟩
 instance : Shrinkable FourFormula where shrink _ := []
+
+/-- Formulas valid in S4 (reflexive + transitive): T, 4, and the S4
+modality-collapse schemes. Mirrors `ArbS4Formula`/`genS4Formula`. -/
+structure S4Formula where
+  getFormula : Formula
+  deriving Repr
+
+def genS4Formula : Gen Formula := do
+  let a ← Gen.resize (fun _ => 2) (Arbitrary.arbitrary : Gen Formula)
+  Gen.elements
+    [ .implies (.box a) a
+    , .implies a (.diamond a)
+    , .implies (.box a) (.box (.box a))
+    , .implies (.diamond (.diamond a)) (.diamond a)
+    , .iff (.box (.box a)) (.box a)
+    , .iff (.diamond (.diamond a)) (.diamond a)
+    , .implies (.box a) (.diamond a)
+    , .iff (.box (.diamond (.box (.diamond a)))) (.box (.diamond a)) ]
+    (by simp)
+
+instance : Arbitrary S4Formula := ⟨S4Formula.mk <$> genS4Formula⟩
+instance : Shrinkable S4Formula where shrink _ := []
+
+/-- Formulas valid in S5 (equivalence frames: reflexive + transitive +
+euclidean): axiom 5, T, 4, B, and the S5 modality-collapse schemes.
+Mirrors `ArbS5Formula`/`genS5Formula`. -/
+structure S5Formula where
+  getFormula : Formula
+  deriving Repr
+
+def genS5Formula : Gen Formula := do
+  let a ← Gen.resize (fun _ => 2) (Arbitrary.arbitrary : Gen Formula)
+  Gen.elements
+    [ .implies (.diamond a) (.box (.diamond a))
+    , .implies (.diamond (.box a)) (.box a)
+    , .implies (.box a) a
+    , .implies (.box a) (.box (.box a))
+    , .implies a (.box (.diamond a))
+    , .implies (.diamond (.box a)) a
+    , .iff (.box (.diamond a)) (.diamond a)
+    , .iff (.diamond (.box a)) (.box a)
+    , .iff (.diamond (.diamond a)) (.diamond a)
+    , .iff (.box (.box a)) (.box a) ]
+    (by simp)
+
+instance : Arbitrary S5Formula := ⟨S5Formula.mk <$> genS5Formula⟩
+instance : Shrinkable S5Formula where shrink _ := []
 
 /-- Propositional-fragment-only formulas (no Box/Diamond), safe to use as
 the operand of `tau`/`conditionalize`. Mirrors `ArbPropFormula`. -/
@@ -2336,13 +2415,17 @@ def properties : List (String × IO Bool) :=
     ("tableau-valid formulas are true in the test model (soundness spot-check)",
       run (NamedBinder "f" <| ∀ f : Formula,
         (!proves [] f || truthsIn testModel f == some [true, true, true]) = true)),
-    -- Gamen.Tableau: soundness vs. Kripke semantics (K, KT, K4) — mirrors
-    -- the "Gamen.Tableau: soundness vs. Kripke semantics" describe block
-    -- of `test/Properties.hs`. Only the K/KT/K4 soundness properties and
-    -- the completeness-ish direction are in scope for this pass; S4, S5,
-    -- the axiom-scheme/provable-entailment/extracted-countermodel K
-    -- properties, and the quarantined temporal block are not ported here
-    -- (see the porting report for why).
+    -- Gamen.Tableau: K satisfiability — internal soundness invariant
+    -- (issue #18): a formula and its negation can never both close.
+    ("no formula and its negation are both provably unsatisfiable",
+      run (NamedBinder "f" <| ∀ f : Formula,
+        !(tableauConsistent systemK defaultMaxSteps [f] == .definitely false
+            && tableauConsistent systemK defaultMaxSteps [.not f] == .definitely false)) 200),
+    -- Gamen.Tableau: soundness vs. Kripke semantics (K, KT, K4, S4, S5) —
+    -- mirrors the "Gamen.Tableau: soundness vs. Kripke semantics" describe
+    -- block of `test/Properties.hs` in full, except the disabled/
+    -- quarantined temporal property and its "issue #25" `it` (both need
+    -- `Gamen.Temporal`, not ported).
     ("unsatisfiable ⇒ no random model satisfies it (K)",
       run (NamedBinder "f" <| ∀ f : Formula, NamedBinder "m" <| ∀ m : Model,
         (if tableauConsistent systemK defaultMaxSteps [f] == .definitely false then
@@ -2351,6 +2434,18 @@ def properties : List (String × IO Bool) :=
            | .ok true => false    -- a world satisfies it: soundness bug
            | .error _ => false    -- unreachable for this fragment; an error is a bug
          else true) = true) 300),
+    ("axiom-scheme instances: prover proves them and they hold in every model (K)",
+      run (NamedBinder "f" <| ∀ f : ValidFormula, NamedBinder "m" <| ∀ m : Model,
+        (match allSatisfies m f.getFormula with
+          | .ok true => !(tableauProves systemK defaultMaxSteps [] f.getFormula
+                            == .definitely false)
+          | _ => false) = true) 300),
+    ("provable entailment ⇒ holds pointwise in random models (K)",
+      run (NamedBinder "p" <| ∀ p : Formula, NamedBinder "c" <| ∀ c : Formula,
+        NamedBinder "m" <| ∀ m : Model,
+          (if tableauProves systemK defaultMaxSteps [p] c == .definitely true then
+             isOkTrue (allSatisfies m (.implies p c))
+           else true) = true) 300),
     ("satisfied in some model ⇒ prover does not call it unsatisfiable (K)",
       run (NamedBinder "f" <| ∀ f : Formula, NamedBinder "m" <| ∀ m : Model,
         (match anySatisfies m f with
@@ -2377,6 +2472,47 @@ def properties : List (String × IO Bool) :=
                 isTransitive m.frame
                   && !(tableauProves systemK4 2000 [] f.getFormula == .definitely false)
             | _ => false) = true) 200),
+    ("S4 instances: proved by S4 and true on reflexive-transitive frames",
+      run (NamedBinder "f" <| ∀ f : S4Formula, NamedBinder "m" <| ∀ m0 : Model,
+        (match s4ClosureModel m0 with
+          | .error _ => false
+          | .ok m =>
+            match allSatisfies m f.getFormula with
+            | .ok true =>
+                isReflexive m.frame && isTransitive m.frame
+                  && !(tableauProves systemS4 2000 [] f.getFormula == .definitely false)
+            | _ => false) = true) 200),
+    ("S5 instances: proved by S5 and true on equivalence frames",
+      run (NamedBinder "f" <| ∀ f : S5Formula, NamedBinder "m" <| ∀ m0 : Model,
+        (match s5ClosureModel m0 with
+          | .error _ => false
+          | .ok m =>
+            match allSatisfies m f.getFormula with
+            | .ok true =>
+                isReflexive m.frame && isTransitive m.frame && isEuclidean m.frame
+                  && !(tableauProves systemS5 2000 [] f.getFormula == .definitely false)
+            | _ => false) = true) 200),
+    ("S5 unsatisfiable ⇒ no equivalence-frame model satisfies it",
+      run (NamedBinder "f" <| ∀ f : Formula, NamedBinder "m" <| ∀ m0 : Model,
+        (if tableauConsistent systemS5 2000 [f] == .definitely false then
+           match s5ClosureModel m0 with
+           | .error _ => false
+           | .ok m =>
+             match anySatisfies m f with
+             | .ok false => true
+             | .ok true => false
+             | .error _ => false
+         else true) = true) 200),
+    ("extracted countermodel actually satisfies the formula (K)",
+      run (NamedBinder "f" <| ∀ f : Formula,
+        (match buildTableau systemK defaultMaxSteps [pfTrue .root f] with
+          | .stillOpen branches =>
+              let extracted := branches.filterMap fun b => (extractCountermodel systemK b).toOption
+              if extracted.isEmpty then true   -- Haskell's `discard`: vacuous pass here too
+              else extracted.all fun m => match anySatisfies m f with
+                | .ok true => true
+                | _ => false
+          | _ => true) = true) 200),   -- Haskell's `_ -> discard`
     -- Gamen.Semantics: K distribution axiom.
     ("□(p→q)→(□p→□q) holds at every world of every random model",
       run (NamedBinder "m" <| ∀ m : Model,

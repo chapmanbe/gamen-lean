@@ -7,6 +7,7 @@ import Gamen.FrameProperties
 import Gamen.DeonticStit.Sequent
 import Gamen.DeonticStit.Rules
 import Gamen.DeonticStit.Saturation
+import Gamen.DeonticStit.Prove
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
@@ -1514,9 +1515,9 @@ def plausibilityCases : List Case :=
 Port of the "Sequent (Gamen.DeonticStit.Sequent)" `describe` block of
 `test/DeonticStitSpec.hs` in full (9 `it`s, in file order). The rest of
 `DeonticStitSpec.hs` (beyond the `.Rules` blocks in `rulesCases` and the
-`.Saturation` blocks in `saturationCases` below), and the "Lyon & van Berkel
-(2024) — G3DS^k_n prover" section of `test/PaperCorrespondence.hs`, exercise
-`Gamen.DeonticStit`, `.Prove`, `.CounterModel` — not yet ported. -/
+`.Saturation` blocks in `saturationCases`, and the `.Prove` and clinical
+blocks in `proveCases` below) exercises `Gamen.DeonticStit` and
+`.CounterModel`, not yet ported. -/
 
 def dsW0 : Label := label0
 def dsW1 : Label := nextLabel dsW0
@@ -1802,6 +1803,140 @@ def saturationCases : List Case :=
     okIs (isStable 0 gt0 emptySequent) true⟩
   ]
 
+/-! ## Deontic-STIT proof search (`Gamen.DeonticStit.Prove`)
+
+Ports, in file order:
+
+* `test/DeonticStitSpec.hs`, "DeonticStit.Prove: proveFormula" (all 14
+  `it`s) and "Clinical scenario: AHA + KDIGO + USDA potassium (issue #8
+  step I)" (all 3 `it`s). The spec's `TestShims` map `Unknown` to `False`;
+  here every verdict is compared against `.ok (.definitely b)`, so an error
+  or an `unknown` fails the case whichever answer was expected.
+* `test/PaperCorrespondence.hs`, "Lyon & van Berkel (2024) — G3DS^k_n
+  prover": the "Definition 3", "Example 5", and "Algorithm 1 + Figure 5"
+  blocks (4 `it`s). Its "Definition 20" block (3 `it`s) needs
+  `Gamen.DeonticStit.CounterModel`, not yet ported. Citations fixed against
+  the PDF: Definition 3 is pp. 844–845 (the Haskell says 843–844);
+  Algorithm 1's listing is pp. 858–860 (the Haskell says 859–860); the §4.1
+  counterexample is stated on p. 864 (the spec says p. 865, Figure 5's page).
+* `test/RegressionIssue18.hs`, "A1: budget exhaustion is Unknown, never a
+  definite answer" (3 `it`s), "A3: ⊥ / ⊤ handled by both provers" (6), and
+  "consistency: inconsistent deontic sets still close" (1), in full,
+  including their tableau `it`s. -/
+
+/-- Strict equality on `Except` results, so a case can compare against
+`.ok v`: an `.error` never equals an `.ok`, whichever answer was expected. -/
+local instance [BEq ε] [BEq α] : BEq (Except ε α) where
+  beq
+    | .ok a, .ok b => a == b
+    | .error x, .error y => x == y
+    | _, _ => false
+
+/-- `proveFormula` ended in `refuted`, compared on the result shape. -/
+def isRefuted : Except String ProveResult → Bool
+  | .ok (.refuted _ _) => true
+  | _ => false
+
+/-- The spec's `stripAgents`: the old agent-stripping reduction to KD,
+used only to reconstruct the pre-issue-#8 verdict. -/
+def stripAgents : Formula → Formula
+  | .ought _ f => .box (stripAgents f)
+  | .permitted _ f => .diamond (stripAgents f)
+  | .stit _ f => .box (stripAgents f)
+  | .choiceDiamond _ f => .diamond (stripAgents f)
+  | .groupStit f => .box (stripAgents f)
+  | .not f => .not (stripAgents f)
+  | .and l r => .and (stripAgents l) (stripAgents r)
+  | .or l r => .or (stripAgents l) (stripAgents r)
+  | .implies l r => .implies (stripAgents l) (stripAgents r)
+  | .iff l r => .iff (stripAgents l) (stripAgents r)
+  | .box f => .box (stripAgents f)
+  | .diamond f => .diamond (stripAgents f)
+  | .futureBox f => .futureBox (stripAgents f)
+  | .futureDiamond f => .futureDiamond (stripAgents f)
+  | .pastBox f => .pastBox (stripAgents f)
+  | .pastDiamond f => .pastDiamond (stripAgents f)
+  | .belief a f => .belief a (stripAgents f)
+  | f => f
+
+def proveCases : List Case :=
+  let dsProves (f : Formula) (b : Bool) : Bool :=
+    isFormulaValid 0 1000 f == .ok (.definitely b)
+  let dsSat (f : Formula) (b : Bool) : Bool :=
+    isFormulaSatisfiable 0 1000 f == .ok (.definitely b)
+  let hhDiet : Formula := .atom "hh_diet"
+  let highK : Formula := .atom "high_K"
+  let kdConsistent (fs : List Formula) (b : Bool) : Bool :=
+    tableauConsistent systemKD 1000 (fs.map stripAgents) == .definitely b
+  let oic : Formula :=
+    .implies (.ought "i" p) (.or (.diamond (.stit "i" p)) (.permitted "i" (.not p)))
+  [
+  -- DeonticStitSpec: "DeonticStit.Prove: proveFormula"
+  ⟨"proves the propositional tautology p ∨ ¬p", dsProves (.or p (.not p)) true⟩,
+  ⟨"proves p → p", dsProves (.implies p p) true⟩,
+  ⟨"refutes the propositional non-tautology p ∧ ¬p", dsProves (.and p (.not p)) false⟩,
+  ⟨"p ∧ ¬p is unsatisfiable", dsSat (.and p (.not p)) false⟩,
+  ⟨"p ∧ q is satisfiable", dsSat (.and p q) true⟩,
+  ⟨"isFormulaSetConsistent rejects {p, ¬p}",
+    isFormulaSetConsistent 0 1000 [p, .not p] == .ok (.definitely false)⟩,
+  ⟨"isFormulaSetConsistent accepts {p, q}",
+    isFormulaSetConsistent 0 1000 [p, q] == .ok (.definitely true)⟩,
+  ⟨"proves Box (p ∨ ¬p)", dsProves (.box (.or p (.not p))) true⟩,
+  ⟨"proves Box p → Box p", dsProves (.implies (.box p) (.box p)) true⟩,
+  ⟨"proves ◇p ∨ □¬p", dsProves (.or (.diamond p) (.box (.not p))) true⟩,
+  ⟨"proves □(p ∧ q) → □p", dsProves (.implies (.box (.and p q)) (.box p)) true⟩,
+  ⟨"proves the K axiom □(p → q) → (□p → □q)",
+    dsProves (.implies (.box (.implies p q)) (.implies (.box p) (.box q))) true⟩,
+  ⟨"proves Lyon-Berkel Example 5: ⊗_i p → ◇[i]p ∨ ⊖_i ¬p", dsProves oic true⟩,
+  ⟨"terminates on the §4.1 counterexample ◇[1]p ∨ ◇[2]q",
+    isRefuted (proveFormula 0 5000 (.or (.choiceDiamond "1" p) (.choiceDiamond "2" q)))⟩,
+  -- DeonticStitSpec: "Clinical scenario: AHA + KDIGO + USDA potassium"
+  ⟨"cross-agent same-atom: ⊗_p X ∧ ⊗_c ¬X — DS allows; KD rejects",
+    let phis := [Formula.ought "patient" hhDiet, .ought "clinician" (.not hhDiet)]
+    -- Both definite and different, so the spec's `shouldNotBe` holds too.
+    isFormulaSetConsistent 0 5000 phis == .ok (.definitely true) && kdConsistent phis false⟩,
+  ⟨"intra-agent action conflict via USDA bridge — both reject",
+    let phis := [Formula.ought "patient" hhDiet, .ought "patient" (.not highK),
+                 .box (.implies hhDiet highK)]
+    isFormulaSetConsistent 0 5000 phis == .ok (.definitely false) && kdConsistent phis false⟩,
+  ⟨"advice-level + KDIGO + bridge — both consistent (no adherence axiom)",
+    let phis := [Formula.ought "clinician" (.stit "clinician" (.atom "advise_hh_diet")),
+                 .ought "patient" (.not highK), .box (.implies hhDiet highK)]
+    isFormulaSetConsistent 0 5000 phis == .ok (.definitely true) && kdConsistent phis true⟩,
+  -- PaperCorrespondence: Lyon & van Berkel (2024), Definition 3 (pp. 844–845)
+  ⟨"L&vB Def 3: K axiom □(p→q)→(□p→□q) is DS-valid",
+    isFormulaValid 0 5000 (.implies (.box (.implies p q)) (.implies (.box p) (.box q)))
+      == .ok (.definitely true)⟩,
+  ⟨"L&vB Def 3: ⊗_i p and ⊗_i ¬p are jointly inconsistent",
+    isFormulaSetConsistent 0 5000 [.ought "i" p, .ought "i" (.not p)] == .ok (.definitely false)⟩,
+  -- Example 5 (p. 847)
+  ⟨"L&vB Example 5: ⊗_i p → ◇[i]p ∨ ⊖_i ¬p is DS-valid",
+    isFormulaValid 0 5000 oic == .ok (.definitely true)⟩,
+  -- Algorithm 1 (p. 856, listing pp. 858–860) + Figure 5 (p. 865)
+  ⟨"L&vB §4.1 counterexample ◇[1]p ∨ ◇[2]q: refutes without MaxStepsExceeded",
+    isRefuted (proveFormula 0 5000 (.or (.choiceDiamond "1" p) (.choiceDiamond "2" q)))⟩,
+  -- RegressionIssue18: A1
+  ⟨"A1 tableau: a 0-step budget yields Unknown, not 'consistent'",
+    tableauConsistent systemK 0 [p] == .unknown (.budgetExhausted 0)⟩,
+  ⟨"A1 tableau: with budget the same set is Definitely satisfiable",
+    tableauConsistent systemK 1000 [p] == .definitely true⟩,
+  ⟨"A1 G3DS: satisfiability of ⊗_i p ∧ ⊗_i ¬p at budget 1 is Unknown",
+    isFormulaSatisfiable 0 1 (.and (.ought "i" p) (.ought "i" (.not p)))
+      == .ok (.unknown (.budgetExhausted 1))⟩,
+  -- RegressionIssue18: A3
+  ⟨"A3 tableau: {⊥} is inconsistent", tableauConsistent systemK 1000 [.bot] == .definitely false⟩,
+  ⟨"A3 tableau: {p, p → ⊥} is inconsistent (negation as →⊥)",
+    tableauConsistent systemK 1000 [p, .implies p .bot] == .definitely false⟩,
+  ⟨"A3 tableau: ⊢ ⊤ is provable", tableauProves systemK 1000 [] Formula.top == .definitely true⟩,
+  ⟨"A3 G3DS: ¬⊥ is valid", isFormulaValid 0 5000 (.not .bot) == .ok (.definitely true)⟩,
+  ⟨"A3 G3DS: ⊥ → p is valid", isFormulaValid 0 5000 (.implies .bot p) == .ok (.definitely true)⟩,
+  ⟨"A3 G3DS: □⊥ is NOT valid (positive ⊥ must stay inert, not close)",
+    isFormulaValid 0 5000 (.box .bot) == .ok (.definitely false)⟩,
+  -- RegressionIssue18: consistency
+  ⟨"G3DS: {⊗_i p, ⊗_i ¬p} is inconsistent",
+    isFormulaSetConsistent 0 5000 [.ought "i" p, .ought "i" (.not p)] == .ok (.definitely false)⟩
+  ]
+
 /-! ## Property tests (Plausible) -/
 
 /-- Kripke-fragment formulas over atoms p, q, r. Mirrors `genFormula` in
@@ -1872,7 +2007,7 @@ def main : IO UInt32 := do
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
       ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases ++ rankingTheoryCases
-      ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases do
+      ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -1883,6 +2018,7 @@ def main : IO UInt32 := do
   let total := unitCases.length + tableauCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
     + fragmentCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
-    + sequentCases.length + rulesCases.length + saturationCases.length + properties.length
+    + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
+    + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

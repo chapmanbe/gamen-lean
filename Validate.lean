@@ -13,14 +13,12 @@ Port of `gamen-hs/validate/Main.hs`: a JSON Lines service on stdin/stdout.
 
 Responses are `{"ok": true, "result": ...}` or `{"ok": false, "error": "..."}`.
 
-**Slice limitation.** gamen-hs dispatches consistency checks to two
-backends: the KDt tableau with its doxastic-D and ranking-theory rules (for
-`belief`/`ranked_belief`), and the deontic-STIT prover (for agent
-operators). Only the first is ported. Inputs that would reach the second
-get `{"ok": false, "error": "not ported in Lean slice: …"}`, so the
-side-by-side comparison can separate scope gaps from disagreements.
-Fragment rejections ("unsupported operator …") happen before dispatch
-and are fully ported.
+**Backends.** gamen-hs dispatches consistency checks to two backends:
+the KDt tableau with its doxastic-D and ranking-theory rules (for
+`belief`/`ranked_belief`), and the deontic-STIT prover G3DS (for agent
+operators). Both are ported. Fragment rejections ("unsupported operator …")
+happen before dispatch and are fully ported. The one Lean-only reply,
+`"prover error: …"`, is unreachable (see `classifyConsistency`).
 
 There is no `deepseq` crash guard: the Lean code has no `error` calls to
 guard against, and evaluation is strict.

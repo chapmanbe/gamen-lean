@@ -4,19 +4,19 @@
 ## Objective
 Keep porting gamen-hs modules to Lean in `PORTING.md` order, one module per
 `/port-module` run, merged only on the user's word. **Waves 1 and 2 are
-done. Next: wave 3, deontic STIT, starting with `Sequent`** . A module is done when its tests are ported, `lake test`
+done; wave 3 is down to the base `DeonticStit` module and `CounterModel`** . A module is done when its tests are ported, `lake test`
 is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
 
-## Where things stand (as of `1335727`, updated 2026-09-24)
-- **Wave 1 done:** Formula, Kripke, Semantics, Fragment, FrameProperties,
-  Tableau (K, KT, KD, KTB, K4, S4, S5).
-- **Wave 2 done:** Doxastic and RankingTheory ported and wired;
-  Plausibility ported, not wired (gamen-hs's `validate/Main.hs` never
-  imports it).
-- `lake test`: 321/321. compare.py: 4,470 requests, 4,430 identical, 14
-  equivalent, 26 scope_gap, **0 DISAGREE**. The 26 scope gaps are all
-  deontic-STIT; wave 3 should clear them.
-- `main` is pushed to `origin`. Push only when the user asks.
+## Where things stand (updated 2026-09-24, after wiring G3DS)
+- **Waves 1–2 done.** Wave 3: `DeonticStit.Sequent`, `.Rules`,
+  `.Saturation`, `.Prove` done; Prove is wired into `gamen-validate`,
+  which is now complete.
+- `lake test`: 419/419. compare.py: 4,470 requests, 4,456 identical, 14
+  equivalent, **0 scope_gap, 0 DISAGREE**.
+- Upstream issues filed this session: gamen-hs#35 (Spohn page), #36
+  (`applyD2` "Note 4"), #37 (Prove page citations + untested `applyOughtB`
+  ideal check). Lean already has the fixes and a "Not in gamen-hs" test.
+- Push only when the user asks.
 
 ## Decisions (do not relitigate)
 - **The workflow is `/port-module <Module>`** (`.claude/skills/port-module/`).
@@ -75,17 +75,25 @@ is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
   calling any Haskell evaluation "lazy".
 
 ## Wave 3: specifics for the next run
-- Order: `Sequent` → `Rules` → `Saturation` → `Prove` → `CounterModel`, with
-  `DeonticStitSpec`. Check each module's Porter column (`Saturation` is
-  `fable`).
-- `CounterModel` also depends on the base `DeonticStit` module (277 lines,
-  `sonnet`, not started), which the wave 3 order in `PORTING.md` omits.
-  Port it before `CounterModel`; it needs only Formula and Kripke.
-- The saturation loop needs fuel (gamen-hs's step budget), returning
-  `Except` on exhaustion, via the shared fixpoint helper where it fits.
-- After `Prove` lands, wire it into `Validate/Core.lean`, remove the
-  deontic-STIT scope gate, and do the plant-out check; the 26 scope gaps
-  should go to 0.
+- Next: the base `DeonticStit` module (277 lines, `sonnet`, needs only
+  Formula and Kripke; the `PORTING.md` order omitted it), then
+  `DeonticStit.CounterModel` (`opus`). CounterModel unblocks
+  PaperCorrespondence's L&vB "Definition 20" block (3 cases), skipped in
+  the Prove port.
+- G3DS wiring record: plant "always consistent" → 8 DISAGREE (section D);
+  plant "D2 rule dropped" → 15 (sections C, D). Only 26 corpus requests
+  reach G3DS, so a dedicated compare.py section (at the END of
+  `build_corpus`) would strengthen coverage; not done yet.
+- Lean-only reply `"prover error: …"` (from `ancestors` fuel) is
+  unreachable via Prove; documented in `Validate/Core.lean`.
+- Lessons from wave 3 reviews: porters invent or mis-page paper citations
+  (now forbidden in `module-porter.md`); a porter's own plant found the
+  `applyOughtB` gap both reviewers missed, so keep asking porters for
+  per-rule plants.
+- Coordinator gotcha: never revert a plant with `git checkout <file>` when
+  that file also holds uncommitted work; copy a clean file aside and
+  restore it. The RTK `diff` wrapper once misreported two differing files
+  as identical; use `/usr/bin/diff`.
 
 ## Process gotchas (already in the agent files; watch the coordinator side too)
 - Worktrees branch from `origin/main`. The porter fast-forwards to local
@@ -129,10 +137,12 @@ is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
       (saturation loop fuel; the explicit lazy memo, `Epistemic.hs` ~148–158).
 
 ## Task list (ordered)
-1. ~~RankingTheory~~ (`a9d735d`), ~~Plausibility~~ (`1335727`); wave 2 done.
-2. `/port-module Sequent`, then Rules, Saturation, Prove, CounterModel.
-3. Wire the deontic-STIT prover into `gamen-validate`; compare.py to 0
-   scope gaps.
+1. `/port-module DeonticStit` (base module).
+2. `/port-module DeonticStit.CounterModel`; port the L&vB Definition 20
+   block with it.
+3. Optional: a compare.py G3DS section to raise coverage above 26 requests.
+4. Wave 4: Temporal, Epistemic (`fable`, explicit lazy memo), Stit,
+   Xstit, Cgs, Laca, Coalition, Atl.*, Atel.
 
 ## Suggested implementer model
 Coordinator session: **Opus**. It reviews, reproduces findings, and edits the

@@ -54,7 +54,7 @@ nothing left to port.
 | Component | Lines | Lean status |
 |---|---:|---|
 | `protocol/Gamen/Protocol/Formula.hs` | 167 | **Done** (`Gamen/Protocol.lean`): tree and flat formats, all 30 constructors. Fragment gating that used to live here moved to `Gamen/Fragment.lean`. |
-| `validate/Main.hs` (`gamen-validate`) | 329 | **Done for the tableau backend.** The non-`IO` request/response logic lives in `Validate/Core.lean` (split out of `Validate.lean`, which now only wraps it with `main`, so `Tests.Main` can `import Validate.Core` for direct unit tests without the two executables' `main` colliding). Ranked-belief requests are answered since the RankingTheory port. Requests needing the deontic-STIT prover answer `"not ported in Lean slice: …"` until those modules land. `reasonOperator` (validate/Main.hs:271-276) is ported faithfully: a non-`UnsupportedOperator` reason renders as GHC's derived `Show UnknownReason` would, not Lean's `reprStr` — verified against `runghc` output, not from memory. |
+| `validate/Main.hs` (`gamen-validate`) | 329 | **Done.** The non-`IO` request/response logic lives in `Validate/Core.lean` (split out of `Validate.lean`, which now only wraps it with `main`, so `Tests.Main` can `import Validate.Core` for direct unit tests without the two executables' `main` colliding). Ranked-belief requests are answered since the RankingTheory port, and deontic-STIT requests since the Prove port (`dsK = 0`, `dsMaxSteps = 5000`, as in gamen-hs); compare.py has no scope gaps left. The prover's `Except` surfaces as a Lean-only `"prover error: …"` reply, unreachable because `Prove` parents only fresh labels. Planting the D2 rule out of the schedule gave 15 DISAGREE (sections C, D); making the G3DS branch always answer consistent gave 8 (section D). Only 26 corpus requests reach G3DS. `reasonOperator` (validate/Main.hs:271-276) is ported faithfully: a non-`UnsupportedOperator` reason renders as GHC's derived `Show UnknownReason` would, not Lean's `reprStr` — verified against `runghc` output, not from memory. |
 | `protocol/Service/*` + `service/Main.hs` (dcleg service) | 893 | Not started |
 | `app/Main.hs` (`gamen-repl` demo) | 43 | Not started |
 
@@ -86,13 +86,13 @@ Each wave ends with its tests ported and `tools/compare/compare.py` green.
 2. **Complete the `gamen-validate` tableau backend. Done.** `Doxastic`
    (plain belief; compare.py section H) and `RankingTheory` (ranked belief;
    section I) are ported and wired. `Plausibility` is ported but not wired,
-   because gamen-hs's own `validate/Main.hs` never imports it. The
-   remaining 26 scope gaps are all deontic STIT.
+   because gamen-hs's own `validate/Main.hs` never imports it.
 3. **Deontic STIT (G3DS^k_n, Lyon & van Berkel 2024).** `Sequent` →
    `Rules` → `Saturation` → `Prove` → `CounterModel`, with
-   `DeonticStitSpec`. The largest remaining risk: expect termination-checker
-   work in the saturation loop. After this, `gamen-validate` is complete and
-   the comparison should show no scope gaps.
+   `DeonticStitSpec`. `Sequent`, `Rules`, `Saturation` and `Prove` are done,
+   and `Prove` is wired into `gamen-validate`, which is now complete: the
+   comparison shows no scope gaps. Remaining: the base `DeonticStit` module
+   (which the original order left out), then `CounterModel`.
 4. **Remaining logics.** `Temporal`, `Epistemic`, `Stit`, `Xstit`, `Cgs`,
    `Laca`, `Coalition`, `Atl.*`, `Atel`.
 5. **dcleg service and extras.** `Dcleg`, `protocol/Service/*`,

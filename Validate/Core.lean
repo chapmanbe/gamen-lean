@@ -3,6 +3,7 @@ import Gamen.Tableau
 import Gamen.Fragment
 import Gamen.Doxastic
 import Gamen.RankingTheory
+import Gamen.DeonticStit.Prove
 
 /-!
 # Validate.Core
@@ -39,9 +40,14 @@ where
 inductive Classified where
   | unsupported (op prover : String)   -- rejected by the fragment gate
   | verdict (v : Verdict) (prover : String)
-  | notPorted (what : String)          -- needs a backend this slice lacks
+  | proverError (msg : String)         -- the prover returned `Except.error`
 
 def tableauMaxSteps : Nat := 5000
+
+/-- DS^k_n parameters (`validate/Main.hs` `dsK`, `dsMaxSteps`). k = 0 means
+unlimited choice. -/
+def dsK : Int := 0
+def dsMaxSteps : Nat := 5000
 
 /-- Haskell-`show`-style quoting for a `String`, sufficient for
 `ProverStuck`'s diagnostic messages (plain ASCII text without control
@@ -90,12 +96,21 @@ def consistencySystem : System :=
 /-- Port of `classifyConsistency`: any agent operator sends the whole set to
 the deontic-STIT prover; otherwise the KDt tableau (plus doxastic and
 ranking rules) handles it. Each backend gates its fragment first with
-`Gamen.Fragment.checkDSFragment` / `checkTableauFragment`. -/
+`Gamen.Fragment.checkDSFragment` / `checkTableauFragment`.
+
+`proverError` has no gamen-hs counterpart. The Lean G3DS prover returns
+`Except` only because `ancestors` takes fuel (see
+`Gamen.DeonticStit.Saturation`); that fuel can run out only on a cyclic
+generation tree, and `Prove` parents only fresh labels, so the branch is
+unreachable. It is reported as an error, never as a verdict. -/
 def classifyConsistency (fs : List Formula) : Classified :=
   if fs.any (·.hasAgentOperator) then
     match firstUnsupported checkDSFragment fs with
     | some op => .unsupported op "deontic-stit"
-    | none => .notPorted "deontic-STIT prover (G3DS)"
+    | none =>
+      match isFormulaSetConsistent dsK dsMaxSteps fs with
+      | .ok v => .verdict v "deontic-stit"
+      | .error msg => .proverError msg
   else
     match firstUnsupported (checkTableauFragment systemKDt) fs with
     | some op => .unsupported op "kdt+doxasticD"
@@ -120,7 +135,7 @@ def handleRequest : Request → Json
     match classifyConsistency fs with
     | .unsupported op prover =>
       errResult s!"unsupported operator: {op} (not in the {prover} fragment)"
-    | .notPorted what => errResult s!"not ported in Lean slice: {what}"
+    | .proverError msg => errResult s!"prover error: {msg}"
     | .verdict v prover =>
       okResult (Json.mkObj (statusPairs v ++
         [("formula_count", toJson fs.length), ("prover", toJson prover)]))
@@ -147,8 +162,8 @@ def handleRequest : Request → Json
     let pairs := indexed.flatMap fun (i, fi) =>
       indexed.filterMap fun (j, fj) => if i < j then some (i, fi, j, fj) else none
     let classified := pairs.map fun (i, fi, j, fj) => (i, fi, j, fj, classifyConsistency [fi, fj])
-    match classified.findSome? (fun | (_, _, _, _, .notPorted w) => some w | _ => none) with
-    | some what => errResult s!"not ported in Lean slice: {what}"
+    match classified.findSome? (fun | (_, _, _, _, .proverError m) => some m | _ => none) with
+    | some msg => errResult s!"prover error: {msg}"
     | none =>
       let conflicts := classified.filterMap fun
         | (i, fi, j, fj, .verdict (.definitely false) _) =>

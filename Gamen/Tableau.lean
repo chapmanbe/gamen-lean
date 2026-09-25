@@ -525,27 +525,28 @@ abbrev Rel := Std.TreeSet (World × World)
 def reflexiveClose (ws : List World) (r : Rel) : Rel := r.insertMany (ws.map fun w => (w, w))
 def symmetricClose (r : Rel) : Rel := r.insertMany (r.toList.map fun (w, v) => (v, w))
 
-/-- Transitive closure by iterating composition to a fixpoint. Each round
-adds at least one pair or stops, so `|ws|² + 1` rounds suffice. -/
-def transitiveClose (ws : List World) (r : Rel) : Rel :=
-  go r (ws.length * ws.length + 1)
+/-- Transitive closure by iterating composition to a fixpoint (Haskell
+`transitiveClose`'s `go`), through the shared `iterateToFixpoint`. Every
+pair's endpoints are in `ws` (the caller builds `r` from the branch's own
+prefixes), so each non-final round adds at least one of at most `|ws|²`
+pairs and `|ws|² + 1` rounds suffice. Running out of fuel is an error, not
+a partly closed relation. -/
+def transitiveClose (ws : List World) (r : Rel) : Except String Rel :=
+  iterateToFixpoint "transitiveClose" step (ws.length * ws.length + 1) r
 where
-  go (r : Rel) : Nat → Rel
-    | 0 => r
-    | n + 1 =>
-      let pairs := r.toList
-      let r' := r.insertMany (pairs.flatMap fun (w, x) =>
-        pairs.filterMap fun (y, z) => if x == y then some (w, z) else none)
-      if r'.size == r.size then r else go r' n
+  step (r : Rel) : Rel :=
+    let pairs := r.toList
+    r.insertMany (pairs.flatMap fun (w, x) =>
+      pairs.filterMap fun (y, z) => if x == y then some (w, z) else none)
 
-def closeForSystem (sys : System) (ws : List World) (r : Rel) : Rel :=
+def closeForSystem (sys : System) (ws : List World) (r : Rel) : Except String Rel :=
   match sys.name with
-  | "KT" => reflexiveClose ws r
+  | "KT" => pure (reflexiveClose ws r)
   | "K4" => transitiveClose ws r
-  | "KTB" => symmetricClose (reflexiveClose ws r)
+  | "KTB" => pure (symmetricClose (reflexiveClose ws r))
   | "S4" => transitiveClose ws (reflexiveClose ws r)
   | "S5" => transitiveClose ws (symmetricClose (reflexiveClose ws r))
-  | _ => r
+  | _ => pure r
 
 /-- Build the Kripke model read off an open, saturated branch and check that
 it really satisfies every signed formula on the branch. -/
@@ -558,7 +559,7 @@ def extractCountermodel (sys : System) (b : Branch) : Except String Model := do
   let ws := prefixes.map toString
   let baseRel : Rel := Std.TreeSet.ofList <| prefixes.flatMap fun σ =>
     prefixes.filterMap fun τ => if τ.isChildOf σ then some (toString σ, toString τ) else none
-  let rel := closeForSystem sys ws baseRel
+  let rel ← closeForSystem sys ws baseRel
   let allAtoms := pfs.foldl (fun acc pf => acc.insertMany pf.formula.atoms) (∅ : Std.TreeSet Atom)
   let vals := allAtoms.toList.map fun a =>
     (a.name, pfs.filterMap fun pf =>

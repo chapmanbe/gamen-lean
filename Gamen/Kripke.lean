@@ -152,4 +152,25 @@ def checkIndependence {agent : Type} (choiceCell : agent → World → Std.TreeS
         | [] => true
         | c :: cs => !(cs.foldl (· ∩ ·) c).isEmpty
 
+-- --------------------------------------------------------------------
+-- Shared fixpoint iteration, with fuel
+-- --------------------------------------------------------------------
+-- gamen-hs iterates "until nothing changes" in six places (`lfp`, `gfp`,
+-- `transitiveClose`, `euclideanClose`, `largestBisimulation`,
+-- `Laca.trajectory`), none of them bounded. The Lean ports go through
+-- this one helper instead.
+
+/-- Iterate `step` from `x` until `step y == y`, returning that `y`: the
+Haskell `go r = let r' = step r in if r' == r then r else go r'` loop.
+`fuel` counts calls to `step`; each caller documents why its fuel suffices
+(`|U| + 1` for monotone iteration in a finite universe `U`, `|W|² + 1` for
+relation closures over `W`). Running out of fuel is an error naming
+`what`, never a default answer. -/
+def iterateToFixpoint {α : Type} [BEq α] (what : String) (step : α → α) :
+    Nat → α → Except String α
+  | 0, _ => throw s!"{what}: no fixpoint within the fuel bound"
+  | fuel + 1, x =>
+    let x' := step x
+    if x' == x then pure x else iterateToFixpoint what step fuel x'
+
 end Gamen

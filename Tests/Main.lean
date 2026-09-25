@@ -9,6 +9,7 @@ import Gamen.DeonticStit.Sequent
 import Gamen.DeonticStit.Rules
 import Gamen.DeonticStit.Saturation
 import Gamen.DeonticStit.Prove
+import Gamen.DeonticStit.CounterModel
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
@@ -1528,7 +1529,7 @@ Port of the "Sequent (Gamen.DeonticStit.Sequent)" `describe` block of
 `DeonticStitSpec.hs` (beyond the `.Rules` blocks in `rulesCases`, the
 `.Saturation` blocks in `saturationCases`, the `.Prove` and clinical
 blocks in `proveCases`, and the base-module blocks in `deonticStitCases`
-below) exercises `.CounterModel`, not yet ported. -/
+below) exercises `.CounterModel`, in `counterModelCases`. -/
 
 def dsW0 : Label := label0
 def dsW1 : Label := nextLabel dsW0
@@ -1825,8 +1826,8 @@ Ports, in file order:
   or an `unknown` fails the case whichever answer was expected.
 * `test/PaperCorrespondence.hs`, "Lyon & van Berkel (2024) — G3DS^k_n
   prover": the "Definition 3", "Example 5", and "Algorithm 1 + Figure 5"
-  blocks (4 `it`s). Its "Definition 20" block (3 `it`s) needs
-  `Gamen.DeonticStit.CounterModel`, not yet ported. Citations fixed against
+  blocks (4 `it`s). Its "Definition 20" block (3 `it`s) is in
+  `counterModelCases`. Citations fixed against
   the PDF: Definition 3 is pp. 844–845 (the Haskell says 843–844);
   Algorithm 1's listing is pp. 858–860 (the Haskell says 859–860); the §4.1
   counterexample is stated on p. 864 (the spec says p. 865, Figure 5's page).
@@ -1965,10 +1966,9 @@ Port of the last five `describe` blocks of `test/DeonticStitSpec.hs`
 conditions", "DS satisfaction (Definition 3)", "toNNF preserves DS
 satisfaction (issue #8 step B)", "Normative reasoning applications
 (Section 5)"), all 17 `it`s, in file order. `test/DeonticStitSpec.hs`'s
-"DeonticStit.CounterModel: extractDSModel" block (needs
-`Gamen.DeonticStit.CounterModel`, not yet ported) and
-`PaperCorrespondence.hs`'s "Definition 20" block (same dependency) are
-skipped; port both with `.CounterModel`. `dsSatisfies` returns `Except`,
+"DeonticStit.CounterModel: extractDSModel" block and
+`PaperCorrespondence.hs`'s "Definition 20" block are in
+`counterModelCases`. `dsSatisfies` returns `Except`,
 so its results are compared with `okIs` or with `==` against another
 `dsSatisfies` call (both sides `Except`), never unwrapped to `Bool`. -/
 
@@ -2147,13 +2147,79 @@ where
   toNNF := Formula.toNNF
   isNNF := Formula.isNNF
 
+/-! ## Deontic-STIT counter-model extraction (`Gamen.DeonticStit.CounterModel`)
+
+Ports, in file order:
+
+* `test/DeonticStitSpec.hs`, "DeonticStit.CounterModel: extractDSModel"
+  (all 3 `it`s).
+* `test/PaperCorrespondence.hs`, "Lyon & van Berkel (2024) — G3DS^k_n
+  prover", its "Definition 20" block (all 3 `it`s). Citation fixed against
+  the PDF: Definition 20 runs pp. 858–859 (the Haskell says p. 858).
+* `test/RegressionIssue18.hs`, "B6: counter-models are verified, not
+  trusted": its two G3DS `it`s. The block's three tableau `it`s exercise
+  `Gamen.Tableau`'s `extractCountermodel`, not this module.
+* One case not in gamen-hs, for `euclideanClose` on its own.
+
+`refutedModel` returns `Except`: a proof, a budget overrun, a prover error,
+or an extraction error all land in `.error`, and every case below fails on
+`.error` whichever answer it expects. `dsSatisfies` results are compared
+against `.ok false`, never unwrapped. -/
+
+/-- Run `proveFormula 0 1000 phi`; on `.refuted gt s`, extract the
+counter-model. Anything but a refutation is an error. -/
+def refutedModel (phi : Formula) : Except String DSModel := do
+  match ← proveFormula 0 1000 phi with
+  | .refuted gt s => extractDSModel gt s
+  | _ => throw s!"{phi} should be refuted"
+
+def counterModelCases : List Case :=
+  let rootW : World := toString label0
+  let withModel (phi : Formula) (check : DSModel → Bool) : Bool :=
+    match refutedModel phi with
+    | .ok m => check m
+    | .error _ => false
+  let l (n : Nat) : Label := ⟨n⟩
+  [
+  -- DeonticStitSpec: "DeonticStit.CounterModel: extractDSModel"
+  ⟨"Box p is refuted; extracted model falsifies Box p at w0",
+    withModel (.box p) fun m =>
+      m.dsFrame.dsWorlds.contains rootW && dsSatisfies m rootW (.box p) == .ok false⟩,
+  ⟨"Stit i p is refuted; extracted model falsifies it at w0",
+    withModel (.stit "i" p) fun m =>
+      m.dsFrame.dsWorlds.contains rootW && dsSatisfies m rootW (.stit "i" p) == .ok false⟩,
+  ⟨"Ought i p is refuted; extracted model has nonempty ideal",
+    withModel (.ought "i" p) fun m =>
+      dsSatisfies m rootW (.ought "i" p) == .ok false && isValidDSFrame m.dsFrame⟩,
+  -- PaperCorrespondence: Lyon & van Berkel (2024), Definition 20 (pp. 858–859)
+  ⟨"Box p is refuted; root world label0 ∈ worlds of extracted model (= True)",
+    withModel (.box p) fun m => m.dsFrame.dsWorlds.contains rootW⟩,
+  ⟨"Box p is refuted; extracted model falsifies □p at root (= False)",
+    withModel (.box p) fun m => dsSatisfies m rootW (.box p) == .ok false⟩,
+  ⟨"Ought i p is refuted; extracted model satisfies D2 (non-empty ideal)",
+    withModel (.ought "i" p) fun _ => true⟩,
+  -- RegressionIssue18: "B6: counter-models are verified, not trusted"
+  ⟨"G3DS: extraction returns a verified Right model for □p",
+    withModel (.box p) fun m =>
+      isValidDSFrame m.dsFrame && m.dsFrame.dsWorlds.contains rootW
+        && dsSatisfies m rootW (.box p) == .ok false⟩,
+  ⟨"G3DS: ⊗_i p extracts a verified counter-model with a valid frame",
+    withModel (.ought "i" p) fun m => dsSatisfies m rootW (.ought "i" p) == .ok false⟩,
+  -- Not in gamen-hs: euclideanClose on its own. From {(0,1), (0,2)}
+  -- Euclideanness adds (1,1), (1,2), (2,1), (2,2); nothing else follows.
+  ⟨"euclideanClose {(w0,w1),(w0,w2)} adds exactly the four (u,v) pairs over {w1,w2}",
+    (euclideanClose ∅ (Std.TreeSet.ofList [(l 0, l 1), (l 0, l 2)] lexOrd.compare)).map
+        (·.toList) ==
+      .ok [(l 0, l 1), (l 0, l 2), (l 1, l 1), (l 1, l 2), (l 2, l 1), (l 2, l 2)]⟩
+  ]
+
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
       ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases ++ rankingTheoryCases
       ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
-      ++ deonticStitCases do
+      ++ deonticStitCases ++ counterModelCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -2165,6 +2231,6 @@ def main : IO UInt32 := do
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
     + fragmentCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
-    + deonticStitCases.length + properties.length
+    + deonticStitCases.length + counterModelCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

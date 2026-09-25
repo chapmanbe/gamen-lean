@@ -137,11 +137,28 @@ is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
       (saturation loop fuel; the explicit lazy memo, `Epistemic.hs` ~148–158).
 
 ## Task list (ordered)
-1. `/port-module DeonticStit` (base module).
+1. ~~`/port-module DeonticStit`~~ (base module, merged `83eb0e5`; also fixed
+   `Semantics.satisfies` short-circuiting).
 2. `/port-module DeonticStit.CounterModel`; port the L&vB Definition 20
    block with it.
-3. Optional: a compare.py G3DS section to raise coverage above 26 requests.
-4. Wave 4: Temporal, Epistemic (`fable`, explicit lazy memo), Stit,
+3. Port `test/Properties.hs`'s model generators (`ArbModel`,
+   `ArbKappaModel`, `ArbEpistemicModel` as each module lands) and its
+   tableau-vs-Kripke-semantics properties (K, KT, K4) to Plausible. This
+   also unblocks the two deferred RankingTheory properties.
+4. Lean-only extension, prompted by Gamen.jl#20: cross-check every
+   tableau system (K, KT, KD, KTB, K4, S4, S5) against exhaustive frame
+   enumeration up to 4 worlds, and check that every extracted countermodel
+   really falsifies the formula. Print the seed on failure. Do the same for
+   G3DS once CounterModel lands. gamen-hs has only the K/KT/K4 soundness
+   properties, so offer to file the stronger check there too (ask first).
+5. Optional: a compare.py G3DS section to raise coverage above 26 requests.
+6. Deferred, prompted by Gamen.jl#19: a runtime string → `Formula` parser.
+   Not part of the port (gamen-hs has none; the wire format is JSON), and
+   `ml[…]` already covers notebooks. Do it when a widget or the web editor
+   needs typed formula input, with a round-trip property against the
+   printer using the random formulas from task 3. Meanwhile extend `ml[…]`
+   with temporal/epistemic operators as those modules land.
+7. Wave 4: Temporal, Epistemic (`fable`, explicit lazy memo), Stit,
    Xstit, Cgs, Laca, Coalition, Atl.*, Atel.
 
 ## Suggested implementer model

@@ -99,6 +99,11 @@ Each wave ends with its tests ported and `tools/compare/compare.py` green.
    `service/Main.hs`, `app/Main.hs`; extend the comparison harness to the
    dcleg service's protocol.
 
+Lean-only extensions (not in gamen-hs; see the handoff plan): a stronger
+tableau cross-check against frame enumeration (Gamen.jl#20), and later a
+runtime string → `Formula` parser (Gamen.jl#19, deferred until a widget
+needs typed input; `ml[…]` covers notebooks).
+
 In parallel: teaching notebooks, one Gamen.jl Pluto chapter at a time
 (`Notebooks/`), reusing `Widgets/`.
 

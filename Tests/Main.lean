@@ -893,7 +893,17 @@ def semanticsCases : List Case := [
   ⟨"isValid: ¬q fails in the class {Figure 1.1, Figure 1.2} — fig11model's \
     w2 (q true) witnesses invalidity even though fig12model (q unvalued, \
     so false everywhere) satisfies ¬q vacuously",
-    valid [fig11model, fig12model] (.not q) == some false⟩
+    valid [fig11model, fig12model] (.not q) == some false⟩,
+  -- Not in gamen-hs. `And`/`Or` must short-circuit like Haskell's lazy
+  -- `&&`/`||`: the right side (an operator `satisfies` has no semantics
+  -- for) must never be evaluated once the left side already settles the
+  -- result. Expected values from gamen-hs GHCi on `fig11model`-equivalent
+  -- fixture (p true at w1): `satisfies m "w1" (And Bot (Stit "i" p))` ⇒
+  -- `False`; `satisfies m "w1" (Or p (Knowledge "i" p))` ⇒ `True`.
+  ⟨"And Bot _ short-circuits to False without evaluating an erroring right side",
+    sat fig11model "w1" (.and .bot (.stit "i" p)) == some false⟩,
+  ⟨"Or p _ short-circuits to True without evaluating an erroring right side",
+    sat fig11model "w1" (.or p (.knowledge "i" p)) == some true⟩
 ]
 
 /-! ## Fragment gating (`Gamen.Fragment`) -/

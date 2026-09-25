@@ -4,6 +4,7 @@ import Gamen.RankingTheory
 import Gamen.Plausibility
 import Gamen.Fragment
 import Gamen.FrameProperties
+import Gamen.DeonticStit
 import Gamen.DeonticStit.Sequent
 import Gamen.DeonticStit.Rules
 import Gamen.DeonticStit.Saturation
@@ -1514,10 +1515,10 @@ def plausibilityCases : List Case :=
 
 Port of the "Sequent (Gamen.DeonticStit.Sequent)" `describe` block of
 `test/DeonticStitSpec.hs` in full (9 `it`s, in file order). The rest of
-`DeonticStitSpec.hs` (beyond the `.Rules` blocks in `rulesCases` and the
-`.Saturation` blocks in `saturationCases`, and the `.Prove` and clinical
-blocks in `proveCases` below) exercises `Gamen.DeonticStit` and
-`.CounterModel`, not yet ported. -/
+`DeonticStitSpec.hs` (beyond the `.Rules` blocks in `rulesCases`, the
+`.Saturation` blocks in `saturationCases`, the `.Prove` and clinical
+blocks in `proveCases`, and the base-module blocks in `deonticStitCases`
+below) exercises `.CounterModel`, not yet ported. -/
 
 def dsW0 : Label := label0
 def dsW1 : Label := nextLabel dsW0
@@ -1947,6 +1948,103 @@ def proveCases : List Case :=
       && isRefuted (proveFormula 0 1000 (.or p (.ought "i" p)))⟩
   ]
 
+/-! ## Deontic-STIT base module (`Gamen.DeonticStit`)
+
+Port of the last five `describe` blocks of `test/DeonticStitSpec.hs`
+("Deontic STIT formula construction", "DS model construction and frame
+conditions", "DS satisfaction (Definition 3)", "toNNF preserves DS
+satisfaction (issue #8 step B)", "Normative reasoning applications
+(Section 5)"), all 17 `it`s, in file order. `test/DeonticStitSpec.hs`'s
+"DeonticStit.CounterModel: extractDSModel" block (needs
+`Gamen.DeonticStit.CounterModel`, not yet ported) and
+`PaperCorrespondence.hs`'s "Definition 20" block (same dependency) are
+skipped; port both with `.CounterModel`. `dsSatisfies` returns `Except`,
+so its results are compared with `okIs` or with `==` against another
+`dsSatisfies` call (both sides `Except`), never unwrapped to `Bool`. -/
+
+/-- The cycling example from Lyon & van Berkel (2024), Figure 1/2 (pp.
+844–845): Jade (j) and Kai (k) cycling on a two-lane road. -/
+def dsFrame' : DSFrame :=
+  mkDSFrame ["w1", "w2", "w3", "w4"]
+    -- Jade's choice relation (equivalence classes: {w1,w3}, {w2,w4})
+    [ ("j", [ ("w1", "w1"), ("w1", "w3"), ("w3", "w1"), ("w3", "w3")
+            , ("w2", "w2"), ("w2", "w4"), ("w4", "w2"), ("w4", "w4") ])
+    -- Kai's choice relation (equivalence classes: {w1,w2}, {w3,w4})
+    , ("k", [ ("w1", "w1"), ("w1", "w2"), ("w2", "w1"), ("w2", "w2")
+            , ("w3", "w3"), ("w3", "w4"), ("w4", "w3"), ("w4", "w4") ]) ]
+    -- Ideal sets: Jade obligated to {w1,w3}, Kai to {w1,w2}
+    [("j", ["w1", "w3"]), ("k", ["w1", "w2"])]
+
+def dsModel' : DSModel :=
+  mkDSModel dsFrame'
+    [ ("left_jade",  ["w1", "w3"])
+    , ("right_jade", ["w2", "w4"])
+    , ("left_kai",   ["w1", "w2"])
+    , ("right_kai",  ["w3", "w4"])
+    , ("coll",       ["w2", "w3"]) ]
+
+def deonticStitCases : List Case :=
+  let lj : Formula := .atom "left_jade"
+  let rj : Formula := .atom "right_jade"
+  let lk : Formula := .atom "left_kai"
+  let rk : Formula := .atom "right_kai"
+  let coll : Formula := .atom "coll"
+  [
+  -- Deontic STIT formula construction
+  ⟨"displays Ought and Permitted",
+    toString (Formula.ought "j" lj) == "O[j]left_jade"
+      && toString (Formula.permitted "j" lj) == "P[j]left_jade"⟩,
+  ⟨"Ought/Permitted are not modal-free",
+    (Formula.ought "j" lj).isModalFree == false
+      && (Formula.permitted "j" lj).isModalFree == false⟩,
+  -- DS model construction and frame conditions
+  ⟨"valid frame passes all conditions", isValidDSFrame dsFrame' == true⟩,
+  ⟨"C1: R_[i] are equivalence relations", checkDS_C1 dsFrame' == true⟩,
+  ⟨"C2: independence of agents", checkDS_C2 dsFrame' == true⟩,
+  ⟨"D1: ideal worlds subset of W", checkDS_D1 dsFrame' == true⟩,
+  ⟨"D2: every agent has ideal worlds", checkDS_D2 dsFrame' == true⟩,
+  ⟨"D3: ideal worlds fill choice cells", checkDS_D3 dsFrame' == true⟩,
+  -- DS satisfaction (Definition 3)
+  ⟨"evaluates [i]phi (agent choice)",
+    okIs (dsSatisfies dsModel' "w1" (.stit "j" lj)) true
+      && okIs (dsSatisfies dsModel' "w2" (.stit "j" lj)) false⟩,
+  ⟨"evaluates □phi (settled)",
+    okIs (dsSatisfies dsModel' "w1" (.box lj)) false
+      && okIs (dsSatisfies dsModel' "w1" (.box (.or lj rj))) true⟩,
+  ⟨"evaluates ⊗_i phi (ought)",
+    okIs (dsSatisfies dsModel' "w1" (.ought "j" lj)) true
+      && okIs (dsSatisfies dsModel' "w1" (.ought "j" rj)) false
+      && okIs (dsSatisfies dsModel' "w1" (.ought "k" lk)) true⟩,
+  ⟨"evaluates ⊖_i phi (permitted)",
+    okIs (dsSatisfies dsModel' "w1" (.permitted "j" lj)) true
+      && okIs (dsSatisfies dsModel' "w1" (.permitted "j" coll)) true
+      && okIs (dsSatisfies dsModel' "w1" (.permitted "j" rj)) false⟩,
+  ⟨"collision avoidance is settled if both comply",
+    let noColl := Formula.implies (.not coll) (.or (.and rj rk) (.and lj lk))
+    okIs (dsSatisfies dsModel' "w1" (.box noColl)) true⟩,
+  -- toNNF preserves DS satisfaction (issue #8 step B)
+  ⟨"every L_n test formula is satisfaction-equivalent to its NNF",
+    let phis : List Formula :=
+      [ .implies (.stit "j" lj) (.permitted "j" lj)
+      , .iff (.ought "k" lk) (.not (.permitted "k" (.not lk)))
+      , .not (.and (.ought "j" lj) (.permitted "j" rj))
+      , .not (.implies (.box (.or lj rj)) (.stit "j" lj))
+      , .not (.choiceDiamond "k" coll) ]
+    let worlds_ := ["w1", "w2", "w3", "w4"]
+    phis.all fun phi =>
+      worlds_.all fun w => dsSatisfies dsModel' w phi == dsSatisfies dsModel' w phi.toNNF⟩,
+  -- Normative reasoning applications (Section 5)
+  ⟨"duty checking: identifies Jade's obligations",
+    okIs (dutyCheck dsModel' "w1" "j" [lj, rj, lk, rk]) [lj]⟩,
+  ⟨"compliance checking: Jade's left choice complies",
+    complianceCheck dsModel' "j" (Std.TreeSet.ofList ["w1", "w3"]) == true
+      && complianceCheck dsModel' "j" (Std.TreeSet.ofList ["w2", "w4"]) == false⟩,
+  ⟨"joint fulfillment: can Jade fulfill all duties?",
+    okIs (jointFulfillment dsModel' "j" [lj]) true
+      && okIs (jointFulfillment dsModel' "j" [lj, .not coll]) true
+      && okIs (jointFulfillment dsModel' "j" [rj]) false⟩
+  ]
+
 /-! ## Property tests (Plausible) -/
 
 /-- Kripke-fragment formulas over atoms p, q, r. Mirrors `genFormula` in
@@ -2017,7 +2115,8 @@ def main : IO UInt32 := do
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
       ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases ++ rankingTheoryCases
-      ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases do
+      ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
+      ++ deonticStitCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -2029,6 +2128,6 @@ def main : IO UInt32 := do
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
     + fragmentCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
-    + properties.length
+    + deonticStitCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

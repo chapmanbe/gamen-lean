@@ -2022,6 +2022,16 @@ def deonticStitCases : List Case :=
   ⟨"collision avoidance is settled if both comply",
     let noColl := Formula.implies (.not coll) (.or (.and rj rk) (.and lj lk))
     okIs (dsSatisfies dsModel' "w1" (.box noColl)) true⟩,
+  -- Not in gamen-hs. `And`/`Or` must short-circuit like Haskell's lazy
+  -- `&&`/`||`: the right side (an operator `dsSatisfies` has no DS
+  -- semantics for) must never be evaluated once the left side already
+  -- settles the result. Expected values from gamen-hs GHCi (single-world
+  -- model, `p` true at `w1`): `dsSatisfies m "w1" (And Bot (FutureBox p))`
+  -- ⇒ `False`; `dsSatisfies m "w1" (Or p (Next p))` ⇒ `True`.
+  ⟨"And Bot _ short-circuits to False without evaluating an erroring right side",
+    okIs (dsSatisfies dsModel' "w1" (.and .bot (.futureBox lj))) false⟩,
+  ⟨"Or left_jade _ short-circuits to True without evaluating an erroring right side",
+    okIs (dsSatisfies dsModel' "w1" (.or lj (.next lj))) true⟩,
   -- toNNF preserves DS satisfaction (issue #8 step B)
   ⟨"every L_n test formula is satisfaction-equivalent to its NNF",
     let phis : List Formula :=

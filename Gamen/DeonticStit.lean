@@ -106,9 +106,17 @@ def dsSatisfies (m : DSModel) (w : World) (f : Formula) : Except String Bool := 
   | .bot => return false
   | .atomF a => return (m.dsValuation.getD a ∅).contains w
   | .not g => return !(← dsSatisfies m w g)
-  | .and l r => return (← dsSatisfies m w l) && (← dsSatisfies m w r)
-  | .or l r => return (← dsSatisfies m w l) || (← dsSatisfies m w r)
-  | .implies l r => return !(← dsSatisfies m w l) || (← dsSatisfies m w r)
+  -- Short-circuiting, matching Haskell's lazy `&&`/`||`: the right side
+  -- is only evaluated (and so can only error) when the left side's value
+  -- doesn't already settle the result. `do`'s `←` is strict, so writing
+  -- `(← dsSatisfies m w l) && (← dsSatisfies m w r)` would evaluate both
+  -- sides unconditionally and surface a right-side error the Haskell
+  -- never reaches (e.g. `And Bot (FutureBox p)`).
+  | .and l r => if !(← dsSatisfies m w l) then return false else dsSatisfies m w r
+  | .or l r => if (← dsSatisfies m w l) then return true else dsSatisfies m w r
+  | .implies l r => if !(← dsSatisfies m w l) then return true else dsSatisfies m w r
+  -- `==` on `Bool` is strict in both arguments in Haskell too; no
+  -- short-circuiting to preserve here.
   | .iff l r => return (← dsSatisfies m w l) == (← dsSatisfies m w r)
   -- □φ: settled/necessary — true at all worlds (Def 3, item 5)
   | .box g => m.dsFrame.dsWorlds.toList.allM (dsSatisfies m · g)

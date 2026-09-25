@@ -6,6 +6,7 @@ import Gamen.Fragment
 import Gamen.FrameProperties
 import Gamen.DeonticStit.Sequent
 import Gamen.DeonticStit.Rules
+import Gamen.DeonticStit.Saturation
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
@@ -1512,10 +1513,10 @@ def plausibilityCases : List Case :=
 
 Port of the "Sequent (Gamen.DeonticStit.Sequent)" `describe` block of
 `test/DeonticStitSpec.hs` in full (9 `it`s, in file order). The rest of
-`DeonticStitSpec.hs` (beyond the `.Rules` blocks in `rulesCases` below), and
-the "Lyon & van Berkel (2024) — G3DS^k_n prover" section of
-`test/PaperCorrespondence.hs`, exercise `Gamen.DeonticStit`, `.Saturation`,
-`.Prove`, `.CounterModel` — not yet ported. -/
+`DeonticStitSpec.hs` (beyond the `.Rules` blocks in `rulesCases` and the
+`.Saturation` blocks in `saturationCases` below), and the "Lyon & van Berkel
+(2024) — G3DS^k_n prover" section of `test/PaperCorrespondence.hs`, exercise
+`Gamen.DeonticStit`, `.Prove`, `.CounterModel` — not yet ported. -/
 
 def dsW0 : Label := label0
 def dsW1 : Label := nextLabel dsW0
@@ -1701,6 +1702,106 @@ def rulesCases : List Case :=
     | _ => false⟩
   ]
 
+/-! ## Deontic-STIT saturation (`Gamen.DeonticStit.Saturation`)
+
+Port of the four "DeonticStit.Saturation: …" `describe` blocks of
+`test/DeonticStitSpec.hs` (GenTree, blocking, saturation predicates,
+isStable) in full (26 `it`s, in file order). Predicates that consult the
+generation tree return `Except` in Lean (see the module docstring), so those
+are compared with `okIs`: an error fails the case whichever answer was
+expected. -/
+
+def saturationCases : List Case :=
+  let np : Formula := .not p
+  let gt0 := emptyGenTree dsW0
+  [
+  -- GenTree
+  ⟨"emptyGenTree has just the root",
+    gt0.gtRoot == dsW0 && okIs (ancestors dsW0 gt0) []⟩,
+  ⟨"addGenChild records the parent edge",
+    let gt := addGenChild dsW1 dsW2 (addGenChild dsW0 dsW1 gt0)
+    okIs (ancestors dsW2 gt) [dsW1, dsW0] && okIs (ancestors dsW1 gt) [dsW0]⟩,
+  ⟨"addGenIoaLabel marks but does not parent",
+    let gt := addGenIoaLabel dsW1 gt0
+    isIoaLabel dsW1 gt == true && okIs (ancestors dsW1 gt) []⟩,
+  -- blocking
+  ⟨"directly blocks a child whose Γ↾u and ideals match the parent",
+    -- Same formula content {p} at both labels, same (empty) ideals, but
+    -- Definition 16 (i) excludes the root as blocker: w1 is NOT blocked.
+    let gt := addGenChild dsW0 dsW1 gt0
+    let s := addFormula (mkLabFormula dsW0 p) (addFormula (mkLabFormula dsW1 p) emptySequent)
+    isDirectlyBlockedBy dsW1 dsW0 gt s == false && okIs (isBlocked dsW1 gt s) false⟩,
+  ⟨"directly blocks when the ancestor is not the root",
+    let gt := addGenChild dsW1 dsW2 (addGenChild dsW0 dsW1 gt0)
+    let s := addFormula (mkLabFormula dsW1 p) (addFormula (mkLabFormula dsW2 p) emptySequent)
+    isDirectlyBlockedBy dsW2 dsW1 gt s == true && okIs (isBlocked dsW2 gt s) true⟩,
+  ⟨"differing formula content prevents blocking",
+    let gt := addGenChild dsW1 dsW2 (addGenChild dsW0 dsW1 gt0)
+    let s := addFormula (mkLabFormula dsW1 p) (addFormula (mkLabFormula dsW2 np) emptySequent)
+    isDirectlyBlockedBy dsW2 dsW1 gt s == false⟩,
+  ⟨"IOA labels are never blocked",
+    okIs (isBlocked dsW1 (addGenIoaLabel dsW1 gt0) emptySequent) false⟩,
+  -- saturation predicates
+  ⟨"satId fails on a closed sequent",
+    satId (addFormula (mkLabFormula dsW0 p) (singletonSequent dsW0 np)) == false⟩,
+  ⟨"satOr fails when a disjunct is missing",
+    satOr (singletonSequent dsW0 (.or p q)) == false⟩,
+  ⟨"satOr holds when both disjuncts are present",
+    satOr (addFormula (mkLabFormula dsW0 p)
+      (addFormula (mkLabFormula dsW0 q) (singletonSequent dsW0 (.or p q)))) == true⟩,
+  ⟨"satAnd fails when both conjuncts are missing",
+    satAnd (singletonSequent dsW0 (.and p q)) == false⟩,
+  ⟨"satAnd holds with one conjunct present (saturation, not the rule)",
+    satAnd (addFormula (mkLabFormula dsW0 p) (singletonSequent dsW0 (.and p q))) == true⟩,
+  ⟨"satDiamond requires some witness label",
+    satDiamond (singletonSequent dsW0 (.diamond p)) == false
+      && satDiamond (addFormula (mkLabFormula dsW0 p) (singletonSequent dsW0 (.diamond p))) == true⟩,
+  ⟨"satBox requires an unblocked witness",
+    okIs (satBox gt0 (singletonSequent dsW0 (.box p))) false
+      && okIs (satBox gt0 (addFormula (mkLabFormula dsW0 p) (singletonSequent dsW0 (.box p)))) true⟩,
+  ⟨"satChoiceDiamond demands u:φ AND u:⟨i⟩φ when R_[i]wu present",
+    let s0 := addRel (.choice "i" dsW0 dsW1) (singletonSequent dsW0 (.choiceDiamond "i" p))
+    let s1 := addFormula (mkLabFormula dsW1 p)
+      (addFormula (mkLabFormula dsW1 (.choiceDiamond "i" p)) s0)
+    satChoiceDiamond s0 == false && satChoiceDiamond s1 == true⟩,
+  ⟨"satStit demands an R_[i]wu and u:φ for unblocked w",
+    okIs (satStit gt0 (singletonSequent dsW0 (.stit "i" p))) false⟩,
+  ⟨"satRef demands R_[i]ww at every (i, w)",
+    satRef (singletonSequent dsW0 (.stit "i" p)) == false
+      && satRef (addRel (.choice "i" dsW0 dsW0) (singletonSequent dsW0 (.stit "i" p))) == true⟩,
+  ⟨"satEuc fails without Euclidean closure of R_[i]wu, R_[i]wv → R_[i]uv",
+    -- R_[i]w0w0 and R_[i]w0w1 both present; Euclidean demands
+    -- R_[i]w0w1 (already there), R_[i]w1w0, and R_[i]w1w1.
+    let s := addRel (.choice "i" dsW0 dsW0)
+      (addRel (.choice "i" dsW0 dsW1) (singletonSequent dsW0 (.stit "i" p)))
+    let sClosed := addRel (.choice "i" dsW1 dsW0) (addRel (.choice "i" dsW1 dsW1) s)
+    satEuc s == false && satEuc sClosed == true⟩,
+  ⟨"satPermitted demands u:φ at every Ideal-witness",
+    satPermitted (addRel (.ideal "i" dsW1) (singletonSequent dsW0 (.permitted "i" p))) == false⟩,
+  ⟨"satOught requires unblocked I_⊗_i u with u:φ",
+    okIs (satOught gt0 (singletonSequent dsW0 (.ought "i" p))) false
+      && okIs (satOught gt0 (addRel (.ideal "i" dsW0)
+          (addFormula (mkLabFormula dsW0 p) (singletonSequent dsW0 (.ought "i" p))))) true⟩,
+  ⟨"satD2 demands every agent to have an unblocked ideal",
+    okIs (satD2 gt0 (singletonSequent dsW0 (.ought "i" p))) false
+      && okIs (satD2 gt0 (addRel (.ideal "i" dsW0) (singletonSequent dsW0 (.ought "i" p)))) true⟩,
+  ⟨"satD3 demands ideal-set closure under R_[i]",
+    let s0 := addRel (.ideal "i" dsW0)
+      (addRel (.choice "i" dsW0 dsW1) (singletonSequent dsW0 (.permitted "i" p)))
+    satD3 s0 == false && satD3 (addRel (.ideal "i" dsW1) s0) == true⟩,
+  ⟨"satAPC k=0 always holds",
+    satAPC 0 (singletonSequent dsW0 (.stit "i" p)) == true⟩,
+  ⟨"satAPC k=1 fails when 2 labels exist with no R_[i] pair",
+    satAPC 1 (addFormula (mkLabFormula dsW1 p) (singletonSequent dsW0 (.stit "i" p))) == false⟩,
+  -- isStable
+  ⟨"isStable: is False on any non-trivial sequent missing R_[i]ww",
+    -- (Stit "i" p) at w0 needs Ref (R_[i]w0w0) plus a witness u with
+    -- R_[i]w0u and u:p — none of which we have.
+    okIs (isStable 0 gt0 (singletonSequent dsW0 (.stit "i" (.atom "p")))) false⟩,
+  ⟨"isStable: is True on the empty sequent",
+    okIs (isStable 0 gt0 emptySequent) true⟩
+  ]
+
 /-! ## Property tests (Plausible) -/
 
 /-- Kripke-fragment formulas over atoms p, q, r. Mirrors `genFormula` in
@@ -1771,7 +1872,7 @@ def main : IO UInt32 := do
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
       ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases ++ rankingTheoryCases
-      ++ plausibilityCases ++ sequentCases ++ rulesCases do
+      ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (300 random formulas each)"
@@ -1782,6 +1883,6 @@ def main : IO UInt32 := do
   let total := unitCases.length + tableauCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
     + fragmentCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
-    + sequentCases.length + rulesCases.length + properties.length
+    + sequentCases.length + rulesCases.length + saturationCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

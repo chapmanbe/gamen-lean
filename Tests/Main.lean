@@ -1934,7 +1934,17 @@ def proveCases : List Case :=
     isFormulaValid 0 5000 (.box .bot) == .ok (.definitely false)⟩,
   -- RegressionIssue18: consistency
   ⟨"G3DS: {⊗_i p, ⊗_i ¬p} is inconsistent",
-    isFormulaSetConsistent 0 5000 [.ought "i" p, .ought "i" (.not p)] == .ok (.definitely false)⟩
+    isFormulaSetConsistent 0 5000 [.ought "i" p, .ought "i" (.not p)] == .ok (.definitely false)⟩,
+  -- Not in gamen-hs. Guards applyOughtB's (C_⊗_i) witness condition that
+  -- the witness `u` carry `I_⊗_i u`: here w₀ carries `p` but is not ideal,
+  -- so it must not count as a witness for `⊗_i p`. Without the check the
+  -- rule never fires, satOught fails, and the search ends `stuck`
+  -- (unknown). Expected verdict from gamen-hs GHCi:
+  -- `isFormulaValid 0 1000 (Or (Atom "p") (Ought "i" (Atom "p")))` ⇒
+  -- `Definitely False` (proveFormula ⇒ Refuted).
+  ⟨"Not in gamen-hs: p ∨ ⊗_i p is not valid (⊗_i witness must be ideal)",
+    isFormulaValid 0 1000 (.or p (.ought "i" p)) == .ok (.definitely false)
+      && isRefuted (proveFormula 0 1000 (.or p (.ought "i" p)))⟩
   ]
 
 /-! ## Property tests (Plausible) -/

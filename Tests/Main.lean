@@ -2124,9 +2124,202 @@ def testModel : Option Model :=
 def truthsIn (m : Option Model) (f : Formula) : Option (List Bool) :=
   m.bind fun m => (m.frame.worlds.toList.mapM (satisfies m · f)).toOption
 
+/-! ### `Model`/`KappaModel` generators (Plausible)
+
+Mirrors `test/Properties.hs`'s `ArbModel`/`ArbKappaModel` newtypes. The
+Haskell wrappers exist only to dodge orphan-`Arbitrary`-instance
+restrictions; Lean's typeclass resolution has no such restriction, so the
+instances below attach directly to `Model` and `KappaModel`.
+(`ArbEpistemicModel` is out of scope here: `Gamen.Epistemic` is not
+ported.) -/
+
+private def propAtomNames : List String := ["p", "q", "r"]
+
+/-- Haskell's `sublistOf`: a random subset of `xs`, coin-flipping each
+element for inclusion. -/
+private def genSublist (xs : List α) : Gen (List α) :=
+  xs.filterM fun _ => (Arbitrary.arbitrary : Gen Bool)
+
+/-- 1–4 worlds, a random edge subset of `ws ×ˢ ws`, and a random valuation
+over {p,q,r}. Mirrors `genKripkeModel`. `mkFrame`'s endpoint check can
+never fire here — every edge is drawn from `ws ×ˢ ws` — so a failure
+would be a real generator bug; it surfaces as a `Gen` failure, never a
+silently-substituted default model. -/
+def genKripkeModel : Gen Model := do
+  let ⟨n, _⟩ ← Gen.choose Nat 1 4 (by omega)
+  let ws := (List.range n).map fun i => s!"w{i + 1}"
+  let allPairs := ws.flatMap fun w1 => ws.map fun w2 => (w1, w2)
+  let edges ← genSublist allPairs
+  let val ← propAtomNames.mapM fun a => do
+    let vs ← genSublist ws
+    return (a, vs)
+  match mkFrame ws edges with
+  | .ok fr => return mkModel fr val
+  | .error e => throw (GenError.genError e)
+
+instance : Arbitrary Model := ⟨genKripkeModel⟩
+
+/-- Haskell's `ArbModel` defines no custom `shrink`, so QuickCheck's
+default (no shrinking) applies; same here. -/
+instance : Shrinkable Model where
+  shrink _ := []
+
+/-- 2–4 worlds; agent "c"'s κ is pinned to 0 at the first world (so
+`wellFormed` always holds) and drawn from 0–4 at the rest; random
+valuation over {p,q,r}. Mirrors `genKappaModel`. -/
+def genKappaModel : Gen KappaModel := do
+  let ⟨n, _⟩ ← Gen.choose Nat 2 4 (by omega)
+  let ws := (List.range n).map fun i => s!"w{i + 1}"
+  let rest ← (List.range (n - 1)).mapM fun _ => do
+    let ⟨k, _⟩ ← Gen.choose Nat 0 4 (by omega)
+    return (k : Int)
+  let kappaList := ws.zip ((0 : Int) :: rest)
+  let val ← propAtomNames.mapM fun a => do
+    let vs ← genSublist ws
+    return (a, vs)
+  return mkKappaModel ws [("c", kappaList)] val
+
+instance : Arbitrary KappaModel := ⟨genKappaModel⟩
+
+instance : Shrinkable KappaModel where
+  shrink _ := []
+
+/-- `∃ w, M,w ⊩ f`, staying in `Except`: an error (unreachable for the
+Bot/Atom/Not/And/Or/Implies/Iff/Box/Diamond fragment these generators
+produce, over a well-formed `Model`) must propagate as an error, not get
+read as "no witness" — that would let a real bug in `satisfies` pass
+silently wherever this is used as an implication's conclusion. -/
+def anySatisfies (m : Model) (f : Formula) : Except String Bool :=
+  m.frame.worlds.toList.anyM fun w => satisfies m w f
+
+/-- `∀ w, M,w ⊩ f`, staying in `Except` for the same reason as
+`anySatisfies`. -/
+def allSatisfies (m : Model) (f : Formula) : Except String Bool :=
+  m.frame.worlds.toList.allM fun w => satisfies m w f
+
+/-- `.ok true`, and nothing else — used where a conjunct must contribute a
+definite failure on `.error`, never a silent pass. -/
+def isOkTrue : Except String Bool → Bool
+  | .ok true => true
+  | _ => false
+
+/-- The model's relation as a flat edge set. Mirrors `edgesOf`. -/
+def edgesOf (m : Model) : Rel :=
+  Std.TreeSet.ofList
+    (m.frame.relation.toList.flatMap fun (w, vs) => vs.toList.map fun v => (w, v))
+    lexOrd.compare
+
+/-- Rebuild a model with a different accessibility relation, given as an
+edge set. Mirrors `withEdges`. -/
+def withEdges (m : Model) (es : Rel) : Model :=
+  let relation := es.toList.foldl
+    (fun acc (w, v) => acc.insert w ((acc.getD w ∅).insert v))
+    (∅ : Std.TreeMap World (Std.TreeSet World))
+  { m with frame := { m.frame with relation } }
+
+/-- Reflexive closure of `m`'s relation — the KT frame class. Mirrors
+`reflexiveClosureModel`. -/
+def reflexiveClosureModel (m : Model) : Model :=
+  withEdges m (reflexiveClose m.frame.worlds.toList (edgesOf m))
+
+/-- Transitive-only closure of `m`'s relation — the K4 frame class.
+Mirrors `transitiveClosureModel`, through the shared, fuel-checked
+`Tableau.transitiveClose` (running out of fuel is an `Except`, never a
+partly-closed relation, unlike Haskell's unbounded `go`). -/
+def transitiveClosureModel (m : Model) : Except String Model :=
+  return withEdges m (← transitiveClose m.frame.worlds.toList (edgesOf m))
+
+/-- A formula that is K-valid BY CONSTRUCTION: axiom schemes instantiated
+with random small subformulas. Mirrors `ArbValidFormula`/`genValidFormula`
+— see that Haskell docstring for why (valid formulas are too rare in the
+raw random stream to reach by filtering). -/
+structure ValidFormula where
+  getFormula : Formula
+  deriving Repr
+
+def genValidFormula : Gen Formula := do
+  let a ← Gen.resize (fun _ => 2) (Arbitrary.arbitrary : Gen Formula)
+  let b ← Gen.resize (fun _ => 2) (Arbitrary.arbitrary : Gen Formula)
+  Gen.elements
+    [ .implies a a
+    , .or a (.not a)
+    , .not (.and a (.not a))
+    , .implies (.and a b) a
+    , .implies (.and a b) b
+    , .implies a (.or a b)
+    , .implies b (.or a b)
+    , .implies a (.implies b a)
+    , .implies .bot a
+    , .iff (.not (.not a)) a
+    , .iff (.not (.and a b)) (.or (.not a) (.not b))
+    , .iff (.not (.or a b)) (.and (.not a) (.not b))
+    , .implies (.box (.implies a b)) (.implies (.box a) (.box b))
+    , .iff (.diamond a) (.not (.box (.not a)))
+    , .iff (.box a) (.not (.diamond (.not a)))
+    , .implies (.box (.and a b)) (.box a)
+    , .implies (.and (.box a) (.box b)) (.box (.and a b)) ]
+    (by simp)
+
+instance : Arbitrary ValidFormula := ⟨ValidFormula.mk <$> genValidFormula⟩
+instance : Shrinkable ValidFormula where shrink _ := []
+
+/-- Formulas valid in K4 (transitive frames) but NOT in K: instances of
+axiom 4. Mirrors `Arb4Formula`/`gen4Formula`. -/
+structure FourFormula where
+  getFormula : Formula
+  deriving Repr
+
+def gen4Formula : Gen Formula := do
+  let a ← Gen.resize (fun _ => 2) (Arbitrary.arbitrary : Gen Formula)
+  Gen.elements
+    [ .implies (.box a) (.box (.box a))
+    , .implies (.diamond (.diamond a)) (.diamond a)
+    , .implies (.box a) (.box (.box (.box a)))
+    , .implies (.diamond (.diamond (.diamond a))) (.diamond a) ]
+    (by simp)
+
+instance : Arbitrary FourFormula := ⟨FourFormula.mk <$> gen4Formula⟩
+instance : Shrinkable FourFormula where shrink _ := []
+
+/-- Propositional-fragment-only formulas (no Box/Diamond), safe to use as
+the operand of `tau`/`conditionalize`. Mirrors `ArbPropFormula`. -/
+structure PropFormula where
+  getFormula : Formula
+  deriving Repr
+
+partial def genPropFormula : Nat → Gen Formula
+  | 0 => Gen.frequency (pure .bot) [(1, pure .bot), (4, genAtom)]
+  | n + 1 =>
+    let h := (n + 1) / 2
+    Gen.frequency (pure .bot) [
+      (1, pure .bot), (4, genAtom),
+      (3, .not <$> genPropFormula n),
+      (3, .and <$> genPropFormula h <*> genPropFormula h),
+      (2, .or <$> genPropFormula h <*> genPropFormula h),
+      (2, .implies <$> genPropFormula h <*> genPropFormula h)]
+where
+  genAtom : Gen Formula := do
+    let ⟨i, _⟩ ← Gen.choose Nat 0 2 (by omega)
+    return .atom (propAtomNames.getD i "p")
+
+instance : Arbitrary PropFormula :=
+  ⟨PropFormula.mk <$> Gen.sized fun n => genPropFormula (min n 12)⟩
+instance : Shrinkable PropFormula where shrink _ := []
+
+/-- True when φ is neither a tautology nor a contradiction in `m`.
+Mirrors `isContingent`, but stays in `Except`: for the propositional
+fragment `PropFormula` generates, `truthSet` can never actually error, so
+a `.error` here is a real bug, not a legitimate "not contingent" reading.
+Callers must not collapse it to `false` themselves — that would let an
+error masquerade as the (equally vacuous-looking) "not contingent" case
+and silently pass whichever answer the property expected. -/
+def isContingentK (m : KappaModel) (f : Formula) : Except String Bool := do
+  let t ← truthSet m f
+  return !t.isEmpty && t.toList != m.kWorlds.toList
+
 def properties : List (String × IO Bool) :=
-  let run (p : Prop) [Testable p] : IO Bool := do
-    match ← Testable.checkIO p { numInst := 300, quiet := true } with
+  let run (p : Prop) (numInst : Nat := 300) [Testable p] : IO Bool := do
+    match ← Testable.checkIO p { numInst := numInst, quiet := true } with
     | .failure _ xs _ => IO.println s!"    counterexample: {xs}"; return false
     | _ => return true
   -- Plausible's `Testable` instances match `NamedBinder name (∀ x, …)`; the
@@ -2142,7 +2335,75 @@ def properties : List (String × IO Bool) :=
           && truthsIn testModel (toNNF f) == truthsIn testModel f) = true)),
     ("tableau-valid formulas are true in the test model (soundness spot-check)",
       run (NamedBinder "f" <| ∀ f : Formula,
-        (!proves [] f || truthsIn testModel f == some [true, true, true]) = true)) ]
+        (!proves [] f || truthsIn testModel f == some [true, true, true]) = true)),
+    -- Gamen.Tableau: soundness vs. Kripke semantics (K, KT, K4) — mirrors
+    -- the "Gamen.Tableau: soundness vs. Kripke semantics" describe block
+    -- of `test/Properties.hs`. Only the K/KT/K4 soundness properties and
+    -- the completeness-ish direction are in scope for this pass; S4, S5,
+    -- the axiom-scheme/provable-entailment/extracted-countermodel K
+    -- properties, and the quarantined temporal block are not ported here
+    -- (see the porting report for why).
+    ("unsatisfiable ⇒ no random model satisfies it (K)",
+      run (NamedBinder "f" <| ∀ f : Formula, NamedBinder "m" <| ∀ m : Model,
+        (if tableauConsistent systemK defaultMaxSteps [f] == .definitely false then
+           match anySatisfies m f with
+           | .ok false => true    -- confirmed: no witnessing world
+           | .ok true => false    -- a world satisfies it: soundness bug
+           | .error _ => false    -- unreachable for this fragment; an error is a bug
+         else true) = true) 300),
+    ("satisfied in some model ⇒ prover does not call it unsatisfiable (K)",
+      run (NamedBinder "f" <| ∀ f : Formula, NamedBinder "m" <| ∀ m : Model,
+        (match anySatisfies m f with
+          | .error _ => false    -- guard itself errored: a bug, not a discard
+          | .ok false => true    -- guard false: vacuous pass, as Haskell's `==>`
+          | .ok true =>
+              !(tableauConsistent systemK defaultMaxSteps [f] == .definitely false)) = true) 300),
+    ("K-valid instances and the T axiom hold in every reflexive model (KT)",
+      run (NamedBinder "f" <| ∀ f : ValidFormula, NamedBinder "g" <| ∀ g : Formula,
+        NamedBinder "m" <| ∀ m0 : Model,
+          (match allSatisfies (reflexiveClosureModel m0) f.getFormula,
+                 allSatisfies (reflexiveClosureModel m0) (.implies (.box g) g) with
+            | .ok true, .ok true =>
+                !(tableauProves systemKT defaultMaxSteps [] (.implies (.box g) g)
+                    == .definitely false)
+            | _, _ => false) = true) 200),
+    ("axiom 4 instances: proved by K4 and true on transitive frames",
+      run (NamedBinder "f" <| ∀ f : FourFormula, NamedBinder "m" <| ∀ m0 : Model,
+        (match transitiveClosureModel m0 with
+          | .error _ => false
+          | .ok m =>
+            match allSatisfies m f.getFormula with
+            | .ok true =>
+                isTransitive m.frame
+                  && !(tableauProves systemK4 2000 [] f.getFormula == .definitely false)
+            | _ => false) = true) 200),
+    -- Gamen.Semantics: K distribution axiom.
+    ("□(p→q)→(□p→□q) holds at every world of every random model",
+      run (NamedBinder "m" <| ∀ m : Model,
+        isOkTrue (allSatisfies m
+          (.implies (.box (.implies (.atomF ⟨"p"⟩) (.atomF ⟨"q"⟩)))
+                    (.implies (.box (.atomF ⟨"p"⟩)) (.box (.atomF ⟨"q"⟩))))) = true) 100),
+    -- Gamen.RankingTheory: structural invariants — the two properties
+    -- deferred for lack of a `KappaModel` generator.
+    ("negation symmetry (Spohn Thm 2a, p.115): τ(¬φ) = −τ(φ) for contingent φ",
+      run (NamedBinder "m" <| ∀ m : KappaModel, NamedBinder "f" <| ∀ f : PropFormula,
+        (match isContingentK m f.getFormula with
+          | .error _ => false   -- unreachable for this fragment; an error here is a bug
+          | .ok false => true   -- legitimately not contingent: vacuous pass, as Haskell's `==>`
+          | .ok true =>
+            match tau m "c" (.not f.getFormula), tau m "c" f.getFormula with
+            | .ok l, .ok r => l == -r
+            | _, _ => false) = true) 100),
+    ("conditionalize preserves wellFormed for contingent φ, any rank n",
+      run (NamedBinder "m" <| ∀ m : KappaModel, NamedBinder "f" <| ∀ f : PropFormula,
+        NamedBinder "n" <| ∀ n : Int,
+          (match isContingentK m f.getFormula with
+            | .error _ => false
+            | .ok false => true
+            | .ok true =>
+              match conditionalize m "c" f.getFormula n with
+              | .ok m' => wellFormed m'
+              | .error _ => false) = true) 100) ]
 where
   toNNF := Formula.toNNF
   isNNF := Formula.isNNF
@@ -2284,7 +2545,7 @@ def main : IO UInt32 := do
       ++ deonticStitCases ++ counterModelCases ++ closureCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
-  IO.println "Properties (300 random formulas each)"
+  IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
   for (name, prop) in properties do
     let ok ← prop
     IO.println s!"  {if ok then "✓" else "✗"} {name}"

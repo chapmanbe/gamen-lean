@@ -84,6 +84,15 @@ structure KappaModel where
   kValuation : Std.TreeMap Atom (Std.TreeSet World)
   deriving Inhabited
 
+/-- As Haskell's `deriving Show` on `KappaModel` (`Gamen/RankingTheory.hs`
+~92–98): printed as the underlying association lists, for Plausible
+counterexamples. -/
+instance : Repr KappaModel where
+  reprPrec m n := reprPrec
+    (m.kWorlds.toList,
+     m.kKappa.toList.map fun (a, kw) => (a, kw.toList),
+     m.kValuation.toList.map fun (a, vs) => (a, vs.toList)) n
+
 /-- Structural equality, as Haskell's derived `Eq`. -/
 instance : BEq KappaModel where
   beq m n :=

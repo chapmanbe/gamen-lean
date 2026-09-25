@@ -10,6 +10,7 @@ import Gamen.Plausibility
 import Gamen.DeonticStit.Sequent
 import Gamen.DeonticStit.Rules
 import Gamen.DeonticStit.Saturation
+import Gamen.DeonticStit.Prove
 import Gamen.Fragment
 import Gamen.Notation
 import Gamen.Protocol

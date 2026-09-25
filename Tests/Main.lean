@@ -2068,7 +2068,18 @@ def deonticStitCases : List Case :=
   ⟨"joint fulfillment: can Jade fulfill all duties?",
     okIs (jointFulfillment dsModel' "j" [lj]) true
       && okIs (jointFulfillment dsModel' "j" [lj, .not coll]) true
-      && okIs (jointFulfillment dsModel' "j" [rj]) false⟩
+      && okIs (jointFulfillment dsModel' "j" [rj]) false⟩,
+  -- WorldGuardsSpec.hs:36, "dsSatisfies errors on world not in DSModel"
+  -- (gamen-hs#7). The Haskell's sibling `it`s in the same describe block
+  -- (`eSatisfies`/`sSatisfies`/`xSatisfies`/`lSatisfies`) need
+  -- `Gamen.Epistemic`/`.Stit`/`.Xstit`/`.Laca`, not yet ported.
+  ⟨"dsSatisfies errors on world not in DSModel",
+    let dfr := mkDSFrame ["a", "b"] [("ag", [("a", "a"), ("b", "b")])] [("ag", ["a"])]
+    let dm := mkDSModel dfr [("p", ["a", "b"]), ("q", ["b"]), ("r", ["a"])]
+    let probeFormula : Formula :=
+      .implies (.or (.atom "p") (.atom "q")) (.and (.not (.atom "q")) (.atom "r"))
+    okIs (dsSatisfies dm "a" probeFormula) true
+      && isErr (dsSatisfies dm "c" probeFormula)⟩
   ]
 
 /-! ## Property tests (Plausible) -/

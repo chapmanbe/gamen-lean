@@ -2334,7 +2334,9 @@ def closureCases : List Case :=
 Lean-only (Gamen.jl issue #20). The random checks and their bounds are
 documented in `Tests/PropertyHelpers.lean` ("Cross-checks of the decision
 procedures"). Here: 40 draws per system from seed `crossSeed`, frames of
-at most 3 worlds; G3DS 40 draws for 1 and for 2 agents against 20 random
+at most 3 worlds, plus 60 T/D/B/4/5 schema instances per system (seed
+`crossSeed + 2`, `genSchemaSample`), which catch an unsound rule added to
+a system; G3DS 40 draws for 1 and for 2 agents against 20 random
 DS models. `lake exe slowtests` runs 1000 draws per system (and 4-world
 frames for KT, KTB, S4, S5) and 500 G3DS draws per agent set.
 
@@ -2344,8 +2346,8 @@ each flips when the bug is fixed there. -/
 
 def crossSeed : Nat := 20260925
 
-def crossCase (name : String) (r : Bool × String) : Case :=
-  ⟨s!"Not in gamen-hs: {name} (seed {crossSeed}): {r.2}", r.1⟩
+def crossCase (name : String) (r : Bool × String) (seed : Nat := crossSeed) : Case :=
+  ⟨s!"Not in gamen-hs: {name} (seed {seed}): {r.2}", r.1⟩
 
 /-- The G3DS formula whose stability frame fails only C2. -/
 def c2Formula : Formula :=
@@ -2374,6 +2376,12 @@ def crossCheckCases : List Case :=
         (crossCheckVerdict (crossCheckSystem xs crossSeed 40 3 defaultMaxSteps)),
       crossCase s!"{xs.sys.name} extracted countermodels re-checked"
         (crossExtractVerdict (crossExtractSystem xs crossSeed 40 3 defaultMaxSteps)) ])
+  ++ (xSystems.flatMap fun xs =>
+    let fs := schemaSamples (crossSeed + 2) 60
+    [ crossCase s!"{xs.sys.name} verdicts on 60 T/D/B/4/5 schema instances vs. ≤3-world \
+        {xs.condName} frames" (crossCheckVerdict (fs >>= (crossCheckOn xs · 3 defaultMaxSteps))) (crossSeed + 2),
+      crossCase s!"{xs.sys.name} extracted countermodels of 60 schema instances re-checked"
+        (crossExtractVerdict (fs >>= (crossExtractOn xs · 3 defaultMaxSteps))) (crossSeed + 2) ])
   ++ ([["1"], ["1", "2"]].flatMap fun ag =>
     [ crossCase s!"G3DS {ag.length}-agent: proved ⇒ true in 20 random DS models"
         (dsCrossCheckVerdict (dsCrossCheck ag crossSeed 40 20 5000)),

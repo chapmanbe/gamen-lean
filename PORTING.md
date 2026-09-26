@@ -104,7 +104,9 @@ Lean-only extensions (not in gamen-hs; see the handoff plan):
 - **Decision-procedure cross-checks** (Gamen.jl#20; done 2026-09-25).
   `Tests/PropertyHelpers.lean` ("Cross-checks of the decision
   procedures"), `crossCheckCases` in `lake test` (40 seeded draws per
-  system), and `lake exe slowtests` (1000 draws per system, about 60s).
+  system, plus 60 T/D/B/4/5 schema instances per system, which catch an
+  unsound rule added to a system), and `lake exe slowtests` (1000 draws
+  per system; 57s measured on an idle machine).
   Every tableau system (K, KT, KD, KTB, K4, S4, S5) is checked against
   enumeration of all frames of at most 3 worlds in its class, up to
   isomorphism (4 worlds for KT, KTB, S4, S5 in slowtests). A wrong
@@ -116,7 +118,9 @@ Lean-only extensions (not in gamen-hs; see the handoff plan):
   check has no exceptions. The extraction check excludes exactly three
   known cases, each pinned by a regression case that flips when fixed:
   gamen-hs#38 (KD countermodels are not serial), gamen-hs#39 (K/KD/K4
-  extraction fails on a branch with a blocked prefix), and the
+  extraction fails on a branch with a blocked prefix; excused only when
+  supplying the blocked prefixes' missing witnesses repairs the model),
+  and the
   documented G3DS IoaOp deferral (frame fails only C2). Also pinned:
   KT/KTB/S4/S5 exhaust the budget on `◇((□q ∧ □⊥) ∨ (p ∧ ⊥))`, as in
   gamen-hs (an unknown, never a wrong answer; not yet filed).

@@ -15,7 +15,7 @@ docstring in `Tests/PropertyHelpers.lean`, and `PORTING.md`'s
 `Properties` row).
 
 Also runs the large Lean-only decision-procedure cross-checks
-(`slowCrossChecks`, not in gamen-hs; about 60s).
+(`slowCrossChecks`, not in gamen-hs; 57s measured, see below).
 
 Run after touching `Gamen.Tableau`, `Gamen.Semantics`, or
 `Gamen.RankingTheory` — anything the seven properties below exercise.
@@ -114,14 +114,18 @@ The large runs of `Tests/Main.lean`'s `crossCheckCases` (see the
 guarantee): 1000 draws per tableau system against every frame of at most
 3 worlds in its class, 1000 more (seed + 1) against at most 4 worlds for
 the systems whose 4-world classes are small (KT, KTB, S4, S5), and 500
-G3DS draws each for 1 and 2 agents. Same seed as `lake test`; about 60s
-in all. -/
+G3DS draws each for 1 and 2 agents. Same seed as `lake test`. Measured
+2026-09-26 on an otherwise idle machine: 57s for these 22 properties,
+of which KT against 4-world frames alone is 29s (it has the most
+4-world frames); expect more under load. -/
 
 def slowSeed : Nat := 20260925
 
 def crossProp (name : String) (seed : Nat) (r : Unit → Bool × String) : String × IO Bool :=
   (s!"Not in gamen-hs: {name} (seed {seed})", do
-    let (ok, msg) := r ()
+    -- `lazyPure`: run the check when the property runs, not when the
+    -- list is built (a closed `r ()` would otherwise be floated out).
+    let (ok, msg) ← IO.lazyPure r
     IO.println s!"    {msg}"
     return ok)
 

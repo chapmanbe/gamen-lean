@@ -475,8 +475,12 @@ answer they give can be checked against an independent semantics.
   exactly two known gamen-hs bugs, each by its precise shape
   (`crossExtractOne`): gamen-hs#38 (KD countermodels are not serial) and
   gamen-hs#39 (K/KD/K4 extraction fails on a branch with a blocked
-  prefix). Each excluded refutation must still be certified by the
-  enumeration.
+  prefix, excused only when `repairBlocked` fixes it). Each excluded
+  refutation must still be certified by the enumeration.
+
+  `genSchemaSample` adds T/D/B/4/5 schema instances, which random
+  formulas rarely produce; they are what catch an unsound rule added to a
+  system.
 
 * **G3DS** (`dsCrossCheck`): random `L_n` formulas (1 or 2 agents, atoms
   p, q, modal depth ≤ 2, all of ¬ ∧ ∨ → ↔ □ ◇ [i] ⟨i⟩ ⊗ ⊖). *Refuted* ⇒
@@ -645,14 +649,63 @@ def crossVerdictOne (xs : XSystem) (frames : List Frame) (steps : Nat)
                      refutedSmall := st.refutedSmall + (if small.isSome then 1 else 0) }
   | .exhausted _ => return { st with unknown := st.unknown + 1 }
 
+/-- The witness-creating formulas (`T ◇A`, `F □A`) at a *blocked* prefix
+that have no witness child: the obligations gamen-hs#39's extraction
+leaves unmet. -/
+def unwitnessedAtBlocked (b : Branch) : List PrefixedFormula :=
+  b.formulas.toList.filter fun pf =>
+    b.isBlocked pf.pfx &&
+      match pf.sign, pf.formula with
+      | .T, .diamond a => !b.hasWitness pf.pfx .T a
+      | .F, .box a => !b.hasWitness pf.pfx .F a
+      | _, _ => false
+
+/-- The #39 repair: `extractCountermodel`'s construction plus, for each
+blocked prefix σ, edges from σ to the children of its nearest blocking
+ancestor (the one whose content contains σ's), then the system's closure.
+If this model satisfies every signed formula on the branch, the only
+defect of the original extraction was the missing witnesses at blocked
+prefixes. -/
+def repairBlocked (sys : System) (b : Branch) : Except String Model := do
+  let pfs := b.formulas.toList
+  let prefixes := b.prefixes.toList
+  let ws := prefixes.map toString
+  let childEdges := prefixes.flatMap fun σ => prefixes.filterMap fun τ =>
+    if τ.isChildOf σ then some (toString σ, toString τ) else none
+  let loopEdges := prefixes.flatMap fun σ =>
+    if !b.isBlocked σ then [] else
+      let content := b.prefixContent σ
+      match σ.ancestors.reverse.find? (fun anc =>
+          content.toList.all (b.prefixContent anc).contains) with
+      | none => []
+      | some anc => (b.childrenOf anc).map fun c => (toString σ, toString c)
+  let rel ← closeForSystem sys ws (Std.TreeSet.ofList (childEdges ++ loopEdges) lexOrd.compare)
+  let allAtoms := pfs.foldl (fun acc pf => acc.insertMany pf.formula.atoms) (∅ : Std.TreeSet Atom)
+  let vals := allAtoms.toList.map fun a =>
+    (a.name, pfs.filterMap fun pf =>
+      if pf.sign == .T && pf.formula == .atomF a then some (toString pf.pfx) else none)
+  let m := mkModel (← mkFrame ws rel.toList) vals
+  for pf in pfs do
+    unless (← satisfies m (toString pf.pfx) pf.formula) == (pf.sign == .T) do
+      throw s!"repairBlocked: {pf} still fails"
+  return m
+
 /-- Is this `extractCountermodel` failure the known gamen-hs#39 class?
-Exactly: system K, KD or K4; the error is the verification failure
-("branch not saturated"); and the branch has a blocked prefix (its
-unwitnessed ◇/□F obligations are what the extracted model then fails). -/
-def isKnownBlockedFailure (sys : System) (b : Branch) (e : String) : Bool :=
-  ["K", "KD", "K4"].contains sys.name
+Exactly all of: system K, KD or K4; the error is the verification
+failure ("branch not saturated"); the branch has an unwitnessed `T ◇A`/
+`F □A` at a blocked prefix (`unwitnessedAtBlocked`); and supplying those
+witnesses (`repairBlocked`) yields a model that satisfies the whole
+branch, falsifies φ at the root, and is in the frame class (for KD,
+seriality aside: gamen-hs#38). Any other extraction error fails. -/
+def isKnownBlockedFailure (xs : XSystem) (b : Branch) (φ : Formula) (e : String) : Bool :=
+  ["K", "KD", "K4"].contains xs.sys.name
     && (e.splitOn "branch not saturated").length > 1
-    && b.prefixes.toList.any (b.isBlocked ·)
+    && !(unwitnessedAtBlocked b).isEmpty
+    && match repairBlocked xs.sys b with
+      | .ok m =>
+        (satisfies m (toString Prefix.root) φ matches .ok false)
+          && (xs.cond m.frame || xs.sys.name == "KD")
+      | .error _ => false
 
 /-- The **extraction** cross-check for one formula (refuted formulas only):
 every open branch's `extractCountermodel` model must contain the root,
@@ -680,7 +733,7 @@ def crossExtractOne (xs : XSystem) (frames : List Frame) (maxWorlds steps : Nat)
     for b in bs do
       match extractCountermodel xs.sys b with
       | .error e =>
-        if isKnownBlockedFailure xs.sys b e then
+        if isKnownBlockedFailure xs b φ e then
           certified
           st := { st with knownBlocked := st.knownBlocked + 1 }
         else throw s!"{tag}: extraction failed: {e}"
@@ -723,6 +776,47 @@ def crossExtractSystem (xs : XSystem) (seed count maxWorlds steps : Nat) :
   let frames ← enumFrames xs.cond maxWorlds
   (← crossSamples seed count).foldlM
     (fun st φ => crossExtractOne xs frames maxWorlds steps φ st) {}
+
+/-- A schema instance over a random subformula `A` (atoms p, q, modal
+depth ≤ 1, so instances have modal depth ≤ 3), negated with probability
+1/3. The schemas are the frame-correspondence axioms of B&D Table 6.4's
+systems and their duals: T (`□A → A`, `A → ◇A`), D (`□A → ◇A`), B
+(`A → □◇A`, `◇□A → A`), 4 (`□A → □□A`, `◇◇A → ◇A`), 5 (`◇A → □◇A`,
+`◇□A → □A`). Each is valid in exactly the classes whose condition it
+expresses, so a rule added to a system where it is unsound makes that
+system prove instances with small countermodels in its class. Random
+formulas rarely hit these shapes: adding the B rules to KT passed 1000
+random draws at 4 worlds. -/
+def genSchemaSample : Gen Formula := do
+  let a ← genXFormula ["p", "q"] 1 2
+  let s ← pick 9
+  let inst : Formula := match s with
+    | 0 => .implies (.box a) a
+    | 1 => .implies a (.diamond a)
+    | 2 => .implies (.box a) (.diamond a)
+    | 3 => .implies a (.box (.diamond a))
+    | 4 => .implies (.diamond (.box a)) a
+    | 5 => .implies (.box a) (.box (.box a))
+    | 6 => .implies (.diamond (.diamond a)) (.diamond a)
+    | 7 => .implies (.diamond a) (.box (.diamond a))
+    | _ => .implies (.diamond (.box a)) (.box a)
+  let neg ← pick 3
+  return if neg == 0 then .not inst else inst
+
+def schemaSamples (seed count : Nat) : Except String (List Formula) :=
+  runGenSeeded ((List.range count).mapM fun _ => genSchemaSample) seed 0
+
+/-- Verdict cross-check of the given formulas (see `crossCheckSystem`). -/
+def crossCheckOn (xs : XSystem) (fs : List Formula) (maxWorlds steps : Nat) :
+    Except String XStats := do
+  let frames ← enumFrames xs.cond maxWorlds
+  fs.foldlM (fun st φ => crossVerdictOne xs frames steps φ st) {}
+
+/-- Extraction cross-check of the given formulas (see `crossExtractSystem`). -/
+def crossExtractOn (xs : XSystem) (fs : List Formula) (maxWorlds steps : Nat) :
+    Except String XStats := do
+  let frames ← enumFrames xs.cond maxWorlds
+  fs.foldlM (fun st φ => crossExtractOne xs frames maxWorlds steps φ st) {}
 
 /-- A passing verdict run: no error, both directions exercised at least
 once, and at most 5% of draws left `unknown` by budget exhaustion.
@@ -961,5 +1055,5 @@ def extractionShapes (xs : XSystem) (φ : Formula) : Option (List String) :=
         else if xs.cond m.frame then "verified"
         else if xs.sys.name == "KD" && !isSerial m.frame then "non-serial (#38)"
         else "wrong frame class"
-      | .error e => if isKnownBlockedFailure xs.sys b e then "blocked (#39)" else s!"error: {e}")
+      | .error e => if isKnownBlockedFailure xs b φ e then "blocked (#39)" else s!"error: {e}")
   | _ => none

@@ -22,6 +22,44 @@ Run after touching `Gamen.Tableau`, `Gamen.Semantics`, or
 -/
 open Gamen Plausible
 
+/-- Whether extraction is required to succeed on every open branch of
+`xs.sys` (Haskell's `mustExtract`): true except for KTB and S5, which do
+not borrow a blocked prefix's blocker's witnesses
+(`Gamen.Tableau.borrowsBlockerWitnesses`) and so may legitimately fail
+their own re-check on such a branch. -/
+def mustExtractCountermodel (xs : XSystem) : Bool :=
+  !(["KTB", "S5"].contains xs.sys.name)
+
+/-- Port of `test/Properties.hs`'s "every open branch extracts an
+in-class countermodel" property (issues #38, #39), one instance per
+system: for random `f`, whenever `{1 F f}`'s tableau stays open, every
+branch's `extractCountermodel` model must lie in `xs.cond`'s frame class
+and falsify `f` at the root — except that a branch may fail extraction
+outright when `!mustExtractCountermodel xs` (KTB, S5). A closed or
+exhausted tableau is a discard, via `checkGuarded`, exactly as in the
+K-only extraction property below. -/
+def extractionInClassProperty (xs : XSystem) : String × IO Bool :=
+  let name := s!"every open branch extracts an in-class countermodel ({xs.sys.name})"
+  let mustExtract := mustExtractCountermodel xs
+  (name, do
+    let (checks, ok) ← checkGuarded name 200 10
+      (fun size => do
+        let f ← genFormula size
+        pure (f, buildTableau xs.sys 1000 [pfFalse .root f]))
+      (fun (_, outcome) => pure (match outcome with | .stillOpen bs => !bs.isEmpty | _ => false))
+      (fun (f, outcome) => match outcome with
+        | .stillOpen bs => do
+            let oks ← bs.mapM fun b =>
+              match extractCountermodel xs.sys b with
+              | .error _ => pure !mustExtract
+              | .ok m => do
+                  let falsified ← satisfies m (toString Prefix.root) f
+                  pure (xs.cond m.frame && !falsified)
+            pure (oks.all id)
+        | _ => pure false)
+    IO.println s!"    real checks: {checks}/200"
+    return ok)
+
 def slowProperties : List (String × IO Bool) :=
   [ ("unsatisfiable ⇒ no random model satisfies it (K)",
       do
@@ -61,8 +99,9 @@ def slowProperties : List (String × IO Bool) :=
             let b ← anySatisfies m f
             pure (!b))
         IO.println s!"    real checks: {checks}/200"
-        return ok),
-    ("extracted countermodel actually satisfies the formula (K)",
+        return ok) ] ++
+  xSystems.map extractionInClassProperty ++
+  [ ("extracted countermodel actually satisfies the formula (K)",
       do
         -- `gen` precomputes `extractedModelsFor f` once per attempt (not
         -- once in the guard and again in the check): `buildTableau` runs

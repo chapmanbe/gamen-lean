@@ -471,12 +471,13 @@ answer they give can be checked against an independent semantics.
   tolerates it for at most 5% of its draws, and requires at least one
   proved and one refuted formula so neither direction passes vacuously.
 
-  The verdict check has no exceptions. The extraction check excludes
-  exactly two known gamen-hs bugs, each by its precise shape
-  (`crossExtractOne`): gamen-hs#38 (KD countermodels are not serial) and
-  gamen-hs#39 (K/KD/K4 extraction fails on a branch with a blocked
-  prefix, excused only when `repairBlocked` fixes it). Each excluded
-  refutation must still be certified by the enumeration.
+  The verdict check has no exceptions. The extraction check
+  (`crossExtractOne`) has none either: gamen-hs#38 (KD countermodels not
+  serial) and #39 (K/KD/K4 extraction failing on a branch with a blocked
+  prefix) were fixed upstream in 08a52d4, and every extraction failure or
+  out-of-class model now fails the check. KTB's own blocked-branch
+  extraction failures, which do not borrow their blocker's witnesses, are
+  a separate open bug (gamen-hs#42); our sample sizes have not hit one.
 
   `genSchemaSample` adds T/D/B/4/5 schema instances, which random
   formulas rarely produce; they are what catch an unsound rule added to a
@@ -627,11 +628,6 @@ structure XStats where
   refutedSmall : Nat := 0
   /-- Extracted countermodels re-checked and verified (one per open branch). -/
   verified : Nat := 0
-  /-- Excluded: a KD model that is correct except for seriality (gamen-hs#38). -/
-  knownNonSerial : Nat := 0
-  /-- Excluded: "branch not saturated" on a branch with a blocked prefix
-  (gamen-hs#39). -/
-  knownBlocked : Nat := 0
 
 /-- The **verdict** cross-check for one formula, with no exceptions:
 *proved* ⇒ no countermodel among `frames`; counts refuted/unknown. -/
@@ -649,74 +645,18 @@ def crossVerdictOne (xs : XSystem) (frames : List Frame) (steps : Nat)
                      refutedSmall := st.refutedSmall + (if small.isSome then 1 else 0) }
   | .exhausted _ => return { st with unknown := st.unknown + 1 }
 
-/-- The witness-creating formulas (`T ◇A`, `F □A`) at a *blocked* prefix
-that have no witness child: the obligations gamen-hs#39's extraction
-leaves unmet. -/
-def unwitnessedAtBlocked (b : Branch) : List PrefixedFormula :=
-  b.formulas.toList.filter fun pf =>
-    b.isBlocked pf.pfx &&
-      match pf.sign, pf.formula with
-      | .T, .diamond a => !b.hasWitness pf.pfx .T a
-      | .F, .box a => !b.hasWitness pf.pfx .F a
-      | _, _ => false
-
-/-- The #39 repair: `extractCountermodel`'s construction plus, for each
-blocked prefix σ, edges from σ to the children of its nearest blocking
-ancestor (the one whose content contains σ's), then the system's closure.
-If this model satisfies every signed formula on the branch, the only
-defect of the original extraction was the missing witnesses at blocked
-prefixes. -/
-def repairBlocked (sys : System) (b : Branch) : Except String Model := do
-  let pfs := b.formulas.toList
-  let prefixes := b.prefixes.toList
-  let ws := prefixes.map toString
-  let childEdges := prefixes.flatMap fun σ => prefixes.filterMap fun τ =>
-    if τ.isChildOf σ then some (toString σ, toString τ) else none
-  let loopEdges := prefixes.flatMap fun σ =>
-    if !b.isBlocked σ then [] else
-      let content := b.prefixContent σ
-      match σ.ancestors.reverse.find? (fun anc =>
-          content.toList.all (b.prefixContent anc).contains) with
-      | none => []
-      | some anc => (b.childrenOf anc).map fun c => (toString σ, toString c)
-  let rel ← closeForSystem sys ws (Std.TreeSet.ofList (childEdges ++ loopEdges) lexOrd.compare)
-  let allAtoms := pfs.foldl (fun acc pf => acc.insertMany pf.formula.atoms) (∅ : Std.TreeSet Atom)
-  let vals := allAtoms.toList.map fun a =>
-    (a.name, pfs.filterMap fun pf =>
-      if pf.sign == .T && pf.formula == .atomF a then some (toString pf.pfx) else none)
-  let m := mkModel (← mkFrame ws rel.toList) vals
-  for pf in pfs do
-    unless (← satisfies m (toString pf.pfx) pf.formula) == (pf.sign == .T) do
-      throw s!"repairBlocked: {pf} still fails"
-  return m
-
-/-- Is this `extractCountermodel` failure the known gamen-hs#39 class?
-Exactly all of: system K, KD or K4; the error is the verification
-failure ("branch not saturated"); the branch has an unwitnessed `T ◇A`/
-`F □A` at a blocked prefix (`unwitnessedAtBlocked`); and supplying those
-witnesses (`repairBlocked`) yields a model that satisfies the whole
-branch, falsifies φ at the root, and is in the frame class (for KD,
-seriality aside: gamen-hs#38). Any other extraction error fails. -/
-def isKnownBlockedFailure (xs : XSystem) (b : Branch) (φ : Formula) (e : String) : Bool :=
-  ["K", "KD", "K4"].contains xs.sys.name
-    && (e.splitOn "branch not saturated").length > 1
-    && !(unwitnessedAtBlocked b).isEmpty
-    && match repairBlocked xs.sys b with
-      | .ok m =>
-        (satisfies m (toString Prefix.root) φ matches .ok false)
-          && (xs.cond m.frame || xs.sys.name == "KD")
-      | .error _ => false
-
 /-- The **extraction** cross-check for one formula (refuted formulas only):
 every open branch's `extractCountermodel` model must contain the root,
 falsify φ there (`satisfies`), and lie in the frame class
 (`FrameProperties`); and if it has at most `maxWorlds` worlds the
-enumeration must have found a countermodel too. Two known gamen-hs bugs
-are excluded, each by its exact shape, and counted; an excluded
-refutation must still be certified by the enumeration:
-* KD, a model that passes every check except seriality (gamen-hs#38);
-* `isKnownBlockedFailure` (gamen-hs#39).
-Anything else fails. -/
+enumeration must have found a countermodel too. gamen-hs#38 (KD models
+not serial) and #39 (K/KD/K4 extraction failing on a blocked branch) are
+fixed upstream (08a52d4), so no exclusion for them remains here: any
+extraction failure, or any extracted model outside the frame class, is a
+hard failure. KTB's own blocked-branch extraction failures (it does not
+borrow its blocker's witnesses; gamen-hs#42, open) are not excluded
+either — our sample sizes have not hit one; if they do, file it against
+#42 rather than adding a silent exclusion. -/
 def crossExtractOne (xs : XSystem) (frames : List Frame) (maxWorlds steps : Nat)
     (φ : Formula) (st : XStats) : Except String XStats := do
   let tag := s!"{xs.sys.name}, φ = {φ} ({repr φ})"
@@ -725,18 +665,11 @@ def crossExtractOne (xs : XSystem) (frames : List Frame) (maxWorlds steps : Nat)
   | .stillOpen bs =>
     if bs.isEmpty then throw s!"{tag}: open tableau with no open branch"
     let small ← (smallCountermodel frames φ).mapError (s!"{tag}: satisfies errored: " ++ ·)
-    let certified : Except String Unit :=
-      if small.isSome then pure ()
-      else throw s!"{tag}: excluded refutation not certified by a ≤ {maxWorlds}-world countermodel"
     let rootW := toString Prefix.root
     let mut st := { st with refuted := st.refuted + 1 }
     for b in bs do
       match extractCountermodel xs.sys b with
-      | .error e =>
-        if isKnownBlockedFailure xs b φ e then
-          certified
-          st := { st with knownBlocked := st.knownBlocked + 1 }
-        else throw s!"{tag}: extraction failed: {e}"
+      | .error e => throw s!"{tag}: extraction failed: {e}"
       | .ok m =>
         unless m.frame.worlds.contains rootW do
           throw s!"{tag}: extracted model lacks the root world: {describeModel m}"
@@ -749,9 +682,6 @@ def crossExtractOne (xs : XSystem) (frames : List Frame) (maxWorlds steps : Nat)
             but extraction found {describeModel m}"
         if xs.cond m.frame then
           st := { st with verified := st.verified + 1 }
-        else if xs.sys.name == "KD" && !isSerial m.frame then
-          certified
-          st := { st with knownNonSerial := st.knownNonSerial + 1 }
         else throw s!"{tag}: extracted frame is not {xs.condName}: {describeModel m}"
     return st
 
@@ -832,15 +762,10 @@ def crossCheckVerdict (r : Except String XStats) : Bool × String :=
        countermodel), unknown {st.unknown}")
   | .error e => (false, s!"FAILED: {e}")
 
-/-- A passing extraction run: no error, and at least one model checked
-(for KD every model is a #38 exclusion, still checked for everything but
-seriality). -/
+/-- A passing extraction run: no error, and at least one model checked. -/
 def crossExtractVerdict (r : Except String XStats) : Bool × String :=
   match r with
-  | .ok st =>
-    (st.verified + st.knownNonSerial > 0,
-     s!"refuted {st.refuted}; extracted models verified {st.verified}, excluded #38 \
-       {st.knownNonSerial}, excluded #39 {st.knownBlocked}")
+  | .ok st => (st.verified > 0, s!"refuted {st.refuted}; extracted models verified {st.verified}")
   | .error e => (false, s!"FAILED: {e}")
 
 /-! ### G3DS cross-checks -/
@@ -1042,10 +967,13 @@ def dsExtractVerdict (r : Except String DSXStats) : Bool × String :=
       s!"refuted {st.refuted}; extracted models verified {st.verified}, excluded C2/IoaOp {st.knownC2}")
   | .error e => (false, s!"FAILED: {e}")
 
-/-- What `extractCountermodel` does on each open branch of `{1 F φ}`, as
-a label: `verified`, `non-serial (#38)`, `blocked (#39)`, or a failure
-label. `none` if the tableau does not stay open. For pinning the known
-gamen-hs bugs in regression cases. -/
+/-- What `extractCountermodel` does on each open branch of `{1 F φ}`, as a
+label: `verified`, `not falsified`, `wrong frame class`, or a failure
+label. `none` if the tableau does not stay open. Used to pin regression
+cases in `Tests/Main.lean`'s `crossCheckCases`; the KD-serial (#38) and
+blocked-K/KD/K4 (#39) labels this once distinguished are gone now that
+both are fixed upstream (08a52d4) — every branch of those regressions is
+`verified`. -/
 def extractionShapes (xs : XSystem) (φ : Formula) : Option (List String) :=
   match buildTableau xs.sys defaultMaxSteps [pfFalse .root φ] with
   | .stillOpen bs => some (bs.map fun b =>
@@ -1053,7 +981,6 @@ def extractionShapes (xs : XSystem) (φ : Formula) : Option (List String) :=
       | .ok m =>
         if !(satisfies m (toString Prefix.root) φ matches .ok false) then "not falsified"
         else if xs.cond m.frame then "verified"
-        else if xs.sys.name == "KD" && !isSerial m.frame then "non-serial (#38)"
         else "wrong frame class"
-      | .error e => if isKnownBlockedFailure xs b φ e then "blocked (#39)" else s!"error: {e}")
+      | .error e => s!"error: {e}")
   | _ => none

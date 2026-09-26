@@ -140,15 +140,25 @@ def prefixContent (b : Branch) (σ : Prefix) : Std.TreeSet (Sign × Formula) :=
   Std.TreeSet.ofList (b.formulas.toList.filterMap fun pf =>
     if pf.pfx == σ then some (pf.sign, pf.formula) else none)
 
-/-- Ancestor blocking: σ is blocked if its content is a subset of some
-ancestor's content (prevents infinite expansion). -/
-def isBlocked (b : Branch) (σ : Prefix) : Bool :=
-  if σ.length ≤ 1 then false
+/-- The ancestor that blocks σ, if any: the /root-most/ proper ancestor
+whose content includes σ's. Choosing the root-most one guarantees the
+blocker is itself unblocked (anything blocking it would contain σ's
+content and sit even closer to the root), so its witness rules have
+fired. `extractCountermodel` uses it to route σ's modal obligations
+through the blocker's successors (issue #39). -/
+def blockerOf (b : Branch) (σ : Prefix) : Option Prefix :=
+  if σ.length ≤ 1 then none  -- root is never blocked
   else
     let content := b.prefixContent σ
-    !content.isEmpty && σ.ancestors.any fun anc =>
-      let ancContent := b.prefixContent anc
-      content.toList.all ancContent.contains
+    if content.isEmpty then none
+    else
+      σ.ancestors.find? fun anc =>
+        let ancContent := b.prefixContent anc
+        content.toList.all ancContent.contains
+
+/-- Ancestor blocking: σ is blocked if its content is a subset of some
+ancestor's content (prevents infinite expansion). -/
+def isBlocked (b : Branch) (σ : Prefix) : Bool := (b.blockerOf σ).isSome
 
 end Branch
 
@@ -525,6 +535,25 @@ abbrev Rel := Std.TreeSet (World × World)
 def reflexiveClose (ws : List World) (r : Rel) : Rel := r.insertMany (ws.map fun w => (w, w))
 def symmetricClose (r : Rel) : Rel := r.insertMany (r.toList.map fun (w, v) => (v, w))
 
+/-- Add `(w, w)` for every world with no successor, making the relation
+serial (issue #38). -/
+def serialClose (ws : List World) (r : Rel) : Rel :=
+  let sources := Std.TreeSet.ofList (r.toList.map Prod.fst)
+  r.insertMany ((ws.filter fun w => !sources.contains w).map fun w => (w, w))
+
+/-- May a blocked prefix borrow its blocker's children as successors
+(issue #39)? Sound for the systems whose frame closure is
+reflexive/transitive/serial: τ's children satisfy every □ at σ because σ's
+□ formulas are also at τ (and, under 4, so are the □ formulas that reach σ
+through transitivity). /Not/ for KTB or S5: symmetric closure would add
+τ′ → σ, so every □ at τ′ would constrain σ, but the B rule wrote those
+consequences into τ, whose content merely /includes/ σ's. A random
+cross-check found KTB branches that the borrowed edges broke. KTB and S5
+keep the plain prefix tree; an unsaturated blocked branch there still
+fails the re-check honestly. Custom systems get no borrowing. -/
+def borrowsBlockerWitnesses (sys : System) : Bool :=
+  sys.name ∈ (["K", "KD", "KT", "K4", "S4"] : List String)
+
 /-- Transitive closure by iterating composition to a fixpoint (Haskell
 `transitiveClose`'s `go`), through the shared `iterateToFixpoint`. Every
 pair's endpoints are in `ws` (the caller builds `r` from the branch's own
@@ -539,8 +568,22 @@ where
     r.insertMany (pairs.flatMap fun (w, x) =>
       pairs.filterMap fun (y, z) => if x == y then some (w, z) else none)
 
+/-- Which closure `closeForSystem` gives each named system (B&D Thm 6.19).
+An unrecognised (e.g. custom) system gets no closure, which is
+conservative — the re-check in `extractCountermodel` will reject a model
+that then fails to satisfy its branch.
+
+KD needs a serial frame, but the D rules only fire at prefixes that carry
+a □ or ◇ formula, so a modal-free prefix is left with no successor (issue
+#38). `serialClose` gives each such dead end a self-loop. That cannot
+falsify anything on the branch: a prefix with no successor after the
+blocking edges carries no modal formula (an unblocked one would have
+fired a D rule; a blocked one borrows its blocker's children, and the
+blocker has them whenever it carries a modal formula), so its formulas'
+truth does not depend on R. -/
 def closeForSystem (sys : System) (ws : List World) (r : Rel) : Except String Rel :=
   match sys.name with
+  | "KD" => pure (serialClose ws r)
   | "KT" => pure (reflexiveClose ws r)
   | "K4" => transitiveClose ws r
   | "KTB" => pure (symmetricClose (reflexiveClose ws r))
@@ -549,7 +592,28 @@ def closeForSystem (sys : System) (ws : List World) (r : Rel) : Except String Re
   | _ => pure r
 
 /-- Build the Kripke model read off an open, saturated branch and check that
-it really satisfies every signed formula on the branch. -/
+it really satisfies every signed formula on the branch.
+
+Accessibility: parent → child in the prefix tree, plus each blocked prefix
+→ its blocker's children (issue #39, restricted to `borrowsBlockerWitnesses`
+systems), closed under the system's frame conditions
+(reflexive/transitive/symmetric/serial; B&D Thm 6.19). The blocking edges
+matter because a blocked prefix gets no witness worlds of its own: σ's
+content is a subset of τ's (its blocker), and τ is unblocked, so τ's
+children already witness every ◇ at σ and satisfy every □ at σ; σ borrows
+them.
+
+The extracted model is /re-checked/ before being returned rather than
+trusted, for three reasons: (1) the closure above is not itself checked
+to land in the exact frame class (e.g. transitive closure is reflexive
+too if the base relation happened to be, which is fine, but the check
+below is what actually matters); (2) `kripkeCheckable` only restricts to
+the operators `satisfies` can evaluate; (3) every signed formula σ S φ on
+the branch must actually hold in the extracted model. Budget-truncated
+branches carry undischarged content and so fail this check instead of
+returning a bogus model. So do blocked branches in KTB and S5, where a
+blocked prefix cannot borrow its blocker's witnesses
+(`borrowsBlockerWitnesses`). -/
 def extractCountermodel (sys : System) (b : Branch) : Except String Model := do
   if b.isClosed then throw "extractCountermodel: branch is closed (no countermodel exists)"
   let pfs := b.formulas.toList
@@ -557,8 +621,17 @@ def extractCountermodel (sys : System) (b : Branch) : Except String Model := do
     throw s!"extractCountermodel: formula outside the Kripke fragment: {pf.formula}"
   let prefixes := b.prefixes.toList
   let ws := prefixes.map toString
-  let baseRel : Rel := Std.TreeSet.ofList <| prefixes.flatMap fun σ =>
+  let treeEdges : Rel := Std.TreeSet.ofList <| prefixes.flatMap fun σ =>
     prefixes.filterMap fun τ => if τ.isChildOf σ then some (toString σ, toString τ) else none
+  let borrowedEdges : Rel :=
+    if borrowsBlockerWitnesses sys then
+      Std.TreeSet.ofList <| prefixes.flatMap fun σ =>
+        match b.blockerOf σ with
+        | none => []
+        | some τ => prefixes.filterMap fun τ' =>
+            if τ'.isChildOf τ then some (toString σ, toString τ') else none
+    else ∅
+  let baseRel : Rel := treeEdges.union borrowedEdges
   let rel ← closeForSystem sys ws baseRel
   let allAtoms := pfs.foldl (fun acc pf => acc.insertMany pf.formula.atoms) (∅ : Std.TreeSet Atom)
   let vals := allAtoms.toList.map fun a =>

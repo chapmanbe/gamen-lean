@@ -143,18 +143,26 @@ is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
    (K, KT, K4) to Plausible. Unblocks the two deferred RankingTheory
    properties. Not a `/port-module` module: run a porter in a worktree,
    Opus review.
-2. **Done 2026-09-25.** Lean-only, prompted by Gamen.jl#20: every tableau
-   system cross-checked against frame enumeration (≤3 worlds up to
-   isomorphism; ≤4 for KT/KTB/S4/S5 in slowtests; 4 worlds × 3 atoms for
-   K is out of reach), with extracted countermodels re-checked for all
-   seven systems, and G3DS the same way. Seeded draws. It found gamen-hs#38 (KD
-   countermodels not serial) and gamen-hs#39 (K/KD/K4 extraction fails
-   at blocked prefixes); with the documented G3DS IoaOp (C2) deferral these
-   are the only extraction exclusions, each pinned by a regression case
-   that flips when fixed. Also found, not yet filed: KT/KTB/S4/S5 exhaust
-   the budget on `◇((□q ∧ □⊥) ∨ (p ∧ ⊥))` (same in gamen-hs). When #38/#39
-   are fixed, drop the exclusions in `crossExtractOne` and flip the pins.
-   Still open: offer to file the stronger check on gamen-hs (ask first).
+2. **Done 2026-09-25; #38/#39 fixed upstream 2026-09-26.** Lean-only,
+   prompted by Gamen.jl#20: every tableau system cross-checked against
+   frame enumeration (≤3 worlds up to isomorphism; ≤4 for KT/KTB/S4/S5 in
+   slowtests; 4 worlds × 3 atoms for K is out of reach), with extracted
+   countermodels re-checked for all seven systems, and G3DS the same way.
+   Seeded draws. It found gamen-hs#38 (KD countermodels not serial),
+   gamen-hs#39 (K/KD/K4 extraction fails at blocked prefixes), gamen-hs#40
+   (KT/KTB/S4/S5 exhaust the budget on `◇((□q ∧ □⊥) ∨ (p ∧ ⊥))`, same in
+   gamen-hs, still pinned), and gamen-hs#41 (documented G3DS IoaOp/C2
+   deferral, still the only G3DS extraction exclusion). #38 and #39 were
+   fixed upstream in gamen-hs `08a52d4` (`serialClose`,
+   `blockerOf`/`borrowsBlockerWitnesses`) and ported into
+   `Gamen/Tableau.lean`; `crossExtractOne`'s exclusions for both are
+   dropped and the three regression pins that used to check the bug
+   (`Tests/Main.lean`'s `crossCheckCases`) now check the fixed behavior.
+   KTB's own blocked-branch extraction failures (it does not borrow, by
+   design) are tracked separately as gamen-hs#42, open; our sample sizes
+   have not hit one, so `crossExtractOne` still treats any KTB failure as
+   a hard error rather than excusing it. Still open: offer to file the
+   stronger check on gamen-hs (ask first).
 3. Optional: a compare.py G3DS section (coverage is 26 requests).
 4. Deferred (Gamen.jl#19): runtime string → `Formula` parser, when a widget
    or the web editor needs it; extend `ml[…]` as operators land.

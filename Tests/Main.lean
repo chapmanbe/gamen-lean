@@ -2449,7 +2449,7 @@ def crossCheckCases : List Case :=
   -- `borrowsBlockerWitnesses`, the blocked branch fails its re-check
   -- (the #39 KD case above does not, see its comment).
   ⟨"Not in gamen-hs: KD: ¬(◇p ∧ ◇◇p), every open branch extracts, including the blocked one \
-    (needs KD's borrowed edges; gamen-hs#39, fixed upstream)",
+    (needs KD's borrowed edges; gamen-hs#39, fixed upstream; proposed for gamen-hs in #45)",
     extractionShapes kd (.not (.and (.diamond p) (.diamond (.diamond p)))) == some ["verified"]⟩,
   -- Why KTB is not in `borrowsBlockerWitnesses`: this branch extracts
   -- without borrowed edges, and adding "KTB" to the list makes it fail
@@ -2457,7 +2457,7 @@ def crossCheckCases : List Case :=
   -- gamen-hs#42). Found by exhaustive search up to size 7 (none) and
   -- random depth-8 formulas (seed 2502, then shrunk by hand).
   ⟨"Not in gamen-hs: KTB: ⊥ ∨ □◇(□⊥ ∨ ¬p) extracts a reflexive+symmetric countermodel \
-    without borrowing its blocker's witnesses (fails if KTB borrows; gamen-hs#42)",
+    without borrowing its blocker's witnesses (fails if KTB borrows; gamen-hs#42; proposed in #45)",
     extractionShapes ktb (.or .bot (.box (.diamond (.or (.box .bot) (.not p)))))
       == some ["verified"]⟩,
   -- gamen-hs#42, open: KTB's only open branch for F ◇□□¬p is blocked and

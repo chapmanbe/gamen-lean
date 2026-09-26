@@ -293,6 +293,39 @@ def build_corpus(rng):
         req("check_pairwise", formulas=[Ra(2, p), Ra(-2, p), q]),
     ] + [req("check_pairwise", formulas=[rand_ranked(2) for _ in range(rng.randint(2, 5))])
          for _ in range(100)])
+
+    # J. Deontic STIT (G3DS^k_n) on its own language L_n. Before this section
+    # only 26 requests reached the prover, as a side effect of mixed draws.
+    # Every draw carries at least one agent operator, so the whole set goes
+    # to G3DS. Agents a/b, atoms p/q, depth 2 keeps both provers well inside
+    # dsMaxSteps; exhaustion would show up as matching "unknown" replies.
+    DS_AGENT = ["stit", "choice_diamond", "ought", "permitted"]
+    def rand_ds(d):
+        if d == 0 or rng.random() < 0.25:
+            return rng.choice([p, q])
+        k = rng.randrange(6)
+        if k < 3:
+            return ag(rng.choice(DS_AGENT), rng.choice(["a", "a", "b"]), rand_ds(d - 1))
+        if k == 3: return un(rng.choice(["not", "box", "diamond"]), rand_ds(d - 1))
+        return bi(rng.choice(["and", "or", "implies", "iff"]), rand_ds(d - 1), rand_ds(d - 1))
+    def rand_ds_set(lo, hi):
+        fs = [rand_ds(2) for _ in range(rng.randint(lo, hi))]
+        fs[0] = ag(rng.choice(DS_AGENT), "a", fs[0])
+        return fs
+    Oa = lambda f: ag("ought", "a", f)
+    Pa = lambda f: ag("permitted", "a", f)
+    Sa = lambda f: ag("stit", "a", f)
+    add("J consistency-deontic-stit", [
+        req("check_consistency", formulas=[Oa(p), Oa(un("not", p))]),       # D3: no conflicting duties
+        req("check_consistency", formulas=[Oa(p), un("not", Pa(p))]),        # ought implies permitted
+        req("check_consistency", formulas=[Oa(p), un("not", un("diamond", p))]),  # ought implies can
+        req("check_consistency", formulas=[Sa(p), un("not", p)]),            # stit is factive
+        req("check_consistency", formulas=[Sa(p), ag("stit", "b", un("not", p))]),  # independence
+        req("check_consistency", formulas=[Oa(p), ag("ought", "b", un("not", p))]),
+    ] + [req("check_consistency", formulas=rand_ds_set(1, 3)) for _ in range(200)])
+    add("J pairwise-deontic-stit", [
+        req("check_pairwise", formulas=[Oa(p), Oa(un("not", p)), Pa(q)]),
+    ] + [req("check_pairwise", formulas=rand_ds_set(2, 4)) for _ in range(50)])
     return sections
 
 

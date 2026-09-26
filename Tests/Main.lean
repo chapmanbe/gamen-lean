@@ -86,6 +86,20 @@ def provesIn (sys : System) (prem : List Formula) (c : Formula) : Verdict :=
 def consistentIn (sys : System) (fs : List Formula) : Verdict :=
   tableauConsistent sys defaultMaxSteps fs
 
+/-- Open branches of the tableau for F φ at the root (a countermodel search;
+Haskell `openFor`). -/
+def openFor (sys : System) (phi : Formula) : List Branch :=
+  match buildTableau sys 1000 [pfFalse .root phi] with
+  | .stillOpen bs => bs
+  | _ => []
+
+/-- Every open branch extracts a model that falsifies φ at the root
+(Haskell `allExtract`). -/
+def allExtract (sys : System) (phi : Formula) : Bool :=
+  let bs := openFor sys phi
+  !bs.isEmpty && bs.all fun b =>
+    okEq (extractCountermodel sys b >>= fun m => satisfies m "1" phi) (.ok false)
+
 def tableauCases : List Case :=
   let yes : Verdict := .definitely true
   let no : Verdict := .definitely false
@@ -137,6 +151,21 @@ def tableauCases : List Case :=
   ⟨"{p, p ∨ q, ¬q} is satisfiable", consistentIn systemK [p, .or p q, .not q] == yes⟩,
   -- describe "Countermodel extraction (Theorem 6.19)"
   ⟨"extracts a countermodel for □p → p", countermodelCase⟩,
+  -- Issue #38: the D rules fire only at prefixes with a modal formula, so a
+  -- modal-free prefix had no successor and the KD model was not serial.
+  ⟨"KD countermodel is serial even at modal-free worlds (#38)",
+    (openFor systemKD p).all fun b =>
+      match extractCountermodel systemKD b with
+      | .ok m => isSerial m.frame
+      | .error _ => false⟩,
+  -- Issue #39: a branch open only because a prefix is blocked failed the
+  -- extraction's own re-check; the blocked prefix had no witnesses.
+  ⟨"extracts from every open branch with a blocked prefix: K, □□p ↔ ¬□p (#39)",
+    allExtract systemK (.iff (.box (.box p)) (.not (.box p)))⟩,
+  ⟨"extracts from every open branch with a blocked prefix: KD, □□p ↔ ¬□p (#39)",
+    allExtract systemKD (.iff (.box (.box p)) (.not (.box p)))⟩,
+  ⟨"extracts from every open branch with a blocked prefix: K4, ◇□p ∧ □⊥ (#39)",
+    allExtract systemK4 (.and (.diamond (.box p)) (.box .bot))⟩,
   -- describe "KT rules: T axiom (Table 6.4)"
   ⟨"KT proves T: □p → p", provesIn systemKT [] axT == yes⟩,
   ⟨"KT proves Schema K", provesIn systemKT [] schemaK == yes⟩,
@@ -2340,9 +2369,20 @@ a system; G3DS 40 draws for 1 and for 2 agents against 20 random
 DS models. `lake exe slowtests` runs 1000 draws per system (and 4-world
 frames for KT, KTB, S4, S5) and 500 G3DS draws per agent set.
 
-The regression cases pin today's behavior for three known gamen-hs bugs
-and one documented deferral, identical in gamen-hs (checked in GHCi);
-each flips when the bug is fixed there. -/
+gamen-hs#38 (KD countermodels not serial) and #39 (K/KD/K4 extraction
+failing on a branch left open only by blocking) were fixed upstream in
+08a52d4 (`serialClose`, `blockerOf`/`borrowsBlockerWitnesses`); the three
+regression cases below now pin the fixed behavior (every open branch
+extracts a verified model) instead of the bug. Two more regressions
+remain unfixed and still pin the bug, identical in gamen-hs (checked in
+GHCi): one documented G3DS deferral (IoaOp/C2, gamen-hs#41) and one
+budget-exhaustion note (KT/KTB/S4/S5 on a small formula, gamen-hs#40);
+each still flips when fixed there. KTB's own extraction failures on
+blocked branches (it does not borrow its blocker's witnesses; see
+`borrowsBlockerWitnesses`) are tracked separately as gamen-hs#42, open;
+this fix does not touch them and our sample sizes here have not hit one,
+so `crossExtractOne` still treats any KTB extraction failure as a hard
+error rather than excusing it. -/
 
 def crossSeed : Nat := 20260925
 
@@ -2388,15 +2428,15 @@ def crossCheckCases : List Case :=
       crossCase s!"G3DS {ag.length}-agent: extracted models re-checked"
         (dsExtractVerdict (dsExtractCheck ag crossSeed 40 5000)) ])
   ++ [
-  ⟨"Not in gamen-hs: KD: refuting p extracts a non-serial model (gamen-hs#38; flips when fixed)",
-    extractionShapes kd p == some ["non-serial (#38)"]⟩,
-  ⟨"Not in gamen-hs: K: □□p ↔ ¬□p, second branch's extraction fails at a blocked prefix \
-    (gamen-hs#39; flips when fixed)",
-    extractionShapes k (.iff (.box (.box p)) (.not (.box p))) == some ["verified", "blocked (#39)"]⟩,
-  ⟨"Not in gamen-hs: K4: ◇□p ∧ □⊥, second branch's extraction fails at a blocked prefix \
-    (gamen-hs#39; flips when fixed)",
+  ⟨"Not in gamen-hs: KD: refuting p extracts a serial model (gamen-hs#38, fixed upstream)",
+    extractionShapes kd p == some ["verified"]⟩,
+  ⟨"Not in gamen-hs: K: □□p ↔ ¬□p, every open branch extracts, including the blocked one \
+    (gamen-hs#39, fixed upstream)",
+    extractionShapes k (.iff (.box (.box p)) (.not (.box p))) == some ["verified", "verified"]⟩,
+  ⟨"Not in gamen-hs: K4: ◇□p ∧ □⊥, every open branch extracts, including the blocked one \
+    (gamen-hs#39, fixed upstream)",
     extractionShapes k4 (.and (.diamond (.box p)) (.box .bot))
-      == some ["verified", "blocked (#39)", "verified"]⟩,
+      == some ["verified", "verified", "verified"]⟩,
   ⟨"Not in gamen-hs: G3DS: □([1]p ↔ □⊥) → ⊗₂⟨2⟩(q → p) is refuted, and extraction rejects \
     a stability frame that fails only C2 (documented IoaOp deferral; flips when fixed)",
     c2Shape == .ok ([true, false, true, true, true, true], true)⟩,

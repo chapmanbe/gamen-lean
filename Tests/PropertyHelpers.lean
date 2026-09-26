@@ -917,9 +917,12 @@ def dsVerdictOne (models : List DSModel) (steps : Nat) (φ : Formula) (st : DSXS
 * `unknown (.uncertifiedRefutation e)` ⇒ the search refuted φ, `e` is
   extraction's "not a valid DS frame" rejection, and the stability frame is
   exactly the IoaOp deferral (`isIoaOpDeferral`: two or more agents, fails
-  C2 and nothing else). The guard may withhold an answer only for that
-  documented reason: a frame failing any other condition, or a model that
-  does not falsify φ, is a bug the guard would otherwise hide, and fails.
+  C2 and nothing else), and the stability model contains `w0` and
+  falsifies the original φ there under `dsSatisfies` (checked here, since
+  extraction rejects the frame before checking falsification). The guard
+  may withhold an answer only for that documented reason: a frame failing
+  any other condition, or a model that does not falsify φ, is a bug the
+  guard would otherwise hide, and fails.
 * Any other verdict on a refuted formula (`definitely true`, another
   `unknown`), or `definitely false`/`uncertifiedRefutation` on a formula
   the search did not refute, fails.
@@ -938,7 +941,18 @@ def dsExtractOne (steps : Nat) (φ : Formula) (st : DSXStats) : Except String DS
     match verdict with
     | .unknown (.uncertifiedRefutation e) =>
       if (e.splitOn "not a valid DS frame").length > 1 && isIoaOpDeferral sm.dsFrame then
-        return { st with knownC2 := st.knownC2 + 1 }
+        -- Extraction rejects the frame before it checks falsification, so
+        -- check it here: a C2-only frame whose model does not falsify φ
+        -- (a valuation or relation bug) must not hide as the deferral.
+        let rootW := toString label0
+        unless sm.dsFrame.dsWorlds.contains rootW do
+          throw s!"{tag}: uncertified stability model lacks {rootW}"
+        match dsSatisfies sm rootW φ with
+        | .ok false => return { st with knownC2 := st.knownC2 + 1 }
+        | .ok true =>
+          throw s!"{tag}: uncertified C2-only stability model does not falsify φ at \
+            {rootW}: {repr sm}"
+        | .error e' => throw s!"{tag}: dsSatisfies errored on the stability model: {e'}"
       throw s!"{tag}: refutation left uncertified for a reason other than the IoaOp \
         deferral: {e}"
     | .definitely false =>

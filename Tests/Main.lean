@@ -1853,8 +1853,9 @@ def saturationCases : List Case :=
 Ports, in file order:
 
 * `test/DeonticStitSpec.hs`, "DeonticStit.Prove: proveFormula" (all 14
-  `it`s) and "Clinical scenario: AHA + KDIGO + USDA potassium (issue #8
-  step I)" (all 3 `it`s). The spec's `TestShims` map `Unknown` to `False`;
+  `it`s), "Clinical scenario: AHA + KDIGO + USDA potassium (issue #8
+  step I)" (all 3 `it`s), and "Issue #41: refutations need a certified
+  countermodel (IoaOp not scheduled)" (all 5 `it`s; gamen-hs 483c463). The spec's `TestShims` map `Unknown` to `False`;
   here every verdict is compared against `.ok (.definitely b)`, so an error
   or an `unknown` fails the case whichever answer was expected.
 * `test/PaperCorrespondence.hs`, "Lyon & van Berkel (2024) — G3DS^k_n
@@ -1876,6 +1877,13 @@ local instance [BEq ε] [BEq α] : BEq (Except ε α) where
     | .ok a, .ok b => a == b
     | .error x, .error y => x == y
     | _, _ => false
+
+/-- The spec's `isUncertified`: the verdict is `unknown` because the G3DS
+refutation could not be certified by a re-checked countermodel
+(gamen-hs#41). An error or any other verdict is `false`. -/
+def isUncertified : Except String Verdict → Bool
+  | .ok (.unknown (.uncertifiedRefutation _)) => true
+  | _ => false
 
 /-- `proveFormula` ended in `refuted`, compared on the result shape. -/
 def isRefuted : Except String ProveResult → Bool
@@ -1915,6 +1923,9 @@ def proveCases : List Case :=
     tableauConsistent systemKD 1000 (fs.map stripAgents) == .definitely b
   let oic : Formula :=
     .implies (.ought "i" p) (.or (.diamond (.stit "i" p)) (.permitted "i" (.not p)))
+  let x41 : Formula := .atom "x"
+  let y41 : Formula := .atom "y"
+  let neitherBoth : Formula := .box (.not (.and x41 y41))
   [
   -- DeonticStitSpec: "DeonticStit.Prove: proveFormula"
   ⟨"proves the propositional tautology p ∨ ¬p", dsProves (.or p (.not p)) true⟩,
@@ -1936,18 +1947,48 @@ def proveCases : List Case :=
   ⟨"terminates on the §4.1 counterexample ◇[1]p ∨ ◇[2]q",
     isRefuted (proveFormula 0 5000 (.or (.choiceDiamond "1" p) (.choiceDiamond "2" q)))⟩,
   -- DeonticStitSpec: "Clinical scenario: AHA + KDIGO + USDA potassium"
-  ⟨"cross-agent same-atom: ⊗_p X ∧ ⊗_c ¬X — DS allows; KD rejects",
+  ⟨"cross-agent same-atom: ⊗_p X ∧ ⊗_c ¬X is inconsistent in DS too; prover says Unknown (#41)",
+    -- C2 (independence of agents) makes this inconsistent; the prover
+    -- cannot reach that without IoaOp, and its C2-violating refutation is
+    -- now reported as uncertified.
     let phis := [Formula.ought "patient" hhDiet, .ought "clinician" (.not hhDiet)]
-    -- Both definite and different, so the spec's `shouldNotBe` holds too.
-    isFormulaSetConsistent 0 5000 phis == .ok (.definitely true) && kdConsistent phis false⟩,
+    isUncertified (isFormulaSetConsistent 0 5000 phis) && kdConsistent phis false⟩,
   ⟨"intra-agent action conflict via USDA bridge — both reject",
     let phis := [Formula.ought "patient" hhDiet, .ought "patient" (.not highK),
                  .box (.implies hhDiet highK)]
     isFormulaSetConsistent 0 5000 phis == .ok (.definitely false) && kdConsistent phis false⟩,
-  ⟨"advice-level + KDIGO + bridge — both consistent (no adherence axiom)",
+  ⟨"advice-level + KDIGO + bridge — consistent (no adherence axiom); DS prover can't certify it (#41)",
     let phis := [Formula.ought "clinician" (.stit "clinician" (.atom "advise_hh_diet")),
                  .ought "patient" (.not highK), .box (.implies hhDiet highK)]
-    isFormulaSetConsistent 0 5000 phis == .ok (.definitely true) && kdConsistent phis true⟩,
+    -- A one-world DS model certifies consistency without the prover.
+    let witness := mkDSModel
+      (mkDSFrame ["w"] [("clinician", [("w", "w")]), ("patient", [("w", "w")])]
+                       [("clinician", ["w"]), ("patient", ["w"])])
+      [("advise_hh_diet", ["w"]), ("hh_diet", []), ("high_K", [])]
+    isValidDSFrame witness.dsFrame
+      && phis.all (fun φ => dsSatisfies witness "w" φ == .ok true)
+      && kdConsistent phis true
+      && isUncertified (isFormulaSetConsistent 0 5000 phis)⟩,
+  -- DeonticStitSpec: "Issue #41: refutations need a certified countermodel
+  -- (IoaOp not scheduled)"
+  ⟨"#41: the IOA axiom is not reported invalid",
+    isUncertified (isFormulaValid 0 2000
+      (.implies (.and (.diamond (.stit "1" x41)) (.diamond (.stit "2" y41)))
+                (.diamond (.and (.stit "1" x41) (.stit "2" y41)))))⟩,
+  ⟨"#41: two agents' obligations that cannot both hold are not reported consistent",
+    isUncertified (isFormulaSetConsistent 0 5000
+      [.ought "physician" x41, .ought "nurse" y41, neitherBoth])⟩,
+  ⟨"#41: the single-agent version is still definitely inconsistent",
+    isFormulaSetConsistent 0 5000 [.ought "physician" x41, .ought "physician" y41, neitherBoth]
+      == .ok (.definitely false)⟩,
+  ⟨"#41: a single-agent refutation still certifies (◇[1]x ∧ ◇[1]y ⊬ ◇([1]x ∧ [1]y))",
+    isFormulaValid 0 2000
+      (.implies (.and (.diamond (.stit "1" x41)) (.diamond (.stit "1" y41)))
+                (.diamond (.and (.stit "1" x41) (.stit "1" y41))))
+      == .ok (.definitely false)⟩,
+  ⟨"#41: Proved answers are unaffected (Ought implies Can)",
+    isFormulaValid 0 2000 (.implies (.ought "physician" x41) (.diamond (.stit "physician" x41)))
+      == .ok (.definitely true)⟩,
   -- PaperCorrespondence: Lyon & van Berkel (2024), Definition 3 (pp. 844–845)
   ⟨"L&vB Def 3: K axiom □(p→q)→(□p→□q) is DS-valid",
     isFormulaValid 0 5000 (.implies (.box (.implies p q)) (.implies (.box p) (.box q)))
@@ -2378,7 +2419,9 @@ failing on a branch left open only by blocking) were fixed upstream in
 regression cases below now pin the fixed behavior (every open branch
 extracts a verified model) instead of the bug. Two more regressions
 remain unfixed and still pin the bug, identical in gamen-hs (checked in
-GHCi): one documented G3DS deferral (IoaOp/C2, gamen-hs#41) and one
+GHCi): one documented G3DS deferral (IoaOp/C2, gamen-hs#41, open; since
+483c463 `isFormulaValid` reports such a refutation as uncertified instead of
+invalid, and the pinned case checks that too) and one
 budget-exhaustion note (KT/KTB/S4/S5 on a small formula, gamen-hs#40);
 each still flips when fixed there. KTB and S5 do not borrow their blocker's
 witnesses (see `borrowsBlockerWitnesses`), so their blocked branches can
@@ -2476,9 +2519,11 @@ def crossCheckCases : List Case :=
   ⟨"Not in gamen-hs: S5: ◇□□¬p extracts an equivalence-frame countermodel \
     without borrowing (gamen-hs#42 reports S5 unaffected here)",
     extractionShapes s5 (.diamond (.box (.box (.not p)))) == some ["verified"]⟩,
-  ⟨"Not in gamen-hs: G3DS: □([1]p ↔ □⊥) → ⊗₂⟨2⟩(q → p) is refuted, and extraction rejects \
-    a stability frame that fails only C2 (documented IoaOp deferral; flips when fixed)",
-    c2Shape == .ok ([true, false, true, true, true, true], true)⟩,
+  ⟨"Not in gamen-hs: G3DS: □([1]p ↔ □⊥) → ⊗₂⟨2⟩(q → p) is refuted, extraction rejects \
+    a stability frame that fails only C2 (IoaOp deferral, gamen-hs#41), and isFormulaValid \
+    reports it uncertified, not invalid (flips when IoaOp is scheduled)",
+    c2Shape == .ok ([true, false, true, true, true, true], true)
+      && isUncertified (isFormulaValid 0 5000 c2Formula)⟩,
   ⟨"Not in gamen-hs: KT: ◇((□q ∧ □⊥) ∨ (p ∧ ⊥)) exhausts the default budget (unknown, \
     never a wrong answer; same in gamen-hs; flips when fixed)",
     tableauProves systemKT defaultMaxSteps [] tFormula == .unknown (.budgetExhausted defaultMaxSteps)⟩

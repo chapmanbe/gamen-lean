@@ -492,9 +492,13 @@ answer they give can be checked against an independent semantics.
   the formula holds at every world of every model in a pool of random
   valid DS models (`genDSModel`, valid by construction and re-checked
   with `isValidDSFrame`). The pool is a sample, not an enumeration: it
-  can miss a wrong "proved". The extraction check excludes exactly the
-  documented IoaOp deferral: a frame that fails C2 and nothing else
-  (`isIoaOpDeferral`, on the frame rebuilt by `dsStabilityModel`).
+  can miss a wrong "proved". The extraction check (`dsExtractOne`) runs
+  through `isFormulaValid`, which since gamen-hs 483c463 (#41) reports a
+  refutation as definitely false only with a certified countermodel: every
+  definite refutation must re-verify, with no exclusions, and an
+  uncertified one is allowed only for the IoaOp deferral, a stability frame
+  that fails C2 and nothing else (`isIoaOpDeferral`, on the frame rebuilt
+  by `dsStabilityModel`).
 -/
 
 /-- Run a `Gen` deterministically from `seed` at sample size `size`. A
@@ -880,7 +884,8 @@ structure DSXStats where
   unknown : Nat := 0
   stuck : Nat := 0
   verified : Nat := 0
-  /-- Excluded: extraction rejected a frame failing only C2 (IoaOp deferral). -/
+  /-- Refutations `isFormulaValid` left uncertified because the stability
+  frame fails only C2 (the IoaOp deferral, gamen-hs#41). -/
   knownC2 : Nat := 0
 
 /-- **Verdict** check for one `L_n` formula: *proved* ⇒ true at every
@@ -901,36 +906,62 @@ def dsVerdictOne (models : List DSModel) (steps : Nat) (φ : Formula) (st : DSXS
   | .maxStepsExceeded _ _ => return { st with unknown := st.unknown + 1 }
   | .stuck _ _ => return { st with stuck := st.stuck + 1 }
 
-/-- **Extraction** check for one refuted `L_n` formula: `extractDSModel`'s
-model equals `dsStabilityModel`, passes `isValidDSFrame`, has a choice
-relation for every agent of φ, contains `w0`, and falsifies the original
-(not NNF) φ there under `dsSatisfies`. Excluded, exactly: extraction's
-"not a valid DS frame" error on a stability frame with `isIoaOpDeferral`.
-Anything else fails. -/
+/-- **Extraction** check for one `L_n` formula, through `isFormulaValid`
+(the certification added for gamen-hs#41, 483c463) as well as
+`proveFormula`:
+
+* `definitely false` ⇒ the search refuted φ and `extractDSModel`'s model
+  equals `dsStabilityModel`, passes `isValidDSFrame`, has a choice relation
+  for every agent of φ, contains `w0`, and falsifies the original (not NNF)
+  φ there under `dsSatisfies`. No exclusions.
+* `unknown (.uncertifiedRefutation e)` ⇒ the search refuted φ, `e` is
+  extraction's "not a valid DS frame" rejection, and the stability frame is
+  exactly the IoaOp deferral (`isIoaOpDeferral`: two or more agents, fails
+  C2 and nothing else). The guard may withhold an answer only for that
+  documented reason: a frame failing any other condition, or a model that
+  does not falsify φ, is a bug the guard would otherwise hide, and fails.
+* Any other verdict on a refuted formula (`definitely true`, another
+  `unknown`), or `definitely false`/`uncertifiedRefutation` on a formula
+  the search did not refute, fails.
+
+Before the fix the exclusion was on extraction (a C2-only frame's rejection
+was skipped). Now a refutation must be certified to be reported, so the
+exclusion can only be on the *verdict*, and it is narrowed to the one
+failure the guard exists for. -/
 def dsExtractOne (steps : Nat) (φ : Formula) (st : DSXStats) : Except String DSXStats := do
   let tag := s!"φ = {φ} ({repr φ})"
+  let verdict ← (isFormulaValid 0 steps φ).mapError (s!"{tag}: isFormulaValid errored: " ++ ·)
   match ← (proveFormula 0 steps φ).mapError (s!"{tag}: proveFormula errored: " ++ ·) with
   | .refuted gt s =>
     let st := { st with refuted := st.refuted + 1 }
     let sm ← (dsStabilityModel gt s).mapError (s!"{tag}: stability model errored: " ++ ·)
-    match extractDSModel gt s with
-    | .error e =>
+    match verdict with
+    | .unknown (.uncertifiedRefutation e) =>
       if (e.splitOn "not a valid DS frame").length > 1 && isIoaOpDeferral sm.dsFrame then
         return { st with knownC2 := st.knownC2 + 1 }
-      throw s!"{tag}: extraction failed: {e}"
-    | .ok m =>
-      let rootW := toString label0
-      unless m == sm do throw s!"{tag}: extractDSModel differs from dsStabilityModel"
-      unless isValidDSFrame m.dsFrame do throw s!"{tag}: extracted frame not a valid DS frame"
-      for a in (formulaAgents φ).toList do
-        unless m.dsFrame.dsRelations.contains a do
-          throw s!"{tag}: extracted frame has no choice relation for agent {a}"
-      unless m.dsFrame.dsWorlds.contains rootW do throw s!"{tag}: extracted model lacks {rootW}"
-      match dsSatisfies m rootW φ with
-      | .ok false => return { st with verified := st.verified + 1 }
-      | .ok true => throw s!"{tag}: extracted model does not falsify φ at {rootW}: {repr m}"
-      | .error e => throw s!"{tag}: dsSatisfies errored on extracted model: {e}"
-  | _ => return st
+      throw s!"{tag}: refutation left uncertified for a reason other than the IoaOp \
+        deferral: {e}"
+    | .definitely false =>
+      match extractDSModel gt s with
+      | .error e => throw s!"{tag}: definitely false, but extraction failed: {e}"
+      | .ok m =>
+        let rootW := toString label0
+        unless m == sm do throw s!"{tag}: extractDSModel differs from dsStabilityModel"
+        unless isValidDSFrame m.dsFrame do throw s!"{tag}: extracted frame not a valid DS frame"
+        for a in (formulaAgents φ).toList do
+          unless m.dsFrame.dsRelations.contains a do
+            throw s!"{tag}: extracted frame has no choice relation for agent {a}"
+        unless m.dsFrame.dsWorlds.contains rootW do throw s!"{tag}: extracted model lacks {rootW}"
+        match dsSatisfies m rootW φ with
+        | .ok false => return { st with verified := st.verified + 1 }
+        | .ok true => throw s!"{tag}: extracted model does not falsify φ at {rootW}: {repr m}"
+        | .error e => throw s!"{tag}: dsSatisfies errored on extracted model: {e}"
+    | v => throw s!"{tag}: refuted, but isFormulaValid gave {repr v}"
+  | _ =>
+    match verdict with
+    | .definitely false | .unknown (.uncertifiedRefutation _) =>
+      throw s!"{tag}: not refuted, but isFormulaValid gave {repr verdict}"
+    | _ => return st
 
 def dsSamples (agents : List String) (seed count : Nat) : Except String (List Formula) := do
   let fs ← runGenSeeded ((List.range count).mapM fun _ => genDSXFormula agents 2 4) seed 0
@@ -965,7 +996,7 @@ def dsCrossCheckVerdict (r : Except String DSXStats) : Bool × String :=
 def dsExtractVerdict (r : Except String DSXStats) : Bool × String :=
   match r with
   | .ok st => (st.verified > 0,
-      s!"refuted {st.refuted}; extracted models verified {st.verified}, excluded C2/IoaOp {st.knownC2}")
+      s!"refuted {st.refuted}; certified and re-verified {st.verified}, uncertified (C2-only/IoaOp) {st.knownC2}")
   | .error e => (false, s!"FAILED: {e}")
 
 /-- What `extractCountermodel` does on each open branch of `{1 F φ}`, as a

@@ -143,12 +143,18 @@ is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
    (K, KT, K4) to Plausible. Unblocks the two deferred RankingTheory
    properties. Not a `/port-module` module: run a porter in a worktree,
    Opus review.
-2. Lean-only, prompted by Gamen.jl#20: cross-check every tableau system
-   (K, KT, KD, KTB, K4, S4, S5) against exhaustive frame enumeration up to
-   4 worlds, and check every extracted countermodel falsifies the formula;
-   same for G3DS via CounterModel. Print the seed on failure. This also
-   covers K4/S4/S5 countermodel extraction, which no test reaches today.
-   Offer to file the stronger check on gamen-hs (ask first).
+2. **Done 2026-09-25.** Lean-only, prompted by Gamen.jl#20: every tableau
+   system cross-checked against frame enumeration (≤3 worlds up to
+   isomorphism; ≤4 for KT/KTB/S4/S5 in slowtests; 4 worlds × 3 atoms for
+   K is out of reach), with extracted countermodels re-checked for all
+   seven systems, and G3DS the same way. Seeded draws. It found gamen-hs#38 (KD
+   countermodels not serial) and gamen-hs#39 (K/KD/K4 extraction fails
+   at blocked prefixes); with the documented G3DS IoaOp (C2) deferral these
+   are the only extraction exclusions, each pinned by a regression case
+   that flips when fixed. Also found, not yet filed: KT/KTB/S4/S5 exhaust
+   the budget on `◇((□q ∧ □⊥) ∨ (p ∧ ⊥))` (same in gamen-hs). When #38/#39
+   are fixed, drop the exclusions in `crossExtractOne` and flip the pins.
+   Still open: offer to file the stronger check on gamen-hs (ask first).
 3. Optional: a compare.py G3DS section (coverage is 26 requests).
 4. Deferred (Gamen.jl#19): runtime string → `Formula` parser, when a widget
    or the web editor needs it; extend `ml[…]` as operators land.

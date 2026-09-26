@@ -99,10 +99,29 @@ Each wave ends with its tests ported and `tools/compare/compare.py` green.
    `service/Main.hs`, `app/Main.hs`; extend the comparison harness to the
    dcleg service's protocol.
 
-Lean-only extensions (not in gamen-hs; see the handoff plan): a stronger
-tableau cross-check against frame enumeration (Gamen.jl#20), and later a
-runtime string → `Formula` parser (Gamen.jl#19, deferred until a widget
-needs typed input; `ml[…]` covers notebooks).
+Lean-only extensions (not in gamen-hs; see the handoff plan):
+
+- **Decision-procedure cross-checks** (Gamen.jl#20; done 2026-09-25).
+  `Tests/PropertyHelpers.lean` ("Cross-checks of the decision
+  procedures"), `crossCheckCases` in `lake test` (40 seeded draws per
+  system), and `lake exe slowtests` (1000 draws per system, about 60s).
+  Every tableau system (K, KT, KD, KTB, K4, S4, S5) is checked against
+  enumeration of all frames of at most 3 worlds in its class, up to
+  isomorphism (4 worlds for KT, KTB, S4, S5 in slowtests). A wrong
+  "proved" is caught whenever a countermodel that small exists. Every
+  "not proved" is backed by an extracted countermodel that the test
+  re-checks with `FrameProperties`/`satisfies`. G3DS: extracted models
+  are re-checked with `isValidDSFrame`/`dsSatisfies`, and proved
+  formulas are checked against random valid DS models. The verdict
+  check has no exceptions. The extraction check excludes exactly three
+  known cases, each pinned by a regression case that flips when fixed:
+  gamen-hs#38 (KD countermodels are not serial), gamen-hs#39 (K/KD/K4
+  extraction fails on a branch with a blocked prefix), and the
+  documented G3DS IoaOp deferral (frame fails only C2). Also pinned:
+  KT/KTB/S4/S5 exhaust the budget on `◇((□q ∧ □⊥) ∨ (p ∧ ⊥))`, as in
+  gamen-hs (an unknown, never a wrong answer; not yet filed).
+- Later: a runtime string → `Formula` parser (Gamen.jl#19, deferred
+  until a widget needs typed input; `ml[…]` covers notebooks).
 
 In parallel: teaching notebooks, one Gamen.jl Pluto chapter at a time
 (`Notebooks/`), reusing `Widgets/`.

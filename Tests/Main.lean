@@ -2329,13 +2329,81 @@ def closureCases : List Case :=
       | .ok _ => false⟩
   ]
 
+/-! ## Cross-checks of the decision procedures (Not in gamen-hs)
+
+Lean-only (Gamen.jl issue #20). The random checks and their bounds are
+documented in `Tests/PropertyHelpers.lean` ("Cross-checks of the decision
+procedures"). Here: 40 draws per system from seed `crossSeed`, frames of
+at most 3 worlds; G3DS 40 draws for 1 and for 2 agents against 20 random
+DS models. `lake exe slowtests` runs 1000 draws per system (and 4-world
+frames for KT, KTB, S4, S5) and 500 G3DS draws per agent set.
+
+The regression cases pin today's behavior for three known gamen-hs bugs
+and one documented deferral, identical in gamen-hs (checked in GHCi);
+each flips when the bug is fixed there. -/
+
+def crossSeed : Nat := 20260925
+
+def crossCase (name : String) (r : Bool × String) : Case :=
+  ⟨s!"Not in gamen-hs: {name} (seed {crossSeed}): {r.2}", r.1⟩
+
+/-- The G3DS formula whose stability frame fails only C2. -/
+def c2Formula : Formula :=
+  .implies (.box (.iff (.stit "1" p) (.box .bot))) (.ought "2" (.choiceDiamond "2" (.implies q p)))
+
+/-- (C1, C2, C3 (k = 0), D1, D2, D3) of `c2Formula`'s stability frame,
+and whether `extractDSModel` rejects it as "not a valid DS frame". -/
+def c2Shape : Except String (List Bool × Bool) := do
+  match ← proveFormula 0 5000 c2Formula with
+  | .refuted gt s =>
+    let fr := (← dsStabilityModel gt s).dsFrame
+    let rejected := match extractDSModel gt s with
+      | .error e => (e.splitOn "not a valid DS frame").length > 1
+      | .ok _ => false
+    return ([checkDS_C1 fr, checkDS_C2 fr, checkDS_C3 0 fr, checkDS_D1 fr, checkDS_D2 fr,
+      checkDS_D3 fr], rejected)
+  | _ => throw "c2Formula: not refuted"
+
+def crossCheckCases : List Case :=
+  let kd : XSystem := ⟨systemKD, isSerial, "serial"⟩
+  let k : XSystem := ⟨systemK, fun _ => true, "any"⟩
+  let k4 : XSystem := ⟨systemK4, isTransitive, "transitive"⟩
+  let tFormula : Formula := .diamond (.or (.and (.box q) (.box .bot)) (.and p .bot))
+  (xSystems.flatMap fun xs =>
+    [ crossCase s!"{xs.sys.name} verdicts vs. ≤3-world {xs.condName} frames"
+        (crossCheckVerdict (crossCheckSystem xs crossSeed 40 3 defaultMaxSteps)),
+      crossCase s!"{xs.sys.name} extracted countermodels re-checked"
+        (crossExtractVerdict (crossExtractSystem xs crossSeed 40 3 defaultMaxSteps)) ])
+  ++ ([["1"], ["1", "2"]].flatMap fun ag =>
+    [ crossCase s!"G3DS {ag.length}-agent: proved ⇒ true in 20 random DS models"
+        (dsCrossCheckVerdict (dsCrossCheck ag crossSeed 40 20 5000)),
+      crossCase s!"G3DS {ag.length}-agent: extracted models re-checked"
+        (dsExtractVerdict (dsExtractCheck ag crossSeed 40 5000)) ])
+  ++ [
+  ⟨"Not in gamen-hs: KD: refuting p extracts a non-serial model (gamen-hs#38; flips when fixed)",
+    extractionShapes kd p == some ["non-serial (#38)"]⟩,
+  ⟨"Not in gamen-hs: K: □□p ↔ ¬□p, second branch's extraction fails at a blocked prefix \
+    (gamen-hs#39; flips when fixed)",
+    extractionShapes k (.iff (.box (.box p)) (.not (.box p))) == some ["verified", "blocked (#39)"]⟩,
+  ⟨"Not in gamen-hs: K4: ◇□p ∧ □⊥, second branch's extraction fails at a blocked prefix \
+    (gamen-hs#39; flips when fixed)",
+    extractionShapes k4 (.and (.diamond (.box p)) (.box .bot))
+      == some ["verified", "blocked (#39)", "verified"]⟩,
+  ⟨"Not in gamen-hs: G3DS: □([1]p ↔ □⊥) → ⊗₂⟨2⟩(q → p) is refuted, and extraction rejects \
+    a stability frame that fails only C2 (documented IoaOp deferral; flips when fixed)",
+    c2Shape == .ok ([true, false, true, true, true, true], true)⟩,
+  ⟨"Not in gamen-hs: KT: ◇((□q ∧ □⊥) ∨ (p ∧ ⊥)) exhausts the default budget (unknown, \
+    never a wrong answer; same in gamen-hs; flips when fixed)",
+    tableauProves systemKT defaultMaxSteps [] tFormula == .unknown (.budgetExhausted defaultMaxSteps)⟩
+  ]
+
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
       ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases ++ rankingTheoryCases
       ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
-      ++ deonticStitCases ++ counterModelCases ++ closureCases do
+      ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
@@ -2347,6 +2415,7 @@ def main : IO UInt32 := do
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
     + fragmentCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
-    + deonticStitCases.length + counterModelCases.length + closureCases.length + properties.length
+    + deonticStitCases.length + counterModelCases.length + closureCases.length
+    + crossCheckCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

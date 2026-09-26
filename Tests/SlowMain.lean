@@ -14,6 +14,9 @@ executable rather than part of `lake test` (see `checkGuarded`'s
 docstring in `Tests/PropertyHelpers.lean`, and `PORTING.md`'s
 `Properties` row).
 
+Also runs the large Lean-only decision-procedure cross-checks
+(`slowCrossChecks`, not in gamen-hs; about 60s).
+
 Run after touching `Gamen.Tableau`, `Gamen.Semantics`, or
 `Gamen.RankingTheory` — anything the seven properties below exercise.
 -/
@@ -103,12 +106,47 @@ def slowProperties : List (String × IO Bool) :=
         IO.println s!"    real checks: {checks}/100"
         return ok) ]
 
+/-! ## Cross-checks of the decision procedures (Not in gamen-hs)
+
+The large runs of `Tests/Main.lean`'s `crossCheckCases` (see the
+"Cross-checks of the decision procedures" section of
+`Tests/PropertyHelpers.lean` for the checks and what their bounds
+guarantee): 1000 draws per tableau system against every frame of at most
+3 worlds in its class, 1000 more (seed + 1) against at most 4 worlds for
+the systems whose 4-world classes are small (KT, KTB, S4, S5), and 500
+G3DS draws each for 1 and 2 agents. Same seed as `lake test`; about 60s
+in all. -/
+
+def slowSeed : Nat := 20260925
+
+def crossProp (name : String) (seed : Nat) (r : Unit → Bool × String) : String × IO Bool :=
+  (s!"Not in gamen-hs: {name} (seed {seed})", do
+    let (ok, msg) := r ()
+    IO.println s!"    {msg}"
+    return ok)
+
+def slowCrossChecks : List (String × IO Bool) :=
+  (xSystems.flatMap fun xs =>
+    [ crossProp s!"{xs.sys.name} verdicts, 1000 draws vs. ≤3-world {xs.condName} frames" slowSeed
+        fun _ => crossCheckVerdict (crossCheckSystem xs slowSeed 1000 3 defaultMaxSteps),
+      crossProp s!"{xs.sys.name} extracted countermodels, 1000 draws" slowSeed
+        fun _ => crossExtractVerdict (crossExtractSystem xs slowSeed 1000 3 defaultMaxSteps) ])
+  ++ ((xSystems.filter (["KT", "KTB", "S4", "S5"].contains ·.sys.name)).map fun xs =>
+      crossProp s!"{xs.sys.name} verdicts, 1000 draws vs. ≤4-world {xs.condName} frames" (slowSeed + 1)
+        fun _ => crossCheckVerdict (crossCheckSystem xs (slowSeed + 1) 1000 4 defaultMaxSteps))
+  ++ ([["1"], ["1", "2"]].flatMap fun ag =>
+    [ crossProp s!"G3DS {ag.length}-agent verdicts, 500 draws vs. 50 random DS models" slowSeed
+        fun _ => dsCrossCheckVerdict (dsCrossCheck ag slowSeed 500 50 5000),
+      crossProp s!"G3DS {ag.length}-agent extracted models, 500 draws" slowSeed
+        fun _ => dsExtractVerdict (dsExtractCheck ag slowSeed 500 5000) ])
+
 def main : IO UInt32 := do
   IO.println "Slow properties (lake exe slowtests; Haskell's full numInst/discard-cap/size)"
   let mut failures := 0
-  for (name, prop) in slowProperties do
+  for (name, prop) in slowProperties ++ slowCrossChecks do
     let ok ← prop
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
-  IO.println s!"{slowProperties.length - failures}/{slowProperties.length} passed"
+  let total := slowProperties.length + slowCrossChecks.length
+  IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

@@ -14,3 +14,10 @@ describe now lives at this repository's root (`sketches/lean/Gamen/` →
 | `interactive-materials-lean4.md` | Lean vs. Pluto for teaching; review of an external comparison; prototype results |
 | `compare-summary-2026-09-23.txt` | Side-by-side baseline: 3,653 requests, 0 disagreements |
 | `compare-mutation-no-D-rules-2026-09-23.txt` | Same run with the D rules removed: 88 disagreements (the harness works) |
+
+Later records, written in this repository:
+
+| File | Contents |
+|---|---|
+| `lean-library-reuse-2026-09-23.md` | Which Lean library definitions the port can reuse, and why most cannot |
+| `bug-provenance-2026-09-26.md` | Where the bugs found during waves 2–3 and the cross-checks came from: the language, the port, mechanical checks, or an independent oracle |

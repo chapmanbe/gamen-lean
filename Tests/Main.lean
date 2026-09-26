@@ -1168,7 +1168,27 @@ def temporalCases : List Case :=
   ⟨"Hp ∧ ¬p is KDt-inconsistent (past T rule derives p from Hp)",
     consistentIn systemKDt [.pastBox p, .not p] == no⟩,
   ⟨"Gp alone is KDt-consistent",
-    consistentIn systemKDt [.futureBox p] == yes⟩
+    consistentIn systemKDt [.futureBox p] == yes⟩,
+  -- Not in gamen-hs: one case per temporal rule that no case above needs
+  -- (gamen-hs's temporal property is disabled for #25, so nothing there
+  -- exercises them). Verdicts checked against gamen-hs with runghc
+  -- (`tableauProves`/`tableauConsistent`, budget 1000).
+  ⟨"Not in gamen-hs: KDt proves Gp → GGp (needs 4G)",
+    provesIn systemKDt [] (.implies (.futureBox p) (.futureBox (.futureBox p))) == yes⟩,
+  ⟨"Not in gamen-hs: KDt proves FFp → Fp (needs 4F)",
+    provesIn systemKDt [] (.implies (.futureDiamond (.futureDiamond p)) (.futureDiamond p)) == yes⟩,
+  ⟨"Not in gamen-hs: {Gp, FF¬p} is KDt-inconsistent (needs 4G)",
+    consistentIn systemKDt [.futureBox p, .futureDiamond (.futureDiamond (.not p))] == no⟩,
+  ⟨"Not in gamen-hs: {F(Hp), ¬p} is KDt-inconsistent (needs 4H: the child's \
+    Hp reaches the root)",
+    consistentIn systemKDt [.futureDiamond (.pastBox p), .not p] == no⟩,
+  ⟨"Not in gamen-hs: {F(¬Pp), p} is KDt-inconsistent (needs 4P: the child's \
+    F Pp reaches the root)",
+    consistentIn systemKDt [.futureDiamond (.not (.pastDiamond p)), p] == no⟩,
+  ⟨"Not in gamen-hs: {Gp, F¬p} is K-inconsistent (base GT rule, no T/4 to mask it)",
+    consistentIn systemK [.futureBox p, .futureDiamond (.not p)] == no⟩,
+  ⟨"Not in gamen-hs: {¬Fp, F(p ∧ q)} is K-inconsistent (base FF rule)",
+    consistentIn systemK [.not (.futureDiamond p), .futureDiamond (.and p q)] == no⟩
   ]
 
 /-! ## Doxastic belief (`Gamen.Doxastic`)

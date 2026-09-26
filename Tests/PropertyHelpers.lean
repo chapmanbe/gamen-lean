@@ -475,9 +475,10 @@ answer they give can be checked against an independent semantics.
   (`crossExtractOne`) has none either: gamen-hs#38 (KD countermodels not
   serial) and #39 (K/KD/K4 extraction failing on a branch with a blocked
   prefix) were fixed upstream in 08a52d4, and every extraction failure or
-  out-of-class model now fails the check. KTB's own blocked-branch
-  extraction failures, which do not borrow their blocker's witnesses, are
-  a separate open bug (gamen-hs#42); our sample sizes have not hit one.
+  out-of-class model now fails the check. Blocked-branch
+  extraction failures in KTB and S5, which do not borrow their blocker's
+  witnesses, are a separate open bug (gamen-hs#42; known failures are
+  KTB-only); our sample sizes have not hit one.
 
   `genSchemaSample` adds T/D/B/4/5 schema instances, which random
   formulas rarely produce; they are what catch an unsound rule added to a
@@ -653,10 +654,10 @@ enumeration must have found a countermodel too. gamen-hs#38 (KD models
 not serial) and #39 (K/KD/K4 extraction failing on a blocked branch) are
 fixed upstream (08a52d4), so no exclusion for them remains here: any
 extraction failure, or any extracted model outside the frame class, is a
-hard failure. KTB's own blocked-branch extraction failures (it does not
-borrow its blocker's witnesses; gamen-hs#42, open) are not excluded
-either — our sample sizes have not hit one; if they do, file it against
-#42 rather than adding a silent exclusion. -/
+hard failure. Blocked-branch extraction failures in KTB and S5 (neither
+borrows its blocker's witnesses; gamen-hs#42, open; known failures are
+KTB-only) are not excluded either — our sample sizes have not hit one;
+if they do, file it against #42 rather than adding a silent exclusion. -/
 def crossExtractOne (xs : XSystem) (frames : List Frame) (maxWorlds steps : Nat)
     (φ : Formula) (st : XStats) : Except String XStats := do
   let tag := s!"{xs.sys.name}, φ = {φ} ({repr φ})"

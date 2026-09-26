@@ -9,6 +9,12 @@ inductive UnknownReason where
   | budgetExhausted (steps : Nat)
   | unsupportedOperator (op : String)
   | proverStuck (why : String)
+  /-- Proof search saturated without a proof, but the countermodel read off
+  the saturated sequent failed its re-check (e.g. a G3DS frame violating C2,
+  because the IoaOp rule is not scheduled; gamen-hs#41). Without a verified
+  countermodel the refutation is not evidence of invalidity. The string
+  carries the diagnostic. -/
+  | uncertifiedRefutation (why : String)
   deriving BEq, Repr
 
 inductive Verdict where
@@ -28,5 +34,6 @@ def UnknownReason.code : UnknownReason → String
   | .budgetExhausted _ => "budget_exhausted"
   | .unsupportedOperator _ => "unsupported_operator"
   | .proverStuck _ => "prover_stuck"
+  | .uncertifiedRefutation _ => "uncertified_refutation"
 
 end Gamen

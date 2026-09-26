@@ -54,8 +54,8 @@ def dsMaxSteps : Nat := 5000
 characters in practice, as gamen-hs's own `ProverStuck` call sites use).
 Escapes backslash and double-quote as GHC's derived `Show String` does;
 does not attempt GHC's full escape table (named escapes for control
-characters, the `\&` disambiguator after a numeric escape), since a
-`ProverStuck`/`BudgetExhausted` reason reaching `reasonOperator` is
+characters, decimal escapes for non-ASCII such as `¬` → `\172`, the `\&` disambiguator after a numeric escape), since a
+`ProverStuck`/`BudgetExhausted`/`UncertifiedRefutation` reason reaching `reasonOperator` is
 already a "should not occur" case (see its docstring). -/
 def quoteHaskellString (s : String) : String :=
   "\"" ++ String.ofList (s.toList.flatMap fun c =>
@@ -74,6 +74,7 @@ def reasonOperator : UnknownReason → String
   | .unsupportedOperator name => name
   | .budgetExhausted n => s!"BudgetExhausted {n}"
   | .proverStuck s => s!"ProverStuck {quoteHaskellString s}"
+  | .uncertifiedRefutation s => s!"UncertifiedRefutation {quoteHaskellString s}"
 
 /-- Port of `firstUnsupported` in `validate/Main.hs`: the first constructor
 across a formula list rejected by a fragment check (`checkTableauFragment`

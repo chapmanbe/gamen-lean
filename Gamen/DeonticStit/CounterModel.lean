@@ -39,7 +39,10 @@ corresponding *stability model*, which falsifies the input formula at `w₀`
 Deviations from the Haskell: `euclideanClose` returns `Except` (it runs
 through the shared fuelled `iterateToFixpoint`), and `extractDSModel`
 propagates the `Except` errors of `unblockedLabels`, `ancestors`, and
-`dsSatisfies` instead of crashing or diverging. Formulas in error
+`dsSatisfies` instead of crashing or diverging. Those errors are kept
+apart from the Haskell's `Left` (a model failing its re-check) by
+`extractDSModelChecked`, so `isFormulaValid` can turn only the latter into
+`unknown (.uncertifiedRefutation _)` (gamen-hs#41). Formulas in error
 messages are printed with Lean's `toString`, not Haskell's `show`.
 
 Issue #8 step G.
@@ -89,10 +92,21 @@ frame is a valid DS frame (`isValidDSFrame`) and (2) every root-labelled
 formula `w₀:φ ∈ Γ` is actually falsified at `w₀` (`dsSatisfies m w₀ φ`
 is `.ok false`). A stable refuted sequent reads Γ disjunctively, so a
 genuine counter-model must falsify each of its root disjuncts. (A C2
-failure inside `isValidDSFrame` is the documented IoaOp scheduling
-deferral — such a frame is reported as unverifiable here rather than
-emitted as a bogus counter-model.) -/
-def extractDSModel (gt : GenTree) (s : Sequent) : Except String DSModel := do
+failure inside `isValidDSFrame` is the IoaOp scheduling deferral,
+gamen-hs#41 — such a frame is reported as unverifiable here rather than
+emitted as a bogus counter-model, and `Gamen.isFormulaValid` then answers
+`unknown`.)
+
+*Deviation.* The Haskell's `Either String DSModel` has one `Left`: a model
+that fails its re-check. The Lean body can also fail for reasons the
+Haskell does not have as values (a cyclic generation tree in `ancestors`,
+fuel running out in `euclideanClose`, a `dsSatisfies` error), and those
+must stay errors rather than become an `unknown` verdict. So the body is
+`extractDSModelChecked`, which keeps the two apart: the outer `Except` is an
+error, the inner one is the Haskell's `Either`. `extractDSModel` flattens
+them, for callers that want either kind of failure as a failure. -/
+def extractDSModelChecked (gt : GenTree) (s : Sequent) :
+    Except String (Except String DSModel) := do
   let unblockedSet ← unblockedLabels gt s
   let labelToWorld : Label → World := toString
   let worlds : Std.TreeSet World :=
@@ -144,8 +158,8 @@ def extractDSModel (gt : GenTree) (s : Sequent) : Except String DSModel := do
     { dsFrame := { dsWorlds := worlds, dsRelations := relations, dsIdeals := ideals }
       dsValuation := valuation }
   if !isValidDSFrame model.dsFrame then
-    throw "extractDSModel: extracted frame is not a valid DS frame \
-      (C1-C3/D1-D3; a C2 failure is the documented IoaOp deferral)"
+    return .error "extractDSModel: extracted frame is not a valid DS frame \
+      (C1-C3/D1-D3; a C2 failure is the IoaOp deferral, issue #41)"
   -- Root-labelled Γ formulas the counter-model must falsify. The root is
   -- always unblocked, hence present in the model.
   let rootGamma := s.gamma.toList.filter fun lf =>
@@ -154,8 +168,14 @@ def extractDSModel (gt : GenTree) (s : Sequent) : Except String DSModel := do
     dsSatisfies model (labelToWorld lf.lfLabel) lf.lfFormula
   match notFalsified with
   | some lf =>
-    throw s!"extractDSModel: model fails to falsify root formula {lf.lfFormula} \
+    return .error s!"extractDSModel: model fails to falsify root formula {lf.lfFormula} \
       at {labelToWorld lf.lfLabel}"
-  | none => return model
+  | none => return .ok model
+
+/-- Port of `extractDSModel` (see `extractDSModelChecked`): the extracted,
+re-checked counter-model, or an error if extraction failed or the model
+failed its re-check. -/
+def extractDSModel (gt : GenTree) (s : Sequent) : Except String DSModel := do
+  ← extractDSModelChecked gt s
 
 end Gamen

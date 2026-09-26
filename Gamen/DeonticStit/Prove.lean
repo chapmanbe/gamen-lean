@@ -3,6 +3,7 @@ import Gamen.Verdict
 import Gamen.DeonticStit.Sequent
 import Gamen.DeonticStit.Rules
 import Gamen.DeonticStit.Saturation
+import Gamen.DeonticStit.CounterModel
 
 /-!
 # Gamen.DeonticStit.Prove
@@ -29,8 +30,10 @@ running out is `maxStepsExceeded`, surfaced as `Verdict.unknown`, never as a
 definite answer.
 
 The IoaOp operation (Definition 11, p. 851) is *not yet* scheduled by this
-driver, as in the Haskell (gamen-hs issue #8 step F): sequents that genuinely
-need IOA introductions saturate before the IOA tuples are produced.
+driver, as in the Haskell (gamen-hs issue #8 step F, tracked in #41):
+sequents that genuinely need IOA introductions saturate before the IOA
+tuples are produced. `isFormulaValid` therefore certifies every refutation
+with a re-checked countermodel before reporting it.
 
 *Errors.* The Haskell has no `error` calls, but the blocking predicates
 consult `Saturation.ancestors`, which in Lean returns `Except` (a cyclic
@@ -55,7 +58,10 @@ namespace Gamen
   DS^k_n (or, when starting from a sequent with extra formulas, the input is
   jointly inconsistent).
 * `refuted`: proof search reached a stable sequent; the `GenTree` and
-  `Sequent` carry what counter-model extraction needs.
+  `Sequent` carry what counter-model extraction needs. Not by itself proof
+  of invalidity: without IoaOp scheduled (gamen-hs#41) a stable sequent can
+  read off a non-DS (C2-violating) frame. `isFormulaValid` certifies it
+  through `extractDSModel` before committing.
 * `maxStepsExceeded`: the `maxSteps` budget ran out before closure or
   stability. Surfaced as `Verdict.unknown`, never as a definite refutation.
 * `stuck`: no rule applies *and* the sequent is not stable, a disagreement
@@ -191,13 +197,29 @@ before search starts; `maxSteps` caps the recursion depth. -/
 def proveFormula (k : Int) (maxSteps : Nat) (phi : Formula) : Except String ProveResult :=
   prove k maxSteps (emptyGenTree label0) (singletonSequent label0 phi.toNNF)
 
-/-- Is `φ` *valid* in DS^k_n? Three-valued: `proved` is definitely true,
-`refuted` definitely false; budget exhaustion or a stuck sequent is
-`unknown`, never a definite answer. -/
+/-- Is `φ` *valid* in DS^k_n? Three-valued: `proved` is definitely true;
+budget exhaustion or a stuck sequent is `unknown`, never a definite answer.
+
+`refuted` is definitely false *only when certified*: the countermodel
+`extractDSModel` reads off the stable sequent must be a valid DS frame
+(C1–C3, D1–D3) that falsifies φ. Otherwise it is
+`unknown (.uncertifiedRefutation _)`. The prover does not schedule the IoaOp
+rule (Definition 11; gamen-hs#41), so with two or more agents it can
+saturate on a formula that is valid only through independence of agents
+(e.g. the IOA axiom itself) and read off a frame violating C2. Trusting that
+refutation made `isFormulaSetConsistent` (and so `gamen-validate`) report
+"consistent" for sets that are inconsistent via IOA. `proved` needs no
+certificate: a missing rule can only make proving weaker, never unsound.
+
+An *error* during extraction (see `extractDSModelChecked`) is propagated as
+an error, not turned into `unknown`. -/
 def isFormulaValid (k : Int) (maxSteps : Nat) (phi : Formula) : Except String Verdict := do
   match ← proveFormula k maxSteps phi with
   | .proved => return .definitely true
-  | .refuted _ _ => return .definitely false
+  | .refuted gt s =>
+    match ← extractDSModelChecked gt s with
+    | .ok _ => return .definitely false
+    | .error err => return .unknown (.uncertifiedRefutation err)
   | .maxStepsExceeded _ _ => return .unknown (.budgetExhausted maxSteps)
   | .stuck _ _ =>
     return .unknown (.proverStuck "G3DS proof search reached a non-stable dead end")

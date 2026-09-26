@@ -315,6 +315,11 @@ def build_corpus(rng):
     Oa = lambda f: ag("ought", "a", f)
     Pa = lambda f: ag("permitted", "a", f)
     Sa = lambda f: ag("stit", "a", f)
+    x41, y41, hh41 = atom("x"), atom("y"), atom("hh_diet")
+    neither41 = un("box", un("not", bi("and", x41, y41)))
+    ioa41 = bi("implies",
+               bi("and", un("diamond", ag("stit", "1", x41)), un("diamond", ag("stit", "2", y41))),
+               un("diamond", bi("and", ag("stit", "1", x41), ag("stit", "2", y41))))
     add("J consistency-deontic-stit", [
         req("check_consistency", formulas=[Oa(p), Oa(un("not", p))]),       # D3: no conflicting duties
         req("check_consistency", formulas=[Oa(p), un("not", Pa(p))]),        # ought implies permitted
@@ -322,9 +327,19 @@ def build_corpus(rng):
         req("check_consistency", formulas=[Sa(p), un("not", p)]),            # stit is factive
         req("check_consistency", formulas=[Sa(p), ag("stit", "b", un("not", p))]),  # independence
         req("check_consistency", formulas=[Oa(p), ag("ought", "b", un("not", p))]),
+        # gamen-hs#41 (483c463): refutations that read off a C2-violating
+        # frame are "unknown"/"uncertified_refutation", never "consistent".
+        # These fixed requests use no rng, so the random draws are unchanged.
+        req("check_consistency", formulas=[ag("ought", "physician", x41),
+                                           ag("ought", "nurse", y41), neither41]),
+        req("check_consistency", formulas=[un("not", ioa41)]),   # IOA axiom not refuted
+        req("check_consistency", formulas=[ag("ought", "patient", hh41),
+                                           ag("ought", "clinician", un("not", hh41))]),
     ] + [req("check_consistency", formulas=rand_ds_set(1, 3)) for _ in range(200)])
     add("J pairwise-deontic-stit", [
         req("check_pairwise", formulas=[Oa(p), Oa(un("not", p)), Pa(q)]),
+        req("check_pairwise", formulas=[ag("ought", "physician", x41),
+                                        ag("ought", "nurse", y41), neither41]),
     ] + [req("check_pairwise", formulas=rand_ds_set(2, 4)) for _ in range(50)])
     return sections
 

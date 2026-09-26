@@ -1,6 +1,9 @@
 import Gamen.Tableau
 import Gamen.RankingTheory
 import Gamen.FrameProperties
+import Gamen.DeonticStit
+import Gamen.DeonticStit.Prove
+import Gamen.DeonticStit.CounterModel
 import Plausible
 
 /-!
@@ -429,3 +432,335 @@ def extractedModelsFor (f : Formula) : List Model :=
   match buildTableau systemK defaultMaxSteps [pfTrue .root f] with
   | .stillOpen branches => branches.filterMap fun b => (extractCountermodel systemK b).toOption
   | _ => []
+
+/-! ## Cross-checks of the decision procedures (Not in gamen-hs)
+
+Lean-only; no gamen-hs counterpart. Prompted by Gamen.jl issue #20: the
+prefixed tableau and the G3DS prover are decision procedures, and each
+answer they give can be checked against an independent semantics.
+
+* **Tableau vs. enumeration** (`crossCheckSystem`), for K, KT, KD, KTB
+  (`systemKB`), K4, S4, S5. Random formulas (atoms drawn from {p, q} or
+  {p, q, r}, modal depth ≤ 2, from a printed seed). For each formula:
+  - *proved* ⇒ no model on a frame of at most `maxWorlds` worlds that
+    satisfies the system's frame condition (`Gamen.FrameProperties`)
+    falsifies it at any world (`Gamen.Semantics.satisfies`);
+  - *not proved* ⇒ every open branch yields a model from
+    `extractCountermodel` whose frame satisfies the condition and which
+    falsifies the formula at the root prefix `1`, both re-checked here
+    with `FrameProperties`/`satisfies` rather than trusted;
+  - if that extracted model has at most `maxWorlds` worlds, the
+    enumeration must have found a countermodel too (a check on the
+    enumerator itself).
+
+  **What the bound guarantees.** Frames are enumerated up to isomorphism
+  (a relation mask is kept only if no permutation of the worlds gives a
+  smaller mask), then filtered by the frame condition; valuations range
+  over the formula's own atoms only, all `2^(atoms·worlds)` of them, and
+  every world is tried. Since truth is invariant under isomorphism, this
+  covers *every* model of at most `maxWorlds` worlds on a frame of the
+  class. So a wrong "proved" is caught exactly when the formula has a
+  countermodel of at most `maxWorlds` worlds in the class; one whose
+  smallest countermodel is larger slips through the soundness check.
+  Every "not proved" answer, by contrast, is certified outright by its
+  re-checked countermodel, whatever its size. Budget exhaustion
+  (`exhausted`) is neither a pass nor a fail for a single formula; the
+  case requires it never to happen, and requires at least one proved and
+  one refuted formula so neither direction passes vacuously.
+
+* **G3DS** (`dsCrossCheck`): random `L_n` formulas (1 or 2 agents, atoms
+  p, q, modal depth ≤ 2, all of ¬ ∧ ∨ → ↔ □ ◇ [i] ⟨i⟩ ⊗ ⊖). *Refuted* ⇒
+  `extractDSModel`'s model passes `isValidDSFrame`, has a choice relation
+  for every agent of the formula, contains the root `w0`, and falsifies
+  the original (not NNF) formula there under `dsSatisfies`. *Proved* ⇒
+  the formula holds at every world of every model in a pool of random
+  valid DS models (`genDSModel`, valid by construction and re-checked
+  with `isValidDSFrame`). The pool is a sample, not an enumeration: it
+  can miss a wrong "proved".
+-/
+
+/-- Run a `Gen` deterministically from `seed` at sample size `size`. A
+generator failure is an error, never a default. -/
+def runGenSeeded {α : Type} (g : Gen α) (seed size : Nat) : Except String α :=
+  match (((runRandWith seed g).run ⟨size⟩ : Except GenError α)) with
+  | .ok a => .ok a
+  | .error (.genError m) => .error s!"generator failed: {m}"
+
+/-- A uniform draw from `0 … k-1` (`k ≥ 1`; `k = 0` behaves as `k = 1`). -/
+def pick (k : Nat) : Gen Nat := do
+  let ⟨i, _⟩ ← Gen.choose Nat 0 (k - 1) (by omega)
+  return i
+
+/-- An atom from `atoms`, or `⊥` with probability `1/(|atoms|+1)`. -/
+def genXLeaf (atoms : List String) : Gen Formula := do
+  let i ← pick (atoms.length + 1)
+  return if i == atoms.length then .bot else .atom (atoms.getD i "p")
+
+/-- Random Kripke-fragment formula over `atoms`, modal depth ≤ `md`,
+connective nesting ≤ the last argument. Leaves weigh 3, each unary or
+binary connective 1, □ and ◇ 2 each (only while `md > 0`). -/
+def genXFormula (atoms : List String) (md : Nat) : Nat → Gen Formula
+  | 0 => genXLeaf atoms
+  | n + 1 => do
+    let c ← pick (if md > 0 then 12 else 8)
+    match c with
+    | 0 | 1 | 2 => genXLeaf atoms
+    | 3 => .not <$> genXFormula atoms md n
+    | 4 => .and <$> genXFormula atoms md n <*> genXFormula atoms md n
+    | 5 => .or <$> genXFormula atoms md n <*> genXFormula atoms md n
+    | 6 => .implies <$> genXFormula atoms md n <*> genXFormula atoms md n
+    | 7 => .iff <$> genXFormula atoms md n <*> genXFormula atoms md n
+    | 8 | 9 => .box <$> genXFormula atoms (md - 1) n
+    | _ => .diamond <$> genXFormula atoms (md - 1) n
+
+/-- One cross-check sample: 2 or 3 atoms, modal depth ≤ 2, nesting ≤ 4. -/
+def genXSample : Gen Formula := do
+  let k ← pick 2
+  genXFormula (if k == 0 then ["p", "q"] else ["p", "q", "r"]) 2 4
+
+/-- The modal depth of a formula (□/◇ and the agent operators count). -/
+def modalDepth : Formula → Nat
+  | .not f => modalDepth f
+  | .and l r | .or l r | .implies l r | .iff l r => max (modalDepth l) (modalDepth r)
+  | .box f | .diamond f | .stit _ f | .choiceDiamond _ f | .ought _ f | .permitted _ f =>
+      modalDepth f + 1
+  | _ => 0
+
+/-- All permutations of a list. -/
+def permutationsOf : List Nat → List (List Nat)
+  | [] => [[]]
+  | x :: xs => (permutationsOf xs).flatMap fun p =>
+      (List.range (p.length + 1)).map fun i => p.take i ++ x :: p.drop i
+
+/-- Rename the worlds of an `n`-world relation mask (bit `i*n+j` is the
+edge `(wᵢ, wⱼ)`) by the permutation `π`. -/
+def permuteMask (n : Nat) (π : List Nat) (mask : Nat) : Nat := Id.run do
+  let mut out := 0
+  for i in List.range n do
+    for j in List.range n do
+      if mask.testBit (i * n + j) then
+        out := out ||| (1 <<< (π.getD i 0 * n + π.getD j 0))
+  return out
+
+/-- One representative per isomorphism class of relations on `n` worlds:
+the masks no world permutation makes smaller. -/
+def canonicalMasks (n : Nat) : List Nat :=
+  let ps := permutationsOf (List.range n)
+  (List.range (2 ^ (n * n))).filter fun m => ps.all fun π => permuteMask n π m ≥ m
+
+def xWorldName (i : Nat) : World := s!"w{i}"
+
+def frameOfMask (n mask : Nat) : Except String Frame :=
+  let ws := (List.range n).map xWorldName
+  let edges := (List.range n).flatMap fun i => (List.range n).filterMap fun j =>
+    if mask.testBit (i * n + j) then some (xWorldName i, xWorldName j) else none
+  mkFrame ws edges
+
+/-- Every frame of 1 … `maxWorlds` worlds satisfying `cond`, up to
+isomorphism. -/
+def enumFrames (cond : Frame → Bool) (maxWorlds : Nat) : Except String (List Frame) :=
+  (List.range maxWorlds).flatMapM fun k => do
+    let n := k + 1
+    let frs ← (canonicalMasks n).mapM (frameOfMask n)
+    return frs.filter cond
+
+def describeModel (m : Model) : String :=
+  let r := (edgesOf m).toList
+  let v := m.valuation.toList.map fun (a, ws) => (a.name, ws.toList)
+  s!"W={m.frame.worlds.toList} R={r} V={v}"
+
+/-- A model among `frames` × all valuations of `φ`'s atoms, and a world,
+where `φ` is false; `none` if there is none. `satisfies` errors
+propagate. -/
+def smallCountermodel (frames : List Frame) (φ : Formula) :
+    Except String (Option (Model × World)) := do
+  let as := φ.atoms.toList.map (·.name)
+  for fr in frames do
+    let ws := fr.worlds.toList
+    let n := ws.length
+    for v in List.range (2 ^ (as.length * n)) do
+      let vals := as.zipIdx.map fun (a, i) =>
+        (a, ws.zipIdx.filterMap fun (w, j) => if v.testBit (i * n + j) then some w else none)
+      let m := mkModel fr vals
+      for w in ws do
+        if !(← satisfies m w φ) then return some (m, w)
+  return none
+
+/-- A tableau system with its frame condition, checked with
+`Gamen.FrameProperties` (B&D Table 6.4 pairs each system with its frame
+class). -/
+structure XSystem where
+  sys : System
+  cond : Frame → Bool
+  condName : String
+
+def xSystems : List XSystem :=
+  [ ⟨systemK, fun _ => true, "any"⟩,
+    ⟨systemKT, isReflexive, "reflexive"⟩,
+    ⟨systemKD, isSerial, "serial"⟩,
+    ⟨systemKB, fun f => isReflexive f && isSymmetric f, "reflexive+symmetric"⟩,
+    ⟨systemK4, isTransitive, "transitive"⟩,
+    ⟨systemS4, fun f => isReflexive f && isTransitive f, "reflexive+transitive"⟩,
+    ⟨systemS5, isEquivalenceRelation, "equivalence"⟩ ]
+
+structure XStats where
+  proved : Nat := 0
+  refuted : Nat := 0
+  unknown : Nat := 0
+  /-- Refuted, and the enumeration also found a countermodel. -/
+  refutedSmall : Nat := 0
+  /-- Extracted countermodels re-checked (one per open branch). -/
+  branches : Nat := 0
+
+instance : ToString XStats where
+  toString s := s!"proved {s.proved}, refuted {s.refuted} ({s.refutedSmall} with a small \
+    countermodel, {s.branches} extracted models checked), unknown {s.unknown}"
+
+/-- Cross-check one formula; see the section docstring. -/
+def crossCheckOne (xs : XSystem) (frames : List Frame) (maxWorlds steps : Nat)
+    (φ : Formula) (st : XStats) : Except String XStats := do
+  let tag := s!"{xs.sys.name}, φ = {φ} ({repr φ})"
+  let small ← (smallCountermodel frames φ).mapError (s!"{tag}: satisfies errored: " ++ ·)
+  match buildTableau xs.sys steps [pfFalse .root φ] with
+  | .closed =>
+    if let some (m, w) := small then
+      throw s!"{tag}: tableau proves φ, but φ is false at {w} in {describeModel m}"
+    return { st with proved := st.proved + 1 }
+  | .stillOpen bs =>
+    if bs.isEmpty then throw s!"{tag}: open tableau with no open branch"
+    let rootW := toString Prefix.root
+    for b in bs do
+      let m ← (extractCountermodel xs.sys b).mapError (s!"{tag}: extraction failed: " ++ ·)
+      unless xs.cond m.frame do
+        throw s!"{tag}: extracted frame is not {xs.condName}: {describeModel m}"
+      unless m.frame.worlds.contains rootW do
+        throw s!"{tag}: extracted model lacks the root world: {describeModel m}"
+      match satisfies m rootW φ with
+      | .ok false => pure ()
+      | .ok true => throw s!"{tag}: extracted model does not falsify φ at root: {describeModel m}"
+      | .error e => throw s!"{tag}: satisfies errored on extracted model: {e}"
+      if m.frame.worlds.size ≤ maxWorlds && small.isNone then
+        throw s!"{tag}: enumeration found no countermodel of ≤ {maxWorlds} worlds, \
+          but extraction found {describeModel m}"
+    return { st with refuted := st.refuted + 1, branches := st.branches + bs.length,
+                     refutedSmall := st.refutedSmall + (if small.isSome then 1 else 0) }
+  | .exhausted _ => return { st with unknown := st.unknown + 1 }
+
+/-- `count` random formulas from `seed`, each cross-checked against every
+frame of the class with at most `maxWorlds` worlds. Errors carry the
+failing formula (as text and as a `repr` to paste into a regression case). -/
+def crossCheckSystem (xs : XSystem) (seed count maxWorlds steps : Nat) :
+    Except String XStats := do
+  let frames ← enumFrames xs.cond maxWorlds
+  let fs ← runGenSeeded ((List.range count).mapM fun _ => genXSample) seed 0
+  if let some φ := fs.find? (modalDepth · > 2) then
+    throw s!"generator produced modal depth > 2: {φ}"
+  fs.foldlM (fun st φ => crossCheckOne xs frames maxWorlds steps φ st) {}
+
+/-- A passing run: no error, no budget exhaustion, and both directions
+exercised at least once. -/
+def crossCheckVerdict (r : Except String XStats) : Bool × String :=
+  match r with
+  | .ok st => (st.unknown == 0 && st.proved > 0 && st.refuted > 0, toString st)
+  | .error e => (false, s!"FAILED: {e}")
+
+/-! ### G3DS cross-checks -/
+
+/-- A random `L_n` formula over atoms p, q and `agents`, modal depth ≤
+`md`, nesting ≤ the last argument. -/
+def genDSXFormula (agents : List String) (md : Nat) : Nat → Gen Formula
+  | 0 => genXLeaf ["p", "q"]
+  | n + 1 => do
+    let c ← pick (if md > 0 then 14 else 8)
+    let ag ← pick agents.length
+    let a := agents.getD ag "1"
+    match c with
+    | 0 | 1 | 2 => genXLeaf ["p", "q"]
+    | 3 => .not <$> genDSXFormula agents md n
+    | 4 => .and <$> genDSXFormula agents md n <*> genDSXFormula agents md n
+    | 5 => .or <$> genDSXFormula agents md n <*> genDSXFormula agents md n
+    | 6 => .implies <$> genDSXFormula agents md n <*> genDSXFormula agents md n
+    | 7 => .iff <$> genDSXFormula agents md n <*> genDSXFormula agents md n
+    | 8 => .box <$> genDSXFormula agents (md - 1) n
+    | 9 => .diamond <$> genDSXFormula agents (md - 1) n
+    | 10 => .stit a <$> genDSXFormula agents (md - 1) n
+    | 11 => .choiceDiamond a <$> genDSXFormula agents (md - 1) n
+    | 12 => .ought a <$> genDSXFormula agents (md - 1) n
+    | _ => .permitted a <$> genDSXFormula agents (md - 1) n
+
+/-- A random DS model over `agents`, valid by construction: each agent
+gets 1 or 2 choice cells; every *profile* (one cell per agent) gets 1 or
+2 worlds, so any selection of cells intersects (C2); each agent's
+relation is "same cell" (C1); each agent's ideal set is a non-empty union
+of its cells (D1–D3). Up to 8 worlds for 2 agents. -/
+def genDSModel (agents : List String) : Gen DSModel := do
+  let cells ← agents.mapM fun _ => (· + 1) <$> pick 2
+  let profiles := sections (cells.map List.range)
+  let perProfile ← profiles.mapM fun pr => do
+    let k ← pick 2
+    pure (List.replicate (k + 1) pr)
+  let worlds := perProfile.flatten.zipIdx.map fun (pr, i) => (s!"v{i}", pr)
+  let rels := agents.zipIdx.map fun (a, ai) =>
+    (a, worlds.flatMap fun (w, pw) => worlds.filterMap fun (v, pv) =>
+      if pw.getD ai 0 == pv.getD ai 0 then some (w, v) else none)
+  let ideals ← agents.zipIdx.mapM fun (a, ai) => do
+    let c := cells.getD ai 1
+    let mask := (← pick (2 ^ c - 1)) + 1
+    pure (a, worlds.filterMap fun (w, pw) =>
+      if mask.testBit (pw.getD ai 0) then some w else none)
+  let vals ← ["p", "q"].mapM fun at_ => do
+    let vs ← worlds.filterM fun _ => (Arbitrary.arbitrary : Gen Bool)
+    pure (at_, vs.map (·.1))
+  return mkDSModel (mkDSFrame (worlds.map (·.1)) rels ideals) vals
+
+structure DSXStats where
+  proved : Nat := 0
+  refuted : Nat := 0
+  unknown : Nat := 0
+  stuck : Nat := 0
+
+instance : ToString DSXStats where
+  toString s := s!"proved {s.proved}, refuted {s.refuted}, budget {s.unknown}, stuck {s.stuck}"
+
+/-- Cross-check one `L_n` formula; see the section docstring. -/
+def dsCrossCheckOne (models : List DSModel) (steps : Nat) (φ : Formula) (st : DSXStats) :
+    Except String DSXStats := do
+  let tag := s!"φ = {φ} ({repr φ})"
+  match ← (proveFormula 0 steps φ).mapError (s!"{tag}: proveFormula errored: " ++ ·) with
+  | .proved =>
+    for m in models do
+      for w in m.dsFrame.dsWorlds.toList do
+        match dsSatisfies m w φ with
+        | .ok true => pure ()
+        | .ok false => throw s!"{tag}: proved, but false at {w} in {repr m}"
+        | .error e => throw s!"{tag}: dsSatisfies errored: {e}"
+    return { st with proved := st.proved + 1 }
+  | .refuted gt s =>
+    let m ← (extractDSModel gt s).mapError (s!"{tag}: extraction failed: " ++ ·)
+    let rootW := toString label0
+    unless isValidDSFrame m.dsFrame do throw s!"{tag}: extracted frame not a valid DS frame"
+    for a in (formulaAgents φ).toList do
+      unless m.dsFrame.dsRelations.contains a do
+        throw s!"{tag}: extracted frame has no choice relation for agent {a}"
+    unless m.dsFrame.dsWorlds.contains rootW do throw s!"{tag}: extracted model lacks {rootW}"
+    match dsSatisfies m rootW φ with
+    | .ok false => return { st with refuted := st.refuted + 1 }
+    | .ok true => throw s!"{tag}: extracted model does not falsify φ at {rootW}: {repr m}"
+    | .error e => throw s!"{tag}: dsSatisfies errored on extracted model: {e}"
+  | .maxStepsExceeded _ _ => return { st with unknown := st.unknown + 1 }
+  | .stuck _ _ => return { st with stuck := st.stuck + 1 }
+
+/-- `count` random `L_n` formulas over `agents` from `seed`, plus a pool
+of `nModels` random valid DS models from `seed + 1`. -/
+def dsCrossCheck (agents : List String) (seed count nModels steps : Nat) :
+    Except String DSXStats := do
+  let fs ← runGenSeeded ((List.range count).mapM fun _ => genDSXFormula agents 2 4) seed 0
+  let ms ← runGenSeeded ((List.range nModels).mapM fun _ => genDSModel agents) (seed + 1) 0
+  if ms.any (!isValidDSFrame ·.dsFrame) then
+    throw "genDSModel produced an invalid DS frame (generator bug)"
+  fs.foldlM (fun st φ => dsCrossCheckOne ms steps φ st) {}
+
+def dsCrossCheckVerdict (r : Except String DSXStats) : Bool × String :=
+  match r with
+  | .ok st => (st.unknown == 0 && st.stuck == 0 && st.proved > 0 && st.refuted > 0, toString st)
+  | .error e => (false, s!"FAILED: {e}")

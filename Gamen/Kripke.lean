@@ -25,6 +25,17 @@ structure Model where
   valuation : Std.TreeMap Atom (Std.TreeSet World)
   deriving Inhabited
 
+/-- As Haskell's `deriving Show` on `Frame`/`Model` (`Gamen/Kripke.hs`
+~30–44): printed as the underlying association lists, for Plausible
+counterexamples (`Tests/Main.lean`'s `Properties (Plausible)` block). -/
+instance : Repr Frame where
+  reprPrec fr n := reprPrec
+    (fr.worlds.toList, fr.relation.toList.map fun (w, vs) => (w, vs.toList)) n
+
+instance : Repr Model where
+  reprPrec m n := reprPrec
+    (m.frame, m.valuation.toList.map fun (a, vs) => (a, vs.toList)) n
+
 /-- Worlds accessible from `w`. -/
 def Frame.accessible (fr : Frame) (w : World) : Std.TreeSet World :=
   fr.relation.getD w ∅

@@ -14,6 +14,7 @@ import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
 import Validate.Core
+import Tests.PropertyHelpers
 
 /-!
 # Tests
@@ -2084,51 +2085,32 @@ def deonticStitCases : List Case :=
 
 /-! ## Property tests (Plausible) -/
 
-/-- Kripke-fragment formulas over atoms p, q, r. Mirrors `genFormula` in
-`test/Properties.hs`, plus `iff`, which the Lean `toNNF` rewrites
-differently from the Haskell text and so deserves random coverage. -/
-partial def genFormula : Nat → Gen Formula
-  | 0 => Gen.frequency (pure .bot) [(1, pure .bot), (4, genAtom)]
-  | n + 1 =>
-    let h := (n + 1) / 2
-    Gen.frequency (pure .bot) [
-      (1, pure .bot), (4, genAtom),
-      (3, .not <$> genFormula n),
-      (3, .and <$> genFormula h <*> genFormula h),
-      (2, .or <$> genFormula h <*> genFormula h),
-      (2, .implies <$> genFormula h <*> genFormula h),
-      (1, .iff <$> genFormula h <*> genFormula h),
-      (2, .box <$> genFormula n),
-      (2, .diamond <$> genFormula n)]
-where
-  genAtom : Gen Formula := do
-    let ⟨i, _⟩ ← Gen.choose Nat 0 2 (by omega)
-    return .atom (["p", "q", "r"].getD i "p")
-
-instance : Arbitrary Formula := ⟨Gen.sized fun n => genFormula (min n 12)⟩
-
-instance : Shrinkable Formula where
-  shrink
-    | .not g | .box g | .diamond g => [g]
-    | .and l r | .or l r | .implies l r | .iff l r => [l, r]
-    | _ => []
-
-/-- A fixed 3-world model with a reflexive point, a dead end, and a cycle,
-used to check that `toNNF` preserves truth everywhere. `none` if `mkFrame`
-rejects it (not `get!`, whose panic would continue with an empty model and
-make the properties below pass vacuously). -/
-def testModel : Option Model :=
-  (mkFrame ["w1", "w2", "w3"] [("w1", "w1"), ("w1", "w2"), ("w2", "w3"), ("w3", "w1")]).toOption.map
-    (mkModel · [("p", ["w1", "w3"]), ("q", ["w2"]), ("r", [])])
-
-def truthsIn (m : Option Model) (f : Formula) : Option (List Bool) :=
-  m.bind fun m => (m.frame.worlds.toList.mapM (satisfies m · f)).toOption
-
 def properties : List (String × IO Bool) :=
-  let run (p : Prop) [Testable p] : IO Bool := do
-    match ← Testable.checkIO p { numInst := 300, quiet := true } with
-    | .failure _ xs _ => IO.println s!"    counterexample: {xs}"; return false
-    | _ => return true
+  -- `.gaveUp` (Plausible could not draw enough well-formed examples — the
+  -- same outcome a thrown `GenError` produces) must fail here too: it used
+  -- to fall through the catch-all `| _ => return true` and read as a pass,
+  -- which is exactly how properties with an inner `m : Model` binder
+  -- stayed green when `genKripkeModel` was made to always throw. A
+  -- `GenError` at an *inner* binder (`NamedBinder "f" <| ∀ f : Formula,
+  -- NamedBinder "m" <| ∀ m : Model, …`) is caught by Plausible's own
+  -- `runPropE` and turned into `.gaveUp` before it ever reaches here —
+  -- but at the outermost binder (a property with no other variable ahead
+  -- of the one whose generator throws, e.g. "□(p→q)→(□p→□q) …"'s
+  -- `∀ m : Model`), `Testable.checkIO`'s own top-level call to
+  -- `Testable.runProp` has no such wrapper, and the exception reaches
+  -- `IO` uncaught, aborting the whole test binary rather than failing
+  -- just this one property. `run` must catch it itself.
+  let run (p : Prop) (numInst : Nat := 300) [Testable p] : IO Bool := do
+    match ← (try some <$> Testable.checkIO p { numInst := numInst, quiet := true }
+              catch e => do
+                IO.println s!"    generator errored: {e}"
+                pure none) with
+    | none => return false
+    | some (.failure _ xs _) => IO.println s!"    counterexample: {xs}"; return false
+    | some (.gaveUp n) => do
+        IO.println s!"    gave up: {n} well-formed example(s) could not be drawn"
+        return false
+    | some (.success _) => return true
   -- Plausible's `Testable` instances match `NamedBinder name (∀ x, …)`; the
   -- `plausible` tactic inserts the binder names itself, but `checkIO` from
   -- plain `IO` needs them spelled out.
@@ -2142,7 +2124,79 @@ def properties : List (String × IO Bool) :=
           && truthsIn testModel (toNNF f) == truthsIn testModel f) = true)),
     ("tableau-valid formulas are true in the test model (soundness spot-check)",
       run (NamedBinder "f" <| ∀ f : Formula,
-        (!proves [] f || truthsIn testModel f == some [true, true, true]) = true)) ]
+        (!proves [] f || truthsIn testModel f == some [true, true, true]) = true)),
+    -- Gamen.Tableau: K satisfiability — internal soundness invariant
+    -- (issue #18): a formula and its negation can never both close.
+    ("no formula and its negation are both provably unsatisfiable",
+      run (NamedBinder "f" <| ∀ f : Formula,
+        !(tableauConsistent systemK defaultMaxSteps [f] == .definitely false
+            && tableauConsistent systemK defaultMaxSteps [.not f] == .definitely false)) 200),
+    -- Gamen.Tableau: soundness vs. Kripke semantics (K, KT, K4, S4, S5) —
+    -- mirrors the "Gamen.Tableau: soundness vs. Kripke semantics" describe
+    -- block of `test/Properties.hs`, minus the seven `==>`-shaped
+    -- properties: "unsatisfiable ⇒ …", "provable entailment ⇒ …",
+    -- "satisfied in some model ⇒ …", "S5 unsatisfiable ⇒ …", and
+    -- "extracted countermodel …" now live in `Tests/SlowMain.lean`
+    -- (`lake exe slowtests`) — running them at Haskell's real
+    -- `numInst`/discard-cap/size takes on the order of Haskell's own
+    -- ~460s for this same set, which would make `lake test` itself that
+    -- slow. The disabled/quarantined temporal property and its "issue
+    -- #25" `it` are still not ported (both need `Gamen.Temporal`).
+    ("axiom-scheme instances: prover proves them and they hold in every model (K)",
+      run (NamedBinder "f" <| ∀ f : ValidFormula, NamedBinder "m" <| ∀ m : Model,
+        (match allSatisfies m f.getFormula with
+          | .ok true => !(tableauProves systemK defaultMaxSteps [] f.getFormula
+                            == .definitely false)
+          | _ => false) = true) 300),
+    ("K-valid instances and the T axiom hold in every reflexive model (KT)",
+      run (NamedBinder "f" <| ∀ f : ValidFormula, NamedBinder "g" <| ∀ g : Formula,
+        NamedBinder "m" <| ∀ m0 : Model,
+          (match allSatisfies (reflexiveClosureModel m0) f.getFormula,
+                 allSatisfies (reflexiveClosureModel m0) (.implies (.box g) g) with
+            | .ok true, .ok true =>
+                !(tableauProves systemKT defaultMaxSteps [] (.implies (.box g) g)
+                    == .definitely false)
+            | _, _ => false) = true) 200),
+    ("axiom 4 instances: proved by K4 and true on transitive frames",
+      run (NamedBinder "f" <| ∀ f : FourFormula, NamedBinder "m" <| ∀ m0 : Model,
+        (match transitiveClosureModel m0 with
+          | .error _ => false
+          | .ok m =>
+            match allSatisfies m f.getFormula with
+            | .ok true =>
+                isTransitive m.frame
+                  && !(tableauProves systemK4 2000 [] f.getFormula == .definitely false)
+            | _ => false) = true) 200),
+    ("S4 instances: proved by S4 and true on reflexive-transitive frames",
+      run (NamedBinder "f" <| ∀ f : S4Formula, NamedBinder "m" <| ∀ m0 : Model,
+        (match s4ClosureModel m0 with
+          | .error _ => false
+          | .ok m =>
+            match allSatisfies m f.getFormula with
+            | .ok true =>
+                isReflexive m.frame && isTransitive m.frame
+                  && !(tableauProves systemS4 2000 [] f.getFormula == .definitely false)
+            | _ => false) = true) 200),
+    ("S5 instances: proved by S5 and true on equivalence frames",
+      run (NamedBinder "f" <| ∀ f : S5Formula, NamedBinder "m" <| ∀ m0 : Model,
+        (match s5ClosureModel m0 with
+          | .error _ => false
+          | .ok m =>
+            match allSatisfies m f.getFormula with
+            | .ok true =>
+                isReflexive m.frame && isTransitive m.frame && isEuclidean m.frame
+                  && !(tableauProves systemS5 2000 [] f.getFormula == .definitely false)
+            | _ => false) = true) 200),
+    -- Gamen.Semantics: K distribution axiom.
+    ("□(p→q)→(□p→□q) holds at every world of every random model",
+      run (NamedBinder "m" <| ∀ m : Model,
+        isOkTrue (allSatisfies m
+          (.implies (.box (.implies (.atomF ⟨"p"⟩) (.atomF ⟨"q"⟩)))
+                    (.implies (.box (.atomF ⟨"p"⟩)) (.box (.atomF ⟨"q"⟩))))) = true) 100),
+    -- Gamen.RankingTheory: structural invariants — the two `isContingent
+    -- ⇒ …` properties now live in `Tests/SlowMain.lean` alongside the
+    -- other five `==>`-shaped properties (see the comment above).
+    ]
 where
   toNNF := Formula.toNNF
   isNNF := Formula.isNNF
@@ -2284,7 +2338,7 @@ def main : IO UInt32 := do
       ++ deonticStitCases ++ counterModelCases ++ closureCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
-  IO.println "Properties (300 random formulas each)"
+  IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
   for (name, prop) in properties do
     let ok ← prop
     IO.println s!"  {if ok then "✓" else "✗"} {name}"

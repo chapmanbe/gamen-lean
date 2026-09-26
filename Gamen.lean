@@ -4,6 +4,7 @@ import Gamen.Semantics
 import Gamen.FrameProperties
 import Gamen.Verdict
 import Gamen.Tableau
+import Gamen.Temporal
 import Gamen.Doxastic
 import Gamen.RankingTheory
 import Gamen.Plausibility

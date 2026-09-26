@@ -1,6 +1,7 @@
 import Gamen.Semantics
 import Gamen.Notation
 import Gamen.Tableau
+import Gamen.Temporal
 
 /-!
 # Gamen.Teaching

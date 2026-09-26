@@ -1,4 +1,5 @@
 import Gamen.Tableau
+import Gamen.Temporal
 import Gamen.Doxastic
 import Gamen.RankingTheory
 import Gamen.Plausibility
@@ -31,8 +32,9 @@ exercises `dstit`/`commitment` yet — those are only reached through
 `Gamen.Stit`/`Gamen.Laca`, both not yet ported), the `toNNF` properties from
 `test/Properties.hs`, run with Plausible instead of QuickCheck, `Gamen.Fragment`
 (`test/RegressionIssue18.hs`'s "A2" describe block, plus the fragment-boundary
-assertions from `test/Properties.hs`'s "issue #25" `it` — see `fragmentCases`
-for what of that `it` is and is not ported), and `Gamen.Kripke`'s "B7: Kripke /
+assertions from `test/Properties.hs`'s "issue #25" `it`, all five steps — see
+`fragmentCases`), `test/TemporalSpec.hs` in full plus the `Gamen.Temporal`
+blocks of `test/PaperCorrespondence.hs` (`temporalCases`), and `Gamen.Kripke`'s "B7: Kripke /
 FrameProperties dangling-edge and class fixes" describe block from the
 same file (see `kripkeCases`).
 -/
@@ -952,20 +954,35 @@ def fragOk (r expected : Except UnknownReason Unit) : Bool :=
   | .error e1, .error e2 => e1 == e2
   | _, _ => false
 
+/-- All subsets of a list (Haskell `subsequencesOf` in `Properties.hs`). -/
+private def subsequencesOf {α : Type} : List α → List (List α)
+  | [] => [[]]
+  | x :: xs => let r := subsequencesOf xs; r ++ r.map (x :: ·)
+
+/-- Issue #25 step 1: does any model on 1–3 worlds (every frame, every
+valuation of `p`) satisfy all of `fs` at some world? `Except`, so a
+malformed fixture or a `satisfies` error cannot read as "no". -/
+private def anyModelSatisfiesAll (fs : List Formula) : Except String Bool := do
+  let ws3 := ["w1", "w2", "w3"]
+  let models ← ([1, 2, 3].flatMap fun n =>
+      let ws := ws3.take n
+      (subsequencesOf (ws.flatMap fun a => ws.map fun b => (a, b))).flatMap fun es =>
+        (subsequencesOf ws).map fun vs => (ws, es, vs)).mapM
+    fun (ws, es, vs) => do return mkModel (← mkFrame ws es) [("p", vs)]
+  models.anyM fun m => m.frame.worlds.toList.anyM fun w => fs.allM (satisfies m w)
+
 /-- Port of `test/RegressionIssue18.hs`'s "A2: fragment gating rejects
 out-of-fragment operators" (all 6 `it`s), plus the fragment-boundary
 assertions from `test/Properties.hs`'s "issue #25: all temporal operators
 are quarantined at the fragment boundary" `it`.
 
-That Properties.hs `it` has four numbered steps; only steps 2 and 3 belong
-to `Gamen.Fragment` (`checkTableauFragment` itself). Step 1 (an exhaustive
-semantic-oracle search over ≤3-world models, confirming `{HA, P¬A}` is
-really unsatisfiable) belongs with `Gamen.Semantics`/model enumeration and
-step 4 (`tableauConsistent systemKDt … unsat`, confirming the *raw* prover
-is still wrong on the past) needs the full temporal tableau — both
-`Gamen.Temporal` dependents not yet ported (see `PORTING.md`). Porting
-those two steps is deferred to `Gamen.Temporal`; this file ports only the
-gate. -/
+That Properties.hs `it` has five numbered steps, ported as one case each.
+Steps 2 and 3 exercise `Gamen.Fragment` (`checkTableauFragment` itself);
+step 1 (an exhaustive semantic-oracle search over ≤3-world models,
+confirming `{HA, P¬A}` is really unsatisfiable), step 4 (the *raw*
+`tableauConsistent systemKDt` still calls that set satisfiable), and step
+5 (the semantics of the temporal operators is untouched by the quarantine)
+were deferred until `Gamen.Temporal` was ported. -/
 def fragmentCases : List Case := [
   ⟨"G3DS fragment accepts ⊗_i p",
     fragOk (checkDSFragment (.ought "i" p)) (.ok ())⟩,
@@ -981,6 +998,9 @@ def fragmentCases : List Case := [
   ⟨"tableau fragment rejects GroupStit (the A4 crash trigger)",
     fragOk (checkTableauFragment systemK (.groupStit p))
       (.error (.unsupportedOperator "GroupStit"))⟩,
+  ⟨"issue #25 (step 1): the semantic oracle confirms {HA, P¬A} is \
+    unsatisfiable — no model on up to 3 worlds satisfies it anywhere",
+    okEq (anyModelSatisfiesAll [.pastBox p, .pastDiamond (.not p)]) (.ok false)⟩,
   ⟨"issue #25 (step 2): every temporal operator is rejected, past and \
     future, including nested under another modality",
     fragOk (checkTableauFragment systemKDt (.pastBox p))
@@ -1001,6 +1021,16 @@ def fragmentCases : List Case := [
     && fragOk (checkTableauFragment systemKDt (.diamond p)) (.ok ())
     && fragOk (checkTableauFragment systemKDt (.belief "a" p)) (.ok ())
     && fragOk (checkTableauFragment systemKDt (.implies p (.not p))) (.ok ())⟩,
+  ⟨"issue #25 (step 4): the raw prover is unchanged and still wrong on \
+    the past — tableauConsistent systemKDt 4000 {HA, P¬A} is Definitely True",
+    tableauConsistent systemKDt 4000 [.pastBox p, .pastDiamond (.not p)]
+      == .definitely true⟩,
+  ⟨"issue #25 (step 5): the semantic layer is untouched — satisfies still \
+    evaluates temporal operators",
+    let m2 := (frame ["w1", "w2"] [("w1", "w2")]).map (mkModel · [("p", ["w1"])])
+    sat m2 "w1" (.futureBox p) == some false
+    && sat m2 "w1" (.futureDiamond p) == some false
+    && sat m2 "w2" (.pastDiamond p) == some true⟩,
   -- Review fix: `firstUnsupported` (validate/Main.hs:262-269) must route
   -- *every* `Left` through `reasonOperator` (validate/Main.hs:271-276),
   -- not just `UnsupportedOperator` — `reasonOperator other = show other`
@@ -1024,6 +1054,146 @@ def fragmentCases : List Case := [
   ⟨"hasAgentOperator (GroupStit (Stit a p)) = false (Formula.hs:230)",
     !(Formula.groupStit (Formula.stit "a" p)).hasAgentOperator⟩
 ]
+
+/-! ## Temporal logic (`Gamen.Temporal`)
+
+Port of `test/TemporalSpec.hs` in full (all 19 `it`s), then the three
+`Gamen.Temporal` describe blocks of `test/PaperCorrespondence.hs` ("frame
+conditions", 6 `it`s; "G/F/H/P semantics (over tmLinear …)", 4; "systemKDt
+tableau …", 3). B&D citations checked against `bd-screen.pdf` (F25):
+Definition 14.2 (p. 184), Definition 14.4 (p. 185), Table 14.1 (p. 186).
+The spec's "Until and Since" block said "no B&D chapter"; F25 has them as
+Definition 14.5 (p. 187), with the arguments the other way round (B&D's
+S B C has witness B; gamen-hs's `Since a b` has witness `b`).
+
+Verdicts are compared against `.definitely true`/`.definitely false` with
+the Haskell shim's budget (1000 = `defaultMaxSteps`), so a budget-exhausted
+`.unknown` fails the case whichever answer was expected. -/
+
+/-- `tmLinear` (`PaperCorrespondence.hs`): past → present → future,
+V(p) = {past, present}, V(q) = {future}. -/
+private def tmLinear : Option Model :=
+  (frame ["past", "present", "future"] [("past", "present"), ("present", "future")]).map
+    (mkModel · [("p", ["past", "present"]), ("q", ["future"])])
+
+def temporalCases : List Case :=
+  let yes : Verdict := .definitely true
+  let no : Verdict := .definitely false
+  -- "Temporal model semantics": t1 ≺ t2 ≺ t3, p at t1 and t2, q at t3
+  let m := (frame ["t1", "t2", "t3"] [("t1", "t2"), ("t2", "t3")]).map
+    (mkModel · [("p", ["t1", "t2"]), ("q", ["t3"])])
+  -- "Until and Since": the frame carries the transitive closure
+  let mDirect := (frame ["t1", "t2", "t3"] [("t1", "t2"), ("t1", "t3"), ("t2", "t3")]).map
+    (mkModel · [("p", ["t1", "t2"]), ("q", ["t3"])])
+  [
+  -- TemporalSpec.hs: "Temporal formula construction (Definition 14.2)"
+  ⟨"displays temporal formulas",
+    toString (Formula.futureDiamond p) == "Fp" && toString (Formula.futureBox p) == "Gp"
+    && toString (Formula.pastDiamond p) == "Pp" && toString (Formula.pastBox p) == "Hp"⟩,
+  ⟨"temporal formulas are not modal-free",
+    !(Formula.futureDiamond p).isModalFree && !(Formula.since p q).isModalFree⟩,
+  -- TemporalSpec.hs: "Temporal model semantics (Definition 14.4)"
+  ⟨"evaluates FutureDiamond (F)",
+    sat m "t1" (.futureDiamond p) == some true && sat m "t1" (.futureDiamond q) == some false
+    && sat m "t2" (.futureDiamond q) == some true⟩,
+  ⟨"evaluates FutureBox (G)",
+    sat m "t1" (.futureBox q) == some false && sat m "t2" (.futureBox q) == some true
+    && sat m "t3" (.futureBox p) == some true⟩,
+  ⟨"evaluates PastDiamond (P)",
+    sat m "t1" (.pastDiamond p) == some false && sat m "t2" (.pastDiamond p) == some true
+    && sat m "t3" (.pastDiamond p) == some true⟩,
+  ⟨"evaluates PastBox (H)",
+    sat m "t1" (.pastBox q) == some true && sat m "t2" (.pastBox q) == some false
+    && sat m "t3" (.pastBox q) == some false⟩,
+  -- TemporalSpec.hs: "Until and Since operators (B&D Definition 14.5, p. 187;
+  -- frame must carry transitive closure)"
+  ⟨"evaluates Until",
+    sat mDirect "t1" (.until p q) == some true && sat mDirect "t1" (.until q q) == some false⟩,
+  ⟨"evaluates Since", sat mDirect "t3" (.since q p) == some true⟩,
+  -- TemporalSpec.hs: "Temporal frame properties (Table 14.1)"
+  ⟨"detects transitive frames",
+    holds isTransitiveFrame (frame ["t1", "t2", "t3"] [("t1", "t2"), ("t2", "t3")]) == some false
+    && holds isTransitiveFrame
+      (frame ["t1", "t2", "t3"] [("t1", "t2"), ("t2", "t3"), ("t1", "t3")]) == some true⟩,
+  ⟨"detects linear frames",
+    holds isLinearFrame
+      (frame ["t1", "t2", "t3"] [("t1", "t2"), ("t2", "t3"), ("t1", "t3")]) == some true
+    && holds isLinearFrame (frame ["t1", "t2", "t3"] [("t1", "t2"), ("t1", "t3")]) == some false⟩,
+  ⟨"detects dense frames",
+    holds isDenseFrame (frame ["t1", "t2"] [("t1", "t2")]) == some false
+    && holds isDenseFrame (frame ["t1", "t2"] [("t1", "t2"), ("t2", "t2")]) == some true⟩,
+  ⟨"detects unbounded past/future",
+    let bounded := frame ["t1", "t2"] [("t1", "t2")]
+    let cyclic := frame ["t1", "t2"] [("t1", "t2"), ("t2", "t1")]
+    holds isUnboundedPast bounded == some false && holds isUnboundedFuture bounded == some false
+    && holds isUnboundedPast cyclic == some true && holds isUnboundedFuture cyclic == some true⟩,
+  -- TemporalSpec.hs: "Combined deontic-temporal (KDt)"
+  ⟨"proves Gp → p (temporal reflexivity)",
+    provesIn systemKDt [] (.implies (.futureBox p) p) == yes⟩,
+  ⟨"proves Gp → Fp (box implies diamond via reflexivity)",
+    provesIn systemKDt [] (.implies (.futureBox p) (.futureDiamond p)) == yes⟩,
+  ⟨"O(Fp) ∧ O(G¬p) is inconsistent",
+    consistentIn systemKDt [.box (.futureDiamond p), .box (.futureBox (.not p))] == no⟩,
+  ⟨"proves G(□p) → □p (temporal reflexivity through deontic)",
+    provesIn systemKDt [] (.implies (.futureBox (.box p)) (.box p)) == yes⟩,
+  ⟨"proves □(Fp) → ◇(Fp) (D axiom through temporal)",
+    provesIn systemKDt [] (.implies (.box (.futureDiamond p)) (.diamond (.futureDiamond p))) == yes⟩,
+  ⟨"{p → □(G¬q), □(Fq)} is satisfiable (set p=false)",
+    consistentIn systemKDt [.implies p (.box (.futureBox (.not q))), .box (.futureDiamond q)] == yes⟩,
+  ⟨"{Gp, F¬p} is unsatisfiable (reflexivity + propagation)",
+    consistentIn systemKDt [.futureBox p, .futureDiamond (.not p)] == no⟩,
+  -- PaperCorrespondence.hs: "Gamen.Temporal: frame conditions"
+  ⟨"isTransitiveFrame = True: {t1→t2→t3, t1→t3} is transitively closed",
+    holds isTransitiveFrame
+      (frame ["t1", "t2", "t3"] [("t1", "t2"), ("t2", "t3"), ("t1", "t3")]) == some true⟩,
+  ⟨"isTransitiveFrame = False: {t1→t2→t3} without t1→t3 is not transitively closed",
+    holds isTransitiveFrame (frame ["t1", "t2", "t3"] [("t1", "t2"), ("t2", "t3")]) == some false⟩,
+  ⟨"isLinearFrame = True: total order {t1→t2→t3} is linear",
+    holds isLinearFrame
+      (frame ["t1", "t2", "t3"] [("t1", "t2"), ("t2", "t3"), ("t1", "t3")]) == some true⟩,
+  ⟨"isLinearFrame = False: branching frame {t1→t2, t1→t3} is not linear",
+    holds isLinearFrame (frame ["t1", "t2", "t3"] [("t1", "t2"), ("t1", "t3")]) == some false⟩,
+  ⟨"isUnboundedFuture = True: cycle {t1→t2→t1} gives every world a successor",
+    holds isUnboundedFuture (frame ["t1", "t2"] [("t1", "t2"), ("t2", "t1")]) == some true⟩,
+  ⟨"isUnboundedFuture = False: t2 has no successor in {t1→t2}",
+    holds isUnboundedFuture (frame ["t1", "t2"] [("t1", "t2")]) == some false⟩,
+  -- PaperCorrespondence.hs: "Gamen.Temporal: G/F/H/P semantics (over tmLinear)"
+  ⟨"G (FutureBox): Gp false at 'present' — only successor 'future' lacks p",
+    sat tmLinear "present" (.futureBox p) == some false⟩,
+  ⟨"F (FutureDiamond): Fq true at 'present' — successor 'future' has q",
+    sat tmLinear "present" (.futureDiamond q) == some true⟩,
+  ⟨"H (PastBox): Hp true at 'present' — only predecessor 'past' has p",
+    sat tmLinear "present" (.pastBox p) == some true⟩,
+  ⟨"P (PastDiamond): Pq false at 'present' — predecessor 'past' lacks q",
+    sat tmLinear "present" (.pastDiamond q) == some false⟩,
+  -- PaperCorrespondence.hs: "Gamen.Temporal: systemKDt tableau (reflexive+transitive+serial)"
+  ⟨"Gp ∧ ¬p is KDt-inconsistent (T rule derives p from Gp, closing with ¬p)",
+    consistentIn systemKDt [.futureBox p, .not p] == no⟩,
+  ⟨"Hp ∧ ¬p is KDt-inconsistent (past T rule derives p from Hp)",
+    consistentIn systemKDt [.pastBox p, .not p] == no⟩,
+  ⟨"Gp alone is KDt-consistent",
+    consistentIn systemKDt [.futureBox p] == yes⟩,
+  -- Not in gamen-hs: one case per temporal rule that no case above needs
+  -- (gamen-hs's temporal property is disabled for #25, so nothing there
+  -- exercises them). Verdicts checked against gamen-hs with runghc
+  -- (`tableauProves`/`tableauConsistent`, budget 1000).
+  ⟨"Not in gamen-hs: KDt proves Gp → GGp (needs 4G)",
+    provesIn systemKDt [] (.implies (.futureBox p) (.futureBox (.futureBox p))) == yes⟩,
+  ⟨"Not in gamen-hs: KDt proves FFp → Fp (needs 4F)",
+    provesIn systemKDt [] (.implies (.futureDiamond (.futureDiamond p)) (.futureDiamond p)) == yes⟩,
+  ⟨"Not in gamen-hs: {Gp, FF¬p} is KDt-inconsistent (needs 4G)",
+    consistentIn systemKDt [.futureBox p, .futureDiamond (.futureDiamond (.not p))] == no⟩,
+  ⟨"Not in gamen-hs: {F(Hp), ¬p} is KDt-inconsistent (needs 4H: the child's \
+    Hp reaches the root)",
+    consistentIn systemKDt [.futureDiamond (.pastBox p), .not p] == no⟩,
+  ⟨"Not in gamen-hs: {F(¬Pp), p} is KDt-inconsistent (needs 4P: the child's \
+    F Pp reaches the root)",
+    consistentIn systemKDt [.futureDiamond (.not (.pastDiamond p)), p] == no⟩,
+  ⟨"Not in gamen-hs: {Gp, F¬p} is K-inconsistent (base GT rule, no T/4 to mask it)",
+    consistentIn systemK [.futureBox p, .futureDiamond (.not p)] == no⟩,
+  ⟨"Not in gamen-hs: {¬Fp, F(p ∧ q)} is K-inconsistent (base FF rule)",
+    consistentIn systemK [.not (.futureDiamond p), .futureDiamond (.and p q)] == no⟩
+  ]
 
 /-! ## Doxastic belief (`Gamen.Doxastic`)
 
@@ -2533,7 +2703,7 @@ def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
-      ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ doxasticCases ++ rankingTheoryCases
+      ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ temporalCases ++ doxasticCases ++ rankingTheoryCases
       ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
       ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
@@ -2545,7 +2715,7 @@ def main : IO UInt32 := do
     unless ok do failures := failures + 1
   let total := unitCases.length + tableauCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
     + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
-    + fragmentCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
+    + fragmentCases.length + temporalCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
     + deonticStitCases.length + counterModelCases.length + closureCases.length
     + crossCheckCases.length + properties.length

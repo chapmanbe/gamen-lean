@@ -1,6 +1,9 @@
 import Gamen.Tableau
 import Gamen.RankingTheory
 import Gamen.FrameProperties
+import Gamen.DeonticStit
+import Gamen.DeonticStit.Prove
+import Gamen.DeonticStit.CounterModel
 import Plausible
 
 /-!
@@ -18,6 +21,9 @@ several minutes — see `checkGuarded`'s docstring below and
 Moved out of `Tests/Main.lean` into its own module (not duplicated) so
 both executables see the identical generators, `Arbitrary`/`Shrinkable`
 instances, model-closure helpers, and the `checkGuarded` discard-loop.
+
+Also holds the Lean-only decision-procedure cross-checks (Gamen.jl#20,
+not in gamen-hs) used by both executables; see the last section.
 -/
 open Gamen Plausible
 
@@ -429,3 +435,625 @@ def extractedModelsFor (f : Formula) : List Model :=
   match buildTableau systemK defaultMaxSteps [pfTrue .root f] with
   | .stillOpen branches => branches.filterMap fun b => (extractCountermodel systemK b).toOption
   | _ => []
+
+/-! ## Cross-checks of the decision procedures (Not in gamen-hs)
+
+Lean-only; no gamen-hs counterpart. Prompted by Gamen.jl issue #20: the
+prefixed tableau and the G3DS prover are decision procedures, and each
+answer they give can be checked against an independent semantics.
+
+* **Tableau vs. enumeration** (`crossCheckSystem`), for K, KT, KD, KTB
+  (`systemKB`), K4, S4, S5. Random formulas (atoms drawn from {p, q} or
+  {p, q, r}, modal depth ≤ 2, from a printed seed). For each formula:
+  - *proved* ⇒ no model on a frame of at most `maxWorlds` worlds that
+    satisfies the system's frame condition (`Gamen.FrameProperties`)
+    falsifies it at any world (`Gamen.Semantics.satisfies`);
+  - *not proved* ⇒ every open branch yields a model from
+    `extractCountermodel` whose frame satisfies the condition and which
+    falsifies the formula at the root prefix `1`, both re-checked here
+    with `FrameProperties`/`satisfies` rather than trusted;
+  - if that extracted model has at most `maxWorlds` worlds, the
+    enumeration must have found a countermodel too (a check on the
+    enumerator itself).
+
+  **What the bound guarantees.** Frames are enumerated up to isomorphism
+  (a relation mask is kept only if no permutation of the worlds gives a
+  smaller mask), then filtered by the frame condition; valuations range
+  over the formula's own atoms only, all `2^(atoms·worlds)` of them, and
+  every world is tried. Since truth is invariant under isomorphism, this
+  covers *every* model of at most `maxWorlds` worlds on a frame of the
+  class. So a wrong "proved" is caught exactly when the formula has a
+  countermodel of at most `maxWorlds` worlds in the class; one whose
+  smallest countermodel is larger slips through the soundness check.
+  Every "not proved" answer, by contrast, is certified outright by its
+  re-checked countermodel, whatever its size. Budget exhaustion
+  (`exhausted`) is neither a pass nor a fail for a single formula; a run
+  tolerates it for at most 5% of its draws, and requires at least one
+  proved and one refuted formula so neither direction passes vacuously.
+
+  The verdict check has no exceptions. The extraction check excludes
+  exactly two known gamen-hs bugs, each by its precise shape
+  (`crossExtractOne`): gamen-hs#38 (KD countermodels are not serial) and
+  gamen-hs#39 (K/KD/K4 extraction fails on a branch with a blocked
+  prefix, excused only when `repairBlocked` fixes it). Each excluded
+  refutation must still be certified by the enumeration.
+
+  `genSchemaSample` adds T/D/B/4/5 schema instances, which random
+  formulas rarely produce; they are what catch an unsound rule added to a
+  system.
+
+* **G3DS** (`dsCrossCheck`): random `L_n` formulas (1 or 2 agents, atoms
+  p, q, modal depth ≤ 2, all of ¬ ∧ ∨ → ↔ □ ◇ [i] ⟨i⟩ ⊗ ⊖). *Refuted* ⇒
+  `extractDSModel`'s model passes `isValidDSFrame`, has a choice relation
+  for every agent of the formula, contains the root `w0`, and falsifies
+  the original (not NNF) formula there under `dsSatisfies`. *Proved* ⇒
+  the formula holds at every world of every model in a pool of random
+  valid DS models (`genDSModel`, valid by construction and re-checked
+  with `isValidDSFrame`). The pool is a sample, not an enumeration: it
+  can miss a wrong "proved". The extraction check excludes exactly the
+  documented IoaOp deferral: a frame that fails C2 and nothing else
+  (`isIoaOpDeferral`, on the frame rebuilt by `dsStabilityModel`).
+-/
+
+/-- Run a `Gen` deterministically from `seed` at sample size `size`. A
+generator failure is an error, never a default. -/
+def runGenSeeded {α : Type} (g : Gen α) (seed size : Nat) : Except String α :=
+  match (((runRandWith seed g).run ⟨size⟩ : Except GenError α)) with
+  | .ok a => .ok a
+  | .error (.genError m) => .error s!"generator failed: {m}"
+
+/-- A uniform draw from `0 … k-1` (`k ≥ 1`; `k = 0` behaves as `k = 1`). -/
+def pick (k : Nat) : Gen Nat := do
+  let ⟨i, _⟩ ← Gen.choose Nat 0 (k - 1) (by omega)
+  return i
+
+/-- An atom from `atoms`, or `⊥` with probability `1/(|atoms|+1)`. -/
+def genXLeaf (atoms : List String) : Gen Formula := do
+  let i ← pick (atoms.length + 1)
+  return if i == atoms.length then .bot else .atom (atoms.getD i "p")
+
+/-- Random Kripke-fragment formula over `atoms`, modal depth ≤ `md`,
+connective nesting ≤ the last argument. Leaves weigh 3, each unary or
+binary connective 1, □ and ◇ 2 each (only while `md > 0`). -/
+def genXFormula (atoms : List String) (md : Nat) : Nat → Gen Formula
+  | 0 => genXLeaf atoms
+  | n + 1 => do
+    let c ← pick (if md > 0 then 12 else 8)
+    match c with
+    | 0 | 1 | 2 => genXLeaf atoms
+    | 3 => .not <$> genXFormula atoms md n
+    | 4 => .and <$> genXFormula atoms md n <*> genXFormula atoms md n
+    | 5 => .or <$> genXFormula atoms md n <*> genXFormula atoms md n
+    | 6 => .implies <$> genXFormula atoms md n <*> genXFormula atoms md n
+    | 7 => .iff <$> genXFormula atoms md n <*> genXFormula atoms md n
+    | 8 | 9 => .box <$> genXFormula atoms (md - 1) n
+    | _ => .diamond <$> genXFormula atoms (md - 1) n
+
+/-- One cross-check sample: 2 or 3 atoms, modal depth ≤ 2, nesting ≤ 4. -/
+def genXSample : Gen Formula := do
+  let k ← pick 2
+  genXFormula (if k == 0 then ["p", "q"] else ["p", "q", "r"]) 2 4
+
+/-- The modal depth of a formula (□/◇ and the agent operators count). -/
+def modalDepth : Formula → Nat
+  | .not f => modalDepth f
+  | .and l r | .or l r | .implies l r | .iff l r => max (modalDepth l) (modalDepth r)
+  | .box f | .diamond f | .stit _ f | .choiceDiamond _ f | .ought _ f | .permitted _ f =>
+      modalDepth f + 1
+  | _ => 0
+
+/-- All permutations of a list. -/
+def permutationsOf : List Nat → List (List Nat)
+  | [] => [[]]
+  | x :: xs => (permutationsOf xs).flatMap fun p =>
+      (List.range (p.length + 1)).map fun i => p.take i ++ x :: p.drop i
+
+/-- Rename the worlds of an `n`-world relation mask (bit `i*n+j` is the
+edge `(wᵢ, wⱼ)`) by the permutation `π`. -/
+def permuteMask (n : Nat) (π : List Nat) (mask : Nat) : Nat := Id.run do
+  let mut out := 0
+  for i in List.range n do
+    for j in List.range n do
+      if mask.testBit (i * n + j) then
+        out := out ||| (1 <<< (π.getD i 0 * n + π.getD j 0))
+  return out
+
+/-- One representative per isomorphism class of relations on `n` worlds:
+the masks no world permutation makes smaller. -/
+def canonicalMasks (n : Nat) : List Nat :=
+  let ps := permutationsOf (List.range n)
+  (List.range (2 ^ (n * n))).filter fun m => ps.all fun π => permuteMask n π m ≥ m
+
+def xWorldName (i : Nat) : World := s!"w{i}"
+
+def frameOfMask (n mask : Nat) : Except String Frame :=
+  let ws := (List.range n).map xWorldName
+  let edges := (List.range n).flatMap fun i => (List.range n).filterMap fun j =>
+    if mask.testBit (i * n + j) then some (xWorldName i, xWorldName j) else none
+  mkFrame ws edges
+
+/-- Every frame of 1 … `maxWorlds` worlds satisfying `cond`, up to
+isomorphism. -/
+def enumFrames (cond : Frame → Bool) (maxWorlds : Nat) : Except String (List Frame) :=
+  (List.range maxWorlds).flatMapM fun k => do
+    let n := k + 1
+    let frs ← (canonicalMasks n).mapM (frameOfMask n)
+    return frs.filter cond
+
+def describeModel (m : Model) : String :=
+  let r := (edgesOf m).toList
+  let v := m.valuation.toList.map fun (a, ws) => (a.name, ws.toList)
+  s!"W={m.frame.worlds.toList} R={r} V={v}"
+
+/-- A model among `frames` × all valuations of `φ`'s atoms, and a world,
+where `φ` is false; `none` if there is none. `satisfies` errors
+propagate. -/
+def smallCountermodel (frames : List Frame) (φ : Formula) :
+    Except String (Option (Model × World)) := do
+  let as := φ.atoms.toList.map (·.name)
+  for fr in frames do
+    let ws := fr.worlds.toList
+    let n := ws.length
+    for v in List.range (2 ^ (as.length * n)) do
+      let vals := as.zipIdx.map fun (a, i) =>
+        (a, ws.zipIdx.filterMap fun (w, j) => if v.testBit (i * n + j) then some w else none)
+      let m := mkModel fr vals
+      for w in ws do
+        if !(← satisfies m w φ) then return some (m, w)
+  return none
+
+/-- A tableau system with its frame condition, checked with
+`Gamen.FrameProperties` (B&D Table 6.4 pairs each system with its frame
+class). -/
+structure XSystem where
+  sys : System
+  cond : Frame → Bool
+  condName : String
+
+def xSystems : List XSystem :=
+  [ ⟨systemK, fun _ => true, "any"⟩,
+    ⟨systemKT, isReflexive, "reflexive"⟩,
+    ⟨systemKD, isSerial, "serial"⟩,
+    ⟨systemKB, fun f => isReflexive f && isSymmetric f, "reflexive+symmetric"⟩,
+    ⟨systemK4, isTransitive, "transitive"⟩,
+    ⟨systemS4, fun f => isReflexive f && isTransitive f, "reflexive+transitive"⟩,
+    ⟨systemS5, isEquivalenceRelation, "equivalence"⟩ ]
+
+structure XStats where
+  proved : Nat := 0
+  refuted : Nat := 0
+  unknown : Nat := 0
+  /-- Refuted, and the enumeration also found a countermodel. -/
+  refutedSmall : Nat := 0
+  /-- Extracted countermodels re-checked and verified (one per open branch). -/
+  verified : Nat := 0
+  /-- Excluded: a KD model that is correct except for seriality (gamen-hs#38). -/
+  knownNonSerial : Nat := 0
+  /-- Excluded: "branch not saturated" on a branch with a blocked prefix
+  (gamen-hs#39). -/
+  knownBlocked : Nat := 0
+
+/-- The **verdict** cross-check for one formula, with no exceptions:
+*proved* ⇒ no countermodel among `frames`; counts refuted/unknown. -/
+def crossVerdictOne (xs : XSystem) (frames : List Frame) (steps : Nat)
+    (φ : Formula) (st : XStats) : Except String XStats := do
+  let tag := s!"{xs.sys.name}, φ = {φ} ({repr φ})"
+  let small ← (smallCountermodel frames φ).mapError (s!"{tag}: satisfies errored: " ++ ·)
+  match buildTableau xs.sys steps [pfFalse .root φ] with
+  | .closed =>
+    if let some (m, w) := small then
+      throw s!"{tag}: tableau proves φ, but φ is false at {w} in {describeModel m}"
+    return { st with proved := st.proved + 1 }
+  | .stillOpen _ =>
+    return { st with refuted := st.refuted + 1,
+                     refutedSmall := st.refutedSmall + (if small.isSome then 1 else 0) }
+  | .exhausted _ => return { st with unknown := st.unknown + 1 }
+
+/-- The witness-creating formulas (`T ◇A`, `F □A`) at a *blocked* prefix
+that have no witness child: the obligations gamen-hs#39's extraction
+leaves unmet. -/
+def unwitnessedAtBlocked (b : Branch) : List PrefixedFormula :=
+  b.formulas.toList.filter fun pf =>
+    b.isBlocked pf.pfx &&
+      match pf.sign, pf.formula with
+      | .T, .diamond a => !b.hasWitness pf.pfx .T a
+      | .F, .box a => !b.hasWitness pf.pfx .F a
+      | _, _ => false
+
+/-- The #39 repair: `extractCountermodel`'s construction plus, for each
+blocked prefix σ, edges from σ to the children of its nearest blocking
+ancestor (the one whose content contains σ's), then the system's closure.
+If this model satisfies every signed formula on the branch, the only
+defect of the original extraction was the missing witnesses at blocked
+prefixes. -/
+def repairBlocked (sys : System) (b : Branch) : Except String Model := do
+  let pfs := b.formulas.toList
+  let prefixes := b.prefixes.toList
+  let ws := prefixes.map toString
+  let childEdges := prefixes.flatMap fun σ => prefixes.filterMap fun τ =>
+    if τ.isChildOf σ then some (toString σ, toString τ) else none
+  let loopEdges := prefixes.flatMap fun σ =>
+    if !b.isBlocked σ then [] else
+      let content := b.prefixContent σ
+      match σ.ancestors.reverse.find? (fun anc =>
+          content.toList.all (b.prefixContent anc).contains) with
+      | none => []
+      | some anc => (b.childrenOf anc).map fun c => (toString σ, toString c)
+  let rel ← closeForSystem sys ws (Std.TreeSet.ofList (childEdges ++ loopEdges) lexOrd.compare)
+  let allAtoms := pfs.foldl (fun acc pf => acc.insertMany pf.formula.atoms) (∅ : Std.TreeSet Atom)
+  let vals := allAtoms.toList.map fun a =>
+    (a.name, pfs.filterMap fun pf =>
+      if pf.sign == .T && pf.formula == .atomF a then some (toString pf.pfx) else none)
+  let m := mkModel (← mkFrame ws rel.toList) vals
+  for pf in pfs do
+    unless (← satisfies m (toString pf.pfx) pf.formula) == (pf.sign == .T) do
+      throw s!"repairBlocked: {pf} still fails"
+  return m
+
+/-- Is this `extractCountermodel` failure the known gamen-hs#39 class?
+Exactly all of: system K, KD or K4; the error is the verification
+failure ("branch not saturated"); the branch has an unwitnessed `T ◇A`/
+`F □A` at a blocked prefix (`unwitnessedAtBlocked`); and supplying those
+witnesses (`repairBlocked`) yields a model that satisfies the whole
+branch, falsifies φ at the root, and is in the frame class (for KD,
+seriality aside: gamen-hs#38). Any other extraction error fails. -/
+def isKnownBlockedFailure (xs : XSystem) (b : Branch) (φ : Formula) (e : String) : Bool :=
+  ["K", "KD", "K4"].contains xs.sys.name
+    && (e.splitOn "branch not saturated").length > 1
+    && !(unwitnessedAtBlocked b).isEmpty
+    && match repairBlocked xs.sys b with
+      | .ok m =>
+        (satisfies m (toString Prefix.root) φ matches .ok false)
+          && (xs.cond m.frame || xs.sys.name == "KD")
+      | .error _ => false
+
+/-- The **extraction** cross-check for one formula (refuted formulas only):
+every open branch's `extractCountermodel` model must contain the root,
+falsify φ there (`satisfies`), and lie in the frame class
+(`FrameProperties`); and if it has at most `maxWorlds` worlds the
+enumeration must have found a countermodel too. Two known gamen-hs bugs
+are excluded, each by its exact shape, and counted; an excluded
+refutation must still be certified by the enumeration:
+* KD, a model that passes every check except seriality (gamen-hs#38);
+* `isKnownBlockedFailure` (gamen-hs#39).
+Anything else fails. -/
+def crossExtractOne (xs : XSystem) (frames : List Frame) (maxWorlds steps : Nat)
+    (φ : Formula) (st : XStats) : Except String XStats := do
+  let tag := s!"{xs.sys.name}, φ = {φ} ({repr φ})"
+  match buildTableau xs.sys steps [pfFalse .root φ] with
+  | .closed | .exhausted _ => return st
+  | .stillOpen bs =>
+    if bs.isEmpty then throw s!"{tag}: open tableau with no open branch"
+    let small ← (smallCountermodel frames φ).mapError (s!"{tag}: satisfies errored: " ++ ·)
+    let certified : Except String Unit :=
+      if small.isSome then pure ()
+      else throw s!"{tag}: excluded refutation not certified by a ≤ {maxWorlds}-world countermodel"
+    let rootW := toString Prefix.root
+    let mut st := { st with refuted := st.refuted + 1 }
+    for b in bs do
+      match extractCountermodel xs.sys b with
+      | .error e =>
+        if isKnownBlockedFailure xs b φ e then
+          certified
+          st := { st with knownBlocked := st.knownBlocked + 1 }
+        else throw s!"{tag}: extraction failed: {e}"
+      | .ok m =>
+        unless m.frame.worlds.contains rootW do
+          throw s!"{tag}: extracted model lacks the root world: {describeModel m}"
+        match satisfies m rootW φ with
+        | .ok false => pure ()
+        | .ok true => throw s!"{tag}: extracted model does not falsify φ at root: {describeModel m}"
+        | .error e => throw s!"{tag}: satisfies errored on extracted model: {e}"
+        if m.frame.worlds.size ≤ maxWorlds && small.isNone then
+          throw s!"{tag}: enumeration found no countermodel of ≤ {maxWorlds} worlds, \
+            but extraction found {describeModel m}"
+        if xs.cond m.frame then
+          st := { st with verified := st.verified + 1 }
+        else if xs.sys.name == "KD" && !isSerial m.frame then
+          certified
+          st := { st with knownNonSerial := st.knownNonSerial + 1 }
+        else throw s!"{tag}: extracted frame is not {xs.condName}: {describeModel m}"
+    return st
+
+/-- `count` random formulas from `seed`, modal depth checked. -/
+def crossSamples (seed count : Nat) : Except String (List Formula) := do
+  let fs ← runGenSeeded ((List.range count).mapM fun _ => genXSample) seed 0
+  if let some φ := fs.find? (modalDepth · > 2) then
+    throw s!"generator produced modal depth > 2: {φ}"
+  return fs
+
+/-- Verdict cross-check of `count` random formulas from `seed` against
+every frame of the class with at most `maxWorlds` worlds. Errors carry
+the failing formula (as text and as a `repr` for a regression case). -/
+def crossCheckSystem (xs : XSystem) (seed count maxWorlds steps : Nat) :
+    Except String XStats := do
+  let frames ← enumFrames xs.cond maxWorlds
+  (← crossSamples seed count).foldlM (fun st φ => crossVerdictOne xs frames steps φ st) {}
+
+/-- Extraction cross-check of the same draws as `crossCheckSystem`. -/
+def crossExtractSystem (xs : XSystem) (seed count maxWorlds steps : Nat) :
+    Except String XStats := do
+  let frames ← enumFrames xs.cond maxWorlds
+  (← crossSamples seed count).foldlM
+    (fun st φ => crossExtractOne xs frames maxWorlds steps φ st) {}
+
+/-- A schema instance over a random subformula `A` (atoms p, q, modal
+depth ≤ 1, so instances have modal depth ≤ 3), negated with probability
+1/3. The schemas are the frame-correspondence axioms of B&D Table 6.4's
+systems and their duals: T (`□A → A`, `A → ◇A`), D (`□A → ◇A`), B
+(`A → □◇A`, `◇□A → A`), 4 (`□A → □□A`, `◇◇A → ◇A`), 5 (`◇A → □◇A`,
+`◇□A → □A`). Each is valid in exactly the classes whose condition it
+expresses, so a rule added to a system where it is unsound makes that
+system prove instances with small countermodels in its class. Random
+formulas rarely hit these shapes: adding the B rules to KT passed 1000
+random draws at 4 worlds. -/
+def genSchemaSample : Gen Formula := do
+  let a ← genXFormula ["p", "q"] 1 2
+  let s ← pick 9
+  let inst : Formula := match s with
+    | 0 => .implies (.box a) a
+    | 1 => .implies a (.diamond a)
+    | 2 => .implies (.box a) (.diamond a)
+    | 3 => .implies a (.box (.diamond a))
+    | 4 => .implies (.diamond (.box a)) a
+    | 5 => .implies (.box a) (.box (.box a))
+    | 6 => .implies (.diamond (.diamond a)) (.diamond a)
+    | 7 => .implies (.diamond a) (.box (.diamond a))
+    | _ => .implies (.diamond (.box a)) (.box a)
+  let neg ← pick 3
+  return if neg == 0 then .not inst else inst
+
+def schemaSamples (seed count : Nat) : Except String (List Formula) :=
+  runGenSeeded ((List.range count).mapM fun _ => genSchemaSample) seed 0
+
+/-- Verdict cross-check of the given formulas (see `crossCheckSystem`). -/
+def crossCheckOn (xs : XSystem) (fs : List Formula) (maxWorlds steps : Nat) :
+    Except String XStats := do
+  let frames ← enumFrames xs.cond maxWorlds
+  fs.foldlM (fun st φ => crossVerdictOne xs frames steps φ st) {}
+
+/-- Extraction cross-check of the given formulas (see `crossExtractSystem`). -/
+def crossExtractOn (xs : XSystem) (fs : List Formula) (maxWorlds steps : Nat) :
+    Except String XStats := do
+  let frames ← enumFrames xs.cond maxWorlds
+  fs.foldlM (fun st φ => crossExtractOne xs frames maxWorlds steps φ st) {}
+
+/-- A passing verdict run: no error, both directions exercised at least
+once, and at most 5% of draws left `unknown` by budget exhaustion.
+Exhaustion is never a wrong answer, so it is tolerated and counted rather
+than failed; the cap keeps a prover that gives up on everything from
+passing. Known exhaustion: `◇((□q ∧ □⊥) ∨ (p ∧ ⊥))` in KT/KTB/S4/S5,
+pinned in `Tests/Main.lean`'s `crossCheckCases`. -/
+def crossCheckVerdict (r : Except String XStats) : Bool × String :=
+  match r with
+  | .ok st =>
+    (st.unknown * 20 ≤ st.proved + st.refuted + st.unknown && st.proved > 0 && st.refuted > 0,
+     s!"proved {st.proved}, refuted {st.refuted} ({st.refutedSmall} with a ≤ N-world \
+       countermodel), unknown {st.unknown}")
+  | .error e => (false, s!"FAILED: {e}")
+
+/-- A passing extraction run: no error, and at least one model checked
+(for KD every model is a #38 exclusion, still checked for everything but
+seriality). -/
+def crossExtractVerdict (r : Except String XStats) : Bool × String :=
+  match r with
+  | .ok st =>
+    (st.verified + st.knownNonSerial > 0,
+     s!"refuted {st.refuted}; extracted models verified {st.verified}, excluded #38 \
+       {st.knownNonSerial}, excluded #39 {st.knownBlocked}")
+  | .error e => (false, s!"FAILED: {e}")
+
+/-! ### G3DS cross-checks -/
+
+/-- A random `L_n` formula over atoms p, q and `agents`, modal depth ≤
+`md`, nesting ≤ the last argument. -/
+def genDSXFormula (agents : List String) (md : Nat) : Nat → Gen Formula
+  | 0 => genXLeaf ["p", "q"]
+  | n + 1 => do
+    let c ← pick (if md > 0 then 14 else 8)
+    let ag ← pick agents.length
+    let a := agents.getD ag "1"
+    match c with
+    | 0 | 1 | 2 => genXLeaf ["p", "q"]
+    | 3 => .not <$> genDSXFormula agents md n
+    | 4 => .and <$> genDSXFormula agents md n <*> genDSXFormula agents md n
+    | 5 => .or <$> genDSXFormula agents md n <*> genDSXFormula agents md n
+    | 6 => .implies <$> genDSXFormula agents md n <*> genDSXFormula agents md n
+    | 7 => .iff <$> genDSXFormula agents md n <*> genDSXFormula agents md n
+    | 8 => .box <$> genDSXFormula agents (md - 1) n
+    | 9 => .diamond <$> genDSXFormula agents (md - 1) n
+    | 10 => .stit a <$> genDSXFormula agents (md - 1) n
+    | 11 => .choiceDiamond a <$> genDSXFormula agents (md - 1) n
+    | 12 => .ought a <$> genDSXFormula agents (md - 1) n
+    | _ => .permitted a <$> genDSXFormula agents (md - 1) n
+
+/-- A random DS model over `agents`, valid by construction: each agent
+gets 1 or 2 choice cells; every *profile* (one cell per agent) gets 1 or
+2 worlds, so any selection of cells intersects (C2); each agent's
+relation is "same cell" (C1); each agent's ideal set is a non-empty union
+of its cells (D1–D3). Up to 8 worlds for 2 agents. -/
+def genDSModel (agents : List String) : Gen DSModel := do
+  let cells ← agents.mapM fun _ => (· + 1) <$> pick 2
+  let profiles := sections (cells.map List.range)
+  let perProfile ← profiles.mapM fun pr => do
+    let k ← pick 2
+    pure (List.replicate (k + 1) pr)
+  let worlds := perProfile.flatten.zipIdx.map fun (pr, i) => (s!"v{i}", pr)
+  let rels := agents.zipIdx.map fun (a, ai) =>
+    (a, worlds.flatMap fun (w, pw) => worlds.filterMap fun (v, pv) =>
+      if pw.getD ai 0 == pv.getD ai 0 then some (w, v) else none)
+  let ideals ← agents.zipIdx.mapM fun (a, ai) => do
+    let c := cells.getD ai 1
+    let mask := (← pick (2 ^ c - 1)) + 1
+    pure (a, worlds.filterMap fun (w, pw) =>
+      if mask.testBit (pw.getD ai 0) then some w else none)
+  let vals ← ["p", "q"].mapM fun at_ => do
+    let vs ← worlds.filterM fun _ => (Arbitrary.arbitrary : Gen Bool)
+    pure (at_, vs.map (·.1))
+  return mkDSModel (mkDSFrame (worlds.map (·.1)) rels ideals) vals
+
+/-- The stability model of Definition 20 (Lyon & van Berkel 2024,
+pp. 858–859), built the same way as `extractDSModel` but *without* its
+verification, so a test can see the frame `extractDSModel` rejected.
+`dsExtractOne` checks that it equals `extractDSModel`'s result whenever
+extraction succeeds, so this copy cannot silently drift. -/
+def dsStabilityModel (gt : GenTree) (s : Sequent) : Except String DSModel := do
+  let unblockedSet ← unblockedLabels gt s
+  let lw : Label → World := toString
+  let worlds : Std.TreeSet World := unblockedSet.foldl (fun acc w => acc.insert (lw w)) ∅
+  let agentSet := sequentAgents s
+  let choicePairs (a : String) : List (Label × Label) :=
+    s.rels.toList.filterMap fun
+      | .choice b w u => if b == a then some (w, u) else none
+      | .ideal _ _ => none
+  let relations ← agentSet.toList.foldlM (fun acc a => do
+    let clauseI := (choicePairs a).filter fun (w, u) =>
+      unblockedSet.contains w && unblockedSet.contains u
+    let clauseII ← (choicePairs a).flatMapM fun (w, v) => do
+      if !unblockedSet.contains w then return []
+      let anc ← ancestors v gt
+      return anc.filterMap fun u =>
+        if unblockedSet.contains u && isDirectlyBlockedBy v u gt s then some (w, u) else none
+    let base := Std.TreeSet.ofList clauseI lexOrd.compare ∪ Std.TreeSet.ofList clauseII lexOrd.compare
+    let pairs ← euclideanClose unblockedSet base
+    let start : Std.TreeMap World (Std.TreeSet World) :=
+      unblockedSet.foldl (fun acc w => acc.insert (lw w) ∅) ∅
+    let rel : Std.TreeMap World (Std.TreeSet World) := pairs.foldl
+      (fun (acc : Std.TreeMap World (Std.TreeSet World)) (w, u) =>
+        acc.alter (lw w) fun o => some ((o.getD ∅).insert (lw u))) start
+    return acc.insert a rel)
+    (∅ : Std.TreeMap String (Std.TreeMap World (Std.TreeSet World)))
+  let ideals : Std.TreeMap String (Std.TreeSet World) :=
+    agentSet.foldl (fun acc a =>
+      acc.insert a (unblockedSet.foldl (fun ws w =>
+        if hasRel (.ideal a w) s then ws.insert (lw w) else ws) ∅)) ∅
+  let valuation : Std.TreeMap Atom (Std.TreeSet World) :=
+    s.gamma.foldl (fun acc lf =>
+      match lf.lfFormula with
+      | .not (.atomF a) =>
+        if unblockedSet.contains lf.lfLabel then
+          acc.alter a fun
+            | none => some {lw lf.lfLabel}
+            | some ws => some (ws.insert (lw lf.lfLabel))
+        else acc
+      | _ => acc) ∅
+  return { dsFrame := { dsWorlds := worlds, dsRelations := relations, dsIdeals := ideals }
+           dsValuation := valuation }
+
+/-- The documented IoaOp deferral (`CounterModel.lean`'s `extractDSModel`
+docstring; gamen-hs `CounterModel.hs` 66–72, `Prove.hs` 21), exactly: at
+least two agents, and the stability frame fails C2 while C1, C3 (k = 0)
+and D1–D3 hold. -/
+def isIoaOpDeferral (fr : DSFrame) : Bool :=
+  fr.dsRelations.size ≥ 2 && checkDS_C1 fr && !checkDS_C2 fr && checkDS_C3 0 fr
+    && checkDS_D1 fr && checkDS_D2 fr && checkDS_D3 fr
+
+structure DSXStats where
+  proved : Nat := 0
+  refuted : Nat := 0
+  unknown : Nat := 0
+  stuck : Nat := 0
+  verified : Nat := 0
+  /-- Excluded: extraction rejected a frame failing only C2 (IoaOp deferral). -/
+  knownC2 : Nat := 0
+
+/-- **Verdict** check for one `L_n` formula: *proved* ⇒ true at every
+world of every pool model. -/
+def dsVerdictOne (models : List DSModel) (steps : Nat) (φ : Formula) (st : DSXStats) :
+    Except String DSXStats := do
+  let tag := s!"φ = {φ} ({repr φ})"
+  match ← (proveFormula 0 steps φ).mapError (s!"{tag}: proveFormula errored: " ++ ·) with
+  | .proved =>
+    for m in models do
+      for w in m.dsFrame.dsWorlds.toList do
+        match dsSatisfies m w φ with
+        | .ok true => pure ()
+        | .ok false => throw s!"{tag}: proved, but false at {w} in {repr m}"
+        | .error e => throw s!"{tag}: dsSatisfies errored: {e}"
+    return { st with proved := st.proved + 1 }
+  | .refuted _ _ => return { st with refuted := st.refuted + 1 }
+  | .maxStepsExceeded _ _ => return { st with unknown := st.unknown + 1 }
+  | .stuck _ _ => return { st with stuck := st.stuck + 1 }
+
+/-- **Extraction** check for one refuted `L_n` formula: `extractDSModel`'s
+model equals `dsStabilityModel`, passes `isValidDSFrame`, has a choice
+relation for every agent of φ, contains `w0`, and falsifies the original
+(not NNF) φ there under `dsSatisfies`. Excluded, exactly: extraction's
+"not a valid DS frame" error on a stability frame with `isIoaOpDeferral`.
+Anything else fails. -/
+def dsExtractOne (steps : Nat) (φ : Formula) (st : DSXStats) : Except String DSXStats := do
+  let tag := s!"φ = {φ} ({repr φ})"
+  match ← (proveFormula 0 steps φ).mapError (s!"{tag}: proveFormula errored: " ++ ·) with
+  | .refuted gt s =>
+    let st := { st with refuted := st.refuted + 1 }
+    let sm ← (dsStabilityModel gt s).mapError (s!"{tag}: stability model errored: " ++ ·)
+    match extractDSModel gt s with
+    | .error e =>
+      if (e.splitOn "not a valid DS frame").length > 1 && isIoaOpDeferral sm.dsFrame then
+        return { st with knownC2 := st.knownC2 + 1 }
+      throw s!"{tag}: extraction failed: {e}"
+    | .ok m =>
+      let rootW := toString label0
+      unless m == sm do throw s!"{tag}: extractDSModel differs from dsStabilityModel"
+      unless isValidDSFrame m.dsFrame do throw s!"{tag}: extracted frame not a valid DS frame"
+      for a in (formulaAgents φ).toList do
+        unless m.dsFrame.dsRelations.contains a do
+          throw s!"{tag}: extracted frame has no choice relation for agent {a}"
+      unless m.dsFrame.dsWorlds.contains rootW do throw s!"{tag}: extracted model lacks {rootW}"
+      match dsSatisfies m rootW φ with
+      | .ok false => return { st with verified := st.verified + 1 }
+      | .ok true => throw s!"{tag}: extracted model does not falsify φ at {rootW}: {repr m}"
+      | .error e => throw s!"{tag}: dsSatisfies errored on extracted model: {e}"
+  | _ => return st
+
+def dsSamples (agents : List String) (seed count : Nat) : Except String (List Formula) := do
+  let fs ← runGenSeeded ((List.range count).mapM fun _ => genDSXFormula agents 2 4) seed 0
+  if let some φ := fs.find? (modalDepth · > 2) then
+    throw s!"generator produced modal depth > 2: {φ}"
+  return fs
+
+/-- Verdict check of `count` random `L_n` formulas over `agents` from
+`seed`, against a pool of `nModels` random valid DS models from
+`seed + 1`. -/
+def dsCrossCheck (agents : List String) (seed count nModels steps : Nat) :
+    Except String DSXStats := do
+  let fs ← dsSamples agents seed count
+  let ms ← runGenSeeded ((List.range nModels).mapM fun _ => genDSModel agents) (seed + 1) 0
+  if ms.any (!isValidDSFrame ·.dsFrame) then
+    throw "genDSModel produced an invalid DS frame (generator bug)"
+  fs.foldlM (fun st φ => dsVerdictOne ms steps φ st) {}
+
+/-- Extraction check of the same draws as `dsCrossCheck`. -/
+def dsExtractCheck (agents : List String) (seed count steps : Nat) : Except String DSXStats := do
+  (← dsSamples agents seed count).foldlM (fun st φ => dsExtractOne steps φ st) {}
+
+/-- As `crossCheckVerdict`; a `stuck` result (the schedule and the
+saturation predicates disagree) always fails. -/
+def dsCrossCheckVerdict (r : Except String DSXStats) : Bool × String :=
+  match r with
+  | .ok st => (st.unknown * 20 ≤ st.proved + st.refuted + st.unknown + st.stuck
+      && st.stuck == 0 && st.proved > 0 && st.refuted > 0,
+      s!"proved {st.proved}, refuted {st.refuted}, budget {st.unknown}, stuck {st.stuck}")
+  | .error e => (false, s!"FAILED: {e}")
+
+def dsExtractVerdict (r : Except String DSXStats) : Bool × String :=
+  match r with
+  | .ok st => (st.verified > 0,
+      s!"refuted {st.refuted}; extracted models verified {st.verified}, excluded C2/IoaOp {st.knownC2}")
+  | .error e => (false, s!"FAILED: {e}")
+
+/-- What `extractCountermodel` does on each open branch of `{1 F φ}`, as
+a label: `verified`, `non-serial (#38)`, `blocked (#39)`, or a failure
+label. `none` if the tableau does not stay open. For pinning the known
+gamen-hs bugs in regression cases. -/
+def extractionShapes (xs : XSystem) (φ : Formula) : Option (List String) :=
+  match buildTableau xs.sys defaultMaxSteps [pfFalse .root φ] with
+  | .stillOpen bs => some (bs.map fun b =>
+      match extractCountermodel xs.sys b with
+      | .ok m =>
+        if !(satisfies m (toString Prefix.root) φ matches .ok false) then "not falsified"
+        else if xs.cond m.frame then "verified"
+        else if xs.sys.name == "KD" && !isSerial m.frame then "non-serial (#38)"
+        else "wrong frame class"
+      | .error e => if isKnownBlockedFailure xs b φ e then "blocked (#39)" else s!"error: {e}")
+  | _ => none

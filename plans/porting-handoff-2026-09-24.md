@@ -158,10 +158,12 @@ is green on `main`, and `tools/compare/compare.py` shows 0 DISAGREE.
    `Gamen/Tableau.lean`; `crossExtractOne`'s exclusions for both are
    dropped and the three regression pins that used to check the bug
    (`Tests/Main.lean`'s `crossCheckCases`) now check the fixed behavior.
-   KTB's own blocked-branch extraction failures (it does not borrow, by
-   design) are tracked separately as gamen-hs#42, open; our sample sizes
-   have not hit one, so `crossExtractOne` still treats any KTB failure as
-   a hard error rather than excusing it. Still open: offer to file the
+   KTB and S5 do not borrow (by design), so their blocked branches can
+   still fail extraction; tracked separately as gamen-hs#42, open. Known
+   failures are KTB-only (e.g. `◇□□¬p`); none found for S5. Our random
+   samples have not hit one, so `crossExtractOne` still treats any KTB or
+   S5 failure as a hard error rather than excusing it; `crossCheckCases`
+   pins the #42 example. Still open: offer to file the
    stronger check on gamen-hs (ask first).
 3. Optional: a compare.py G3DS section (coverage is 26 requests).
 4. Deferred (Gamen.jl#19): runtime string → `Formula` parser, when a widget

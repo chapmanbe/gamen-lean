@@ -162,6 +162,10 @@ def tableauCases : List Case :=
   -- extraction's own re-check; the blocked prefix had no witnesses.
   ⟨"extracts from every open branch with a blocked prefix: K, □□p ↔ ¬□p (#39)",
     allExtract systemK (.iff (.box (.box p)) (.not (.box p)))⟩,
+  -- Faithful port of the gamen-hs case, but it does not pin the #39 fix for
+  -- KD: it still passes with KD's borrowing disabled, because
+  -- `serialClose`'s self-loop at the blocked prefix already satisfies it.
+  -- The Not-in-gamen-hs KD case in `crossCheckCases` does need borrowing.
   ⟨"extracts from every open branch with a blocked prefix: KD, □□p ↔ ¬□p (#39)",
     allExtract systemKD (.iff (.box (.box p)) (.not (.box p)))⟩,
   ⟨"extracts from every open branch with a blocked prefix: K4, ◇□p ∧ □⊥ (#39)",
@@ -2376,12 +2380,15 @@ extracts a verified model) instead of the bug. Two more regressions
 remain unfixed and still pin the bug, identical in gamen-hs (checked in
 GHCi): one documented G3DS deferral (IoaOp/C2, gamen-hs#41) and one
 budget-exhaustion note (KT/KTB/S4/S5 on a small formula, gamen-hs#40);
-each still flips when fixed there. KTB's own extraction failures on
-blocked branches (it does not borrow its blocker's witnesses; see
-`borrowsBlockerWitnesses`) are tracked separately as gamen-hs#42, open;
-this fix does not touch them and our sample sizes here have not hit one,
-so `crossExtractOne` still treats any KTB extraction failure as a hard
-error rather than excusing it. -/
+each still flips when fixed there. KTB and S5 do not borrow their blocker's
+witnesses (see `borrowsBlockerWitnesses`), so their blocked branches can
+still fail extraction; tracked separately as gamen-hs#42, open (known
+failures are KTB-only). This fix does not touch them and the random
+samples here have not hit one, so `crossExtractOne` still treats any KTB
+or S5 extraction failure as a hard error rather than excusing it. The
+#42 example is pinned below (KTB fails, flips when fixed; S5 extracts),
+with a KTB formula that breaks if KTB is added to the borrowing list and
+a KD formula that needs KD's borrowed edges. -/
 
 def crossSeed : Nat := 20260925
 
@@ -2409,6 +2416,8 @@ def crossCheckCases : List Case :=
   let kd : XSystem := ⟨systemKD, isSerial, "serial"⟩
   let k : XSystem := ⟨systemK, fun _ => true, "any"⟩
   let k4 : XSystem := ⟨systemK4, isTransitive, "transitive"⟩
+  let ktb : XSystem := ⟨systemKB, fun f => isReflexive f && isSymmetric f, "reflexive+symmetric"⟩
+  let s5 : XSystem := ⟨systemS5, isEquivalenceRelation, "equivalence"⟩
   let tFormula : Formula := .diamond (.or (.and (.box q) (.box .bot)) (.and p .bot))
   (xSystems.flatMap fun xs =>
     [ crossCase s!"{xs.sys.name} verdicts vs. ≤3-world {xs.condName} frames"
@@ -2436,6 +2445,37 @@ def crossCheckCases : List Case :=
     (gamen-hs#39, fixed upstream)",
     extractionShapes k4 (.and (.diamond (.box p)) (.box .bot))
       == some ["verified", "verified", "verified"]⟩,
+  -- Needs KD's borrowed edges: with "KD" removed from
+  -- `borrowsBlockerWitnesses`, the blocked branch fails its re-check
+  -- (the #39 KD case above does not, see its comment).
+  ⟨"Not in gamen-hs: KD: ¬(◇p ∧ ◇◇p), every open branch extracts, including the blocked one \
+    (needs KD's borrowed edges; gamen-hs#39, fixed upstream)",
+    extractionShapes kd (.not (.and (.diamond p) (.diamond (.diamond p)))) == some ["verified"]⟩,
+  -- Why KTB is not in `borrowsBlockerWitnesses`: this branch extracts
+  -- without borrowed edges, and adding "KTB" to the list makes it fail
+  -- (symmetric closure turns a borrowed edge σ → τ′ into τ′ → σ; see
+  -- gamen-hs#42). Found by exhaustive search up to size 7 (none) and
+  -- random depth-8 formulas (seed 2502, then shrunk by hand).
+  ⟨"Not in gamen-hs: KTB: ⊥ ∨ □◇(□⊥ ∨ ¬p) extracts a reflexive+symmetric countermodel \
+    without borrowing its blocker's witnesses (fails if KTB borrows; gamen-hs#42)",
+    extractionShapes ktb (.or .bot (.box (.diamond (.or (.box .bot) (.not p)))))
+      == some ["verified"]⟩,
+  -- gamen-hs#42, open: KTB's only open branch for F ◇□□¬p is blocked and
+  -- fails the re-check (`F □¬p at 1.1.2`). Pins the bug; flips when fixed.
+  ⟨"Not in gamen-hs: KTB: ◇□□¬p's only open branch fails extraction \
+    (gamen-hs#42, open; flips when fixed)",
+    match extractionShapes ktb (.diamond (.box (.box (.not p)))) with
+    | some [s] => s.startsWith "error: extractCountermodel: extracted model fails to satisfy"
+    | _ => false⟩,
+  -- S5 does not borrow either, but the blocked branch for the same
+  -- formula extracts, as gamen-hs#42 reports. Pinned so a fix to #42
+  -- cannot break S5. There is no S5 counterpart of the KTB case above:
+  -- the prefix tree is connected, so S5's equivalence closure is already
+  -- all of W × W with or without borrowed edges, and adding "S5" to
+  -- `borrowsBlockerWitnesses` changes nothing.
+  ⟨"Not in gamen-hs: S5: ◇□□¬p extracts an equivalence-frame countermodel \
+    without borrowing (gamen-hs#42 reports S5 unaffected here)",
+    extractionShapes s5 (.diamond (.box (.box (.not p)))) == some ["verified"]⟩,
   ⟨"Not in gamen-hs: G3DS: □([1]p ↔ □⊥) → ⊗₂⟨2⟩(q → p) is refuted, and extraction rejects \
     a stability frame that fails only C2 (documented IoaOp deferral; flips when fixed)",
     c2Shape == .ok ([true, false, true, true, true, true], true)⟩,

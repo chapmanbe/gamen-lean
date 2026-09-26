@@ -1,5 +1,6 @@
 import Gamen.Protocol
 import Gamen.Tableau
+import Gamen.Temporal
 import Gamen.Fragment
 import Gamen.Doxastic
 import Gamen.RankingTheory

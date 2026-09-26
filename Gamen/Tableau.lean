@@ -11,8 +11,12 @@ running prose rather than numbered definitions; rules in Tables 6.1–6.3),
 the systems K, KT, KD, KTB, K4, S4, S5 (Table 6.4), ancestor blocking, and
 countermodel extraction (B&D Theorem 6.19).
 
-Not ported: the FutureBox/FutureDiamond rules, which gamen-hs has
-quarantined (issue #25).
+Also the base FutureBox/FutureDiamond rules (GT, GF, FT, FF), built by
+analogy to □/◇ exactly as in gamen-hs. They are quarantined at the
+`gamen-validate` fragment boundary (gamen-hs issue #25: `Gamen.Fragment`
+rejects every temporal operator), but, as in gamen-hs, the raw API still
+applies them. `systemKDt` and the temporal T/4 rules live in
+`Gamen.Temporal`.
 -/
 namespace Gamen
 
@@ -221,6 +225,42 @@ def diamondFalseRule : Rule
     if adds.isEmpty then .noRule else .stack adds
   | _, _ => .noRule
 
+/-! ### Base temporal rules (gamen-hs `Tableau.hs`, by analogy to □/◇)
+
+FutureBox (G) and FutureDiamond (F) follow the same prefix-tree pattern as
+□ and ◇. There are no core rules for PastBox (H) or PastDiamond (P), as in
+gamen-hs (issue #25). -/
+
+/-- GT: σ T GA → σ.n T A for each used child prefix σ.n. -/
+def futureBoxTrueRule : Rule
+  | ⟨σ, .T, .futureBox a⟩, b =>
+    let adds := (b.childrenOf σ).filterMap fun τ =>
+      let pf := pfTrue τ a
+      if b.contains pf then none else some pf
+    if adds.isEmpty then .noRule else .stack adds
+  | _, _ => .noRule
+
+/-- GF: σ F GA → σ.n F A for a new prefix σ.n. -/
+def futureBoxFalseRule : Rule
+  | ⟨σ, .F, .futureBox a⟩, b =>
+    if b.hasWitness σ .F a then .noRule else .stack [pfFalse (b.freshPrefix σ) a]
+  | _, _ => .noRule
+
+/-- FT: σ T FA → σ.n T A for a new prefix σ.n. -/
+def futureDiamondTrueRule : Rule
+  | ⟨σ, .T, .futureDiamond a⟩, b =>
+    if b.hasWitness σ .T a then .noRule else .stack [pfTrue (b.freshPrefix σ) a]
+  | _, _ => .noRule
+
+/-- FF: σ F FA → σ.n F A for each used child prefix σ.n. -/
+def futureDiamondFalseRule : Rule
+  | ⟨σ, .F, .futureDiamond a⟩, b =>
+    let adds := (b.childrenOf σ).filterMap fun τ =>
+      let pf := pfFalse τ a
+      if b.contains pf then none else some pf
+    if adds.isEmpty then .noRule else .stack adds
+  | _, _ => .noRule
+
 /-! ## Systems -/
 
 /-- A modal system: extra rules applied to used prefixes, and witness rules
@@ -357,12 +397,6 @@ def systemS5 : System :=
   ⟨"S5", [tBoxRule, tDiamondRule, bBoxRule, bDiamondRule,
           fourBoxRule, fourDiamondRule, fourRBoxRule, fourRDiamondRule], []⟩
 
-/-- Port of `Gamen.Temporal.systemKDt` as used by `gamen-validate`: the D
-rules as witness rules. Its temporal T/4 rules are omitted because the
-consistency fragment gate rejects every temporal operator before the
-tableau runs, so they can never fire there. -/
-def systemKDt : System := ⟨"KDt", [], [dBoxRule, dDiamondRule]⟩
-
 def tryRules : List Rule → Rule
   | [], _, _ => .noRule
   | r :: rs, pf, b =>
@@ -370,9 +404,11 @@ def tryRules : List Rule → Rule
     | .noRule => tryRules rs pf b
     | res => res
 
-/-- Priority-1 rules: propositional, then rules that only use existing prefixes. -/
+/-- Priority-1 rules: propositional, the used-prefix modal rules (□T, ◇F,
+GT, FF), then the system's own used-prefix rules. -/
 def tryPriority1 (sys : System) : Rule :=
-  tryRules ([propositionalRule, boxTrueRule, diamondFalseRule] ++ sys.usedPrefixRules)
+  tryRules ([propositionalRule, boxTrueRule, diamondFalseRule,
+    futureBoxTrueRule, futureDiamondFalseRule] ++ sys.usedPrefixRules)
 
 /-! ## Expansion passes -/
 
@@ -395,8 +431,8 @@ def tryPriority1Pass (sys : System) (b : Branch) : Option (List Branch) := Id.ru
     | _ => continue
   return none
 
-/-- Apply a prefix-creating rule (□F or ◇T) to the first unwitnessed,
-unblocked candidate. -/
+/-- Apply a prefix-creating rule (□F/GF or ◇T/FT) to the first
+unwitnessed, unblocked candidate. -/
 def tryWitnessCreatingPass (isCandidate : PrefixedFormula → Bool) (rule : Rule)
     (b : Branch) : Option (List Branch) := do
   let pf ← b.formulas.find? fun pf =>
@@ -409,14 +445,22 @@ def tryWitnessCreatingPass (isCandidate : PrefixedFormula → Bool) (rule : Rule
   | _ => none
 where
   childFormula : Formula → Formula
-    | .box a | .diamond a => a
+    | .box a | .diamond a | .futureBox a | .futureDiamond a => a
     | f => f
 
+/-- Priority 2a: □F and GF. Each rule matches only its own operator, so
+trying both in turn is Haskell's dispatch on the formula. -/
 def tryBoxFalsePass : Branch → Option (List Branch) :=
-  tryWitnessCreatingPass (fun pf => pf.sign == .F && pf.formula matches .box _) boxFalseRule
+  tryWitnessCreatingPass
+    (fun pf => pf.sign == .F && (pf.formula matches .box _ || pf.formula matches .futureBox _))
+    (tryRules [boxFalseRule, futureBoxFalseRule])
 
+/-- Priority 2b: ◇T and FT. -/
 def tryDiamondTruePass : Branch → Option (List Branch) :=
-  tryWitnessCreatingPass (fun pf => pf.sign == .T && pf.formula matches .diamond _) diamondTrueRule
+  tryWitnessCreatingPass
+    (fun pf => pf.sign == .T
+      && (pf.formula matches .diamond _ || pf.formula matches .futureDiamond _))
+    (tryRules [diamondTrueRule, futureDiamondTrueRule])
 
 /-- System-specific witness rules (none for K). -/
 def tryWitnessPass (sys : System) (b : Branch) : Option (List Branch) := Id.run do

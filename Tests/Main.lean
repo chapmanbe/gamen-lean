@@ -11,6 +11,7 @@ import Gamen.DeonticStit.Rules
 import Gamen.DeonticStit.Saturation
 import Gamen.DeonticStit.Prove
 import Gamen.DeonticStit.CounterModel
+import Gamen.Cgs
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
@@ -2699,13 +2700,195 @@ def crossCheckCases : List Case :=
     tableauProves systemKT defaultMaxSteps [] tFormula == .unknown (.budgetExhausted defaultMaxSteps)⟩
   ]
 
+/-! ## Cgs (`Gamen.Cgs`)
+
+There is no `test/CgsSpec.hs` in gamen-hs, and the `Cgs`-exercising
+`PaperCorrespondence.hs` sections all reach it only through `Coalition`,
+`Atl`/`Atl.ModelCheck`, `Atel`, or `Laca`'s `lacaToCgs`, none ported yet
+(`PORTING.md`):
+
+- "Pauly (2002) — Coalition Logic" (`coalSatisfies`, `checkTopEffectivity`,
+  `checkBotMonotonicity`, `checkMonotonicity`, `checkSuperadditivity`: all
+  `Gamen.Coalition`);
+- "Alur, Henzinger & Kupferman (2002) — ATL" (`sat`, `atlSatisfies`,
+  `CanNext`/`CanAlways`/`CanEventually`/`CanUntil`: `Gamen.Atl`/
+  `Gamen.Atl.ModelCheck`);
+- "van der Hoek & Wooldridge (2003) — ATEL" (adds `AtelModel`,
+  `mkAtelModel`, `atelSat`: `Gamen.Atel`);
+- the imperfect-information ATEL section right after it (adds
+  `Gamen.Atl.ImperfectInfo`);
+- the "Herzig, Lorini & Perrotin (2022) — LACA" section's `lacaToCgs`
+  coercion sub-block (needs `Gamen.Laca`, and then `Gamen.Atl` again for
+  `atlSatisfies`/`sat`/`CanNext`/`CanEventually`).
+
+So every case below is a not-in-spec sanity check on the raw `Cgs`
+primitives themselves (`mkCgs`, `availableMoves`, `jointMoves`,
+`applyJointMove`, `preC`), each flagged as such. The two fixtures are the
+`Cgs` values `PaperCorrespondence.hs` builds for the sections above —
+the "control game" (Pauly 2002, `Int` states/`String` actions, agents
+`alice`/`bob`) and the "loop" model (AHK 2002) — and the expected `preC`
+values are computed by hand from the Haskell file's own inline comments
+(cited below), not from the Lean code under test. Coverage of `mkCgs`'s
+two error branches (an agent with no moves at some state; a joint move
+escaping the state set) has no Haskell counterpart at all: `CgsSpec.hs`
+doesn't exist, so gamen-hs itself never exercises them; they matter for
+the same reason `Kripke.mkFrame`'s dangling-edge check does (adversarial
+review B7, cited in `Gamen.Cgs`'s `mkCgs` docstring). -/
+
+/-- Pauly (2002) control game: `PaperCorrespondence.hs` ~1241–1262. Agent
+`alice` controls `p` (plays `"p"`/`"not-p"`), agent `bob` controls `q`
+(plays `"q"`/`"not-q"`); the transition ignores the source state. -/
+private def controlMoves (_ : Nat) (ag : String) : Std.TreeSet String :=
+  if ag == "alice" then Std.TreeSet.ofList ["p", "not-p"]
+  else if ag == "bob" then Std.TreeSet.ofList ["q", "not-q"]
+  else ∅
+
+private def controlTrans (_ : Nat) (jm : Std.TreeMap String String) : Nat :=
+  match jm.get? "alice" == some "p", jm.get? "bob" == some "q" with
+  | true, true => 0
+  | true, false => 1
+  | false, true => 2
+  | false, false => 3
+
+private def controlLabel : Nat → Std.TreeSet String
+  | 0 => Std.TreeSet.ofList ["p", "q"]
+  | 1 => Std.TreeSet.ofList ["p"]
+  | 2 => Std.TreeSet.ofList ["q"]
+  | _ => ∅
+
+private def controlCgs : Except String (Cgs Nat String) :=
+  mkCgs (Std.TreeSet.ofList [0, 1, 2, 3]) (Std.TreeSet.ofList ["alice", "bob"])
+    controlMoves controlTrans controlLabel
+
+/-- AHK (2002) loop model: `PaperCorrespondence.hs` ~1387–1401. Single
+agent `alice`; `"next"` advances `(s + 1) mod 3`, `"stay"` is a self-loop. -/
+private def loopMoves (_ : Nat) (_ : String) : Std.TreeSet String :=
+  Std.TreeSet.ofList ["next", "stay"]
+
+private def loopTrans (s : Nat) (jm : Std.TreeMap String String) : Nat :=
+  match jm.get? "alice" with
+  | some "next" => (s + 1) % 3
+  | _ => s
+
+private def loopLabel : Nat → Std.TreeSet String
+  | 0 => Std.TreeSet.ofList ["p"]
+  | 1 => Std.TreeSet.ofList ["q"]
+  | _ => ∅
+
+private def loopCgs : Except String (Cgs Nat String) :=
+  mkCgs (Std.TreeSet.ofList [0, 1, 2]) (Std.TreeSet.ofList ["alice"]) loopMoves loopTrans loopLabel
+
+def cgsCases : List Case := [
+  ⟨"Not in gamen-hs (no CgsSpec.hs): mkCgs accepts the Pauly (2002) control game \
+    (non-empty moves for alice and bob at every state)",
+    match controlCgs with
+    | .ok _ => true
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs: mkCgs accepts the AHK (2002) loop model",
+    match loopCgs with
+    | .ok _ => true
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs: mkCgs rejects an agent with no moves at any state",
+    match mkCgs (Std.TreeSet.ofList [0, 1]) (Std.TreeSet.ofList ["alice", "carol"])
+        controlMoves controlTrans controlLabel with
+    | .error _ => true
+    | .ok _ => false⟩,
+  ⟨"Not in gamen-hs: mkCgs rejects a joint move that escapes the state set",
+    let escapingTrans (s : Nat) (jm : Std.TreeMap String String) : Nat :=
+      if jm.get? "alice" == some "p" && jm.get? "bob" == some "q" then 99
+      else controlTrans s jm
+    match mkCgs (Std.TreeSet.ofList [0, 1, 2, 3]) (Std.TreeSet.ofList ["alice", "bob"])
+        controlMoves escapingTrans controlLabel with
+    | .error _ => true
+    | .ok _ => false⟩,
+  ⟨"Not in gamen-hs: availableMoves cgs 0 \"alice\" = {\"not-p\",\"p\"}",
+    match controlCgs with
+    | .ok cgs => availableMoves cgs 0 "alice" == Std.TreeSet.ofList ["not-p", "p"]
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs: jointMoves over {alice} at any state has the 2 alice-only moves",
+    match controlCgs with
+    | .ok cgs =>
+      let jms := jointMoves cgs (Std.TreeSet.ofList ["alice"]) 0
+      jms.length == 2
+      && jms.any (fun m => m.get? "alice" == some "p" && m.get? "bob" == none)
+      && jms.any (fun m => m.get? "alice" == some "not-p" && m.get? "bob" == none)
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs: jointMoves over the grand coalition has all 4 (alice, bob) combinations",
+    match controlCgs with
+    | .ok cgs =>
+      let jms := jointMoves cgs (Std.TreeSet.ofList ["alice", "bob"]) 0
+      jms.length == 4
+      && jms.any (fun m => m.get? "alice" == some "p" && m.get? "bob" == some "q")
+      && jms.any (fun m => m.get? "alice" == some "p" && m.get? "bob" == some "not-q")
+      && jms.any (fun m => m.get? "alice" == some "not-p" && m.get? "bob" == some "q")
+      && jms.any (fun m => m.get? "alice" == some "not-p" && m.get? "bob" == some "not-q")
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs: applyJointMove matches the control game's transition table",
+    match controlCgs with
+    | .ok cgs =>
+      applyJointMove cgs 0 (Std.TreeMap.ofList [("alice", "p"), ("bob", "q")]) == 0
+      && applyJointMove cgs 0 (Std.TreeMap.ofList [("alice", "p"), ("bob", "not-q")]) == 1
+      && applyJointMove cgs 0 (Std.TreeMap.ofList [("alice", "not-p"), ("bob", "q")]) == 2
+      && applyJointMove cgs 0 (Std.TreeMap.ofList [("alice", "not-p"), ("bob", "not-q")]) == 3
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs, but PaperCorrespondence.hs ~1292–1299 (\"[{alice}]p holds at ALL \
+    states\"): preC(control, {alice}, {0,1}) = all four states — alice's move \"p\" \
+    lands in {0,1} regardless of bob",
+    match controlCgs with
+    | .ok cgs => preC cgs (Std.TreeSet.ofList ["alice"]) (Std.TreeSet.ofList [0, 1]) == cgs.cgsStates
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs, but PaperCorrespondence.hs ~1301–1304 (\"[{alice}]q at state 0 is \
+    FALSE\"): preC(control, {alice}, {0,2}) = ∅ — alice cannot force q against bob",
+    match controlCgs with
+    | .ok cgs => preC cgs (Std.TreeSet.ofList ["alice"]) (Std.TreeSet.ofList [0, 2]) == ∅
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs, but PaperCorrespondence.hs ~1306–1307 (\"[{bob}]q at state 0\"): \
+    preC(control, {bob}, {0,2}) = all four states — bob's move \"q\" lands in {0,2} \
+    regardless of alice",
+    match controlCgs with
+    | .ok cgs => preC cgs (Std.TreeSet.ofList ["bob"]) (Std.TreeSet.ofList [0, 2]) == cgs.cgsStates
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs, but PaperCorrespondence.hs ~1319–1322 (\"[{}](p ∧ q) is FALSE\"): \
+    preC(control, ∅, {0}) = ∅ — the empty coalition can't out-force two adversaries",
+    match controlCgs with
+    | .ok cgs => preC cgs ∅ (Std.TreeSet.ofList [0]) == ∅
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs, but PaperCorrespondence.hs ~1312–1314 (\"[{alice,bob}](p ∧ q)\"): \
+    preC(control, {alice,bob}, {0}) = all four states — the grand coalition has no \
+    opponents and can just pick (p, q)",
+    match controlCgs with
+    | .ok cgs =>
+      preC cgs (Std.TreeSet.ofList ["alice", "bob"]) (Std.TreeSet.ofList [0]) == cgs.cgsStates
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs: preC(control, {alice}, {1,3}) = ∅ — alice's move alone doesn't decide \
+    membership in {1,3} (that also depends on bob's move, which alice doesn't control), \
+    unlike {0,1}/{0,2} where one of alice's two moves happens to decide it either way \
+    (this fixture is chosen to fail if opponents are computed as the coalition itself \
+    instead of its complement, since that bug still gets {0,1}/{0,2} right by accident)",
+    match controlCgs with
+    | .ok cgs => preC cgs (Std.TreeSet.ofList ["alice"]) (Std.TreeSet.ofList [1, 3]) == ∅
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs, but PaperCorrespondence.hs ~1425–1431 (\"sat(⟨⟨alice⟩⟩Xq) = {0,1}\"): \
+    preC(loop, {alice}, {1}) = {0,1} — state 0 plays \"next\" into 1, state 1 plays \
+    \"stay\" and stays at 1, state 2 has no move into 1",
+    match loopCgs with
+    | .ok cgs => preC cgs (Std.TreeSet.ofList ["alice"]) (Std.TreeSet.ofList [1]) == Std.TreeSet.ofList [0, 1]
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs, but PaperCorrespondence.hs ~1443–1448 (\"sat(⟨⟨alice⟩⟩Xp) = {1,2}\", \
+    i.e. preC(loop,{alice},{0}) = {0,2}): state 0 stays at 0, state 2 plays \"next\" into \
+    0, state 1 has no move into 0",
+    match loopCgs with
+    | .ok cgs => preC cgs (Std.TreeSet.ofList ["alice"]) (Std.TreeSet.ofList [0]) == Std.TreeSet.ofList [0, 2]
+    | .error _ => false⟩
+]
+
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
       ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ temporalCases ++ doxasticCases ++ rankingTheoryCases
       ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
-      ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases do
+      ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases ++ cgsCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
@@ -2718,6 +2901,6 @@ def main : IO UInt32 := do
     + fragmentCases.length + temporalCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
     + deonticStitCases.length + counterModelCases.length + closureCases.length
-    + crossCheckCases.length + properties.length
+    + crossCheckCases.length + cgsCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

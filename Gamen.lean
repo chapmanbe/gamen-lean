@@ -18,6 +18,7 @@ import Gamen.Fragment
 import Gamen.Notation
 import Gamen.Protocol
 import Gamen.Teaching
+import Gamen.Cgs
 
 /-!
 # gamen

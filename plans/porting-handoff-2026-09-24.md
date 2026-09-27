@@ -1,4 +1,5 @@
 # Implementation Plan: continue the gamen-hs → Lean port (wave 2 onward)
+*Superseded by `plans/porting-handoff-2026-09-26.md` (kept as a dated record).*
 *Written 2026-09-24 at the close of a porting/design session. Read this once; continue against it.*
 
 ## Objective

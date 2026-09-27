@@ -77,6 +77,9 @@ parentheses):
    announcement-restriction memo as an explicit lazy memo (CLAUDE.md,
    Laziness). Unblocks: `WorldGuardsSpec` `eSatisfies` case, two Doxastic
    PaperCorrespondence blocks, `ArbEpistemicModel` generator.
+   **Before starting:** brainstorm the porting strategy with the user
+   (`superpowers:brainstorming`), especially the lazy memo's design, and
+   agree on it before launching the porter.
 5. **Laca** (sonnet) — Cgs, Formula; `Laca.trajectory` goes through the
    shared fuel-checked fixpoint helper. Unblocks `lSatisfies` guard test.
 6. **Coalition** (sonnet), **Atl.Strategy**, **Atl.ModelCheck**, **Atl**
@@ -146,7 +149,8 @@ Then wave 5 (Dcleg, `protocol/Service/*`, service, `app/Main.hs`).
    approval.
 3. `/port-module Stit` (include the `checkIndependence` early-exit rework).
 4. `/port-module Xstit`.
-5. `/port-module Epistemic` (lazy memo; then port the unblocked
+5. Brainstorm the Epistemic porting strategy with the user first, then
+   `/port-module Epistemic` (lazy memo; then port the unblocked
    WorldGuards/Doxastic tests and `ArbEpistemicModel`).
 6. `/port-module Laca`, then Coalition, Atl.Strategy, Atl.ModelCheck, Atl,
    Atel, Atl.ImperfectInfo.

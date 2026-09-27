@@ -513,6 +513,76 @@ def pick (k : Nat) : Gen Nat := do
   let ⟨i, _⟩ ← Gen.choose Nat 0 (k - 1) (by omega)
   return i
 
+/-! ### `checkIndependence` rework check (Not in gamen-hs)
+
+`Gamen.Kripke.checkIndependence` was reworked (per `PORTING.md`'s Stit
+row) from building every combination via `sections` to a depth-first
+search that prunes as soon as a running intersection is empty. This
+section keeps the pre-rework implementation, under a different name, so a
+property test can confirm the two always agree — the two implementations
+are compared directly rather than against some independent semantic
+definition, since "checks every combination of one choice cell per agent
+has a non-empty intersection" *is* the definition. -/
+
+/-- The pre-rework `Kripke.checkIndependence`, built on `Gamen.sections`:
+kept only so `legacyCheckIndependence agrees with checkIndependence`
+below can cross-check the depth-first rework against it. Identical to the
+Haskell's own `checkIndependence` (`Kripke.hs` ~133–147). -/
+def legacyCheckIndependence {agent : Type} (choiceCell : agent → World → Std.TreeSet World)
+    (agents : List agent) (mom : Std.TreeSet World) : Bool :=
+  match agents with
+  | [] => true
+  | _ :: _ =>
+      let choiceCells (a : agent) : List (Std.TreeSet World) :=
+        (mom.toList.map (choiceCell a)).eraseDupsBy (fun s t => s.toList == t.toList)
+      let combinations := sections (agents.map choiceCells)
+      combinations.all fun cells =>
+        match cells with
+        | [] => true
+        | c :: cs => !(cs.foldl (· ∩ ·) c).isEmpty
+
+/-- A random independence instance: up to 4 worlds, up to 3 agents (named
+by position, `0, 1, …`), each agent's choice cells built by assigning
+every world a random "group" out of up to 3 (agents sharing a group at a
+world put that world in the same cell) — so cells need not be a genuine
+partition-respecting equivalence relation across agents, which is exactly
+what `checkIndependence` has to cope with. -/
+structure IndependenceInstance where
+  /-- `perAgent[a]` is agent `a`'s `(world, groupId)` assignment; every
+  agent shares the same world list, in the same order. -/
+  perAgent : List (List (World × Nat))
+  deriving Repr
+
+def IndependenceInstance.worlds (inst : IndependenceInstance) : List World :=
+  match inst.perAgent.head? with
+  | none => []
+  | some row => row.map Prod.fst
+
+def IndependenceInstance.agents (inst : IndependenceInstance) : List Nat :=
+  List.range inst.perAgent.length
+
+/-- Agent `a`'s choice cell at world `w`: every world sharing `w`'s group
+in `a`'s row. -/
+def IndependenceInstance.choiceCell (inst : IndependenceInstance) (a : Nat) (w : World) :
+    Std.TreeSet World :=
+  match (inst.perAgent.getD a []).lookup w with
+  | none => ∅
+  | some g => Std.TreeSet.ofList
+      ((inst.perAgent.getD a []).filter (fun (_, g') => g' == g) |>.map Prod.fst)
+
+def genIndependenceInstance : Gen IndependenceInstance := do
+  let numWorlds ← (· + 1) <$> pick 4
+  let worlds := (List.range numWorlds).map fun i => s!"w{i + 1}"
+  let numAgents ← pick 4
+  let numGroups ← (· + 1) <$> pick 3
+  let perAgent ← (List.range numAgents).mapM fun _ => do
+    let groups ← worlds.mapM fun _ => pick numGroups
+    pure (worlds.zip groups)
+  pure { perAgent }
+
+instance : Arbitrary IndependenceInstance := ⟨genIndependenceInstance⟩
+instance : Shrinkable IndependenceInstance where shrink _ := []
+
 /-- An atom from `atoms`, or `⊥` with probability `1/(|atoms|+1)`. -/
 def genXLeaf (atoms : List String) : Gen Formula := do
   let i ← pick (atoms.length + 1)

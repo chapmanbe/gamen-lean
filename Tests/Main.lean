@@ -12,6 +12,7 @@ import Gamen.DeonticStit.Saturation
 import Gamen.DeonticStit.Prove
 import Gamen.DeonticStit.CounterModel
 import Gamen.Cgs
+import Gamen.Stit
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
@@ -28,17 +29,22 @@ of a Haskell `it`), `test/FramePropertiesSpec.hs`, `test/KripkeSemanticsSpec.hs`
 the "Boxes & Diamonds Ch. 1 (Zach 2019)" block of `test/PaperCorrespondence.hs`
 (split between `framePropertiesCases`, for the `isValidOnFrame`-exercising
 "Definition 1.11" slice, and `semanticsCases`, for the rest — see
-`semanticsCases` for the full list; no `PaperCorrespondence.hs` section
-exercises `dstit`/`commitment` yet — those are only reached through
-`Gamen.Stit`/`Gamen.Laca`, both not yet ported), the `toNNF` properties from
+`semanticsCases` for the full list), the `toNNF` properties from
 `test/Properties.hs`, run with Plausible instead of QuickCheck, `Gamen.Fragment`
 (`test/RegressionIssue18.hs`'s "A2" describe block, plus the fragment-boundary
 assertions from `test/Properties.hs`'s "issue #25" `it`, all five steps — see
 `fragmentCases`), `test/TemporalSpec.hs` in full plus the `Gamen.Temporal`
-blocks of `test/PaperCorrespondence.hs` (`temporalCases`), and `Gamen.Kripke`'s "B7: Kripke /
+blocks of `test/PaperCorrespondence.hs` (`temporalCases`), `Gamen.Kripke`'s "B7: Kripke /
 FrameProperties dangling-edge and class fixes" describe block from the
-same file (see `kripkeCases`).
--/
+same file (see `kripkeCases`), and `test/StitSpec.hs` in full plus the
+"Lorini (2013) — Temporal STIT logic" block of `test/PaperCorrespondence.hs`,
+one `test/WorldGuardsSpec.hs` `it`, and the Stit-side `it`s of
+`test/RegressionIssue18.hs`'s "B1: unknown agent errors, never vacuous
+truth" and "B7: isValidStitFrame enforces Lorini Def. 1 typing" blocks
+(`stitCases`/`stitPaperCorrespondenceCases`/`stitRegressionCases`;
+`dstit`/`commitment` themselves live in `Gamen.Formula`, already exercised
+by `formulaCases`, so this is `Gamen.Stit`'s own model/semantics/
+frame-condition coverage). -/
 open Gamen Plausible
 
 /-! ## A tiny hspec-like harness -/
@@ -53,6 +59,22 @@ def q : Formula := .atom "q"
 def proves (prem : List Formula) (c : Formula) : Bool :=
   tableauProves systemK defaultMaxSteps prem c == .definitely true
 def consistent (fs : List Formula) : Verdict := tableauConsistent systemK defaultMaxSteps fs
+
+/-- `e` succeeded with value `v`; an error fails. Used throughout to
+compare `Except`-returning satisfaction functions (`sSatisfies`,
+`dsSatisfies`, …) against `.ok v`, so an error fails the case whichever
+answer was expected — see the `rankingTheoryCases` docstring below for the
+convention this and `isErr` follow. -/
+def okIs [BEq α] (e : Except String α) (v : α) : Bool :=
+  match e with
+  | .ok a => a == v
+  | .error _ => false
+
+/-- `e` is an error (Haskell `shouldThrow anyErrorCall`). -/
+def isErr (e : Except String α) : Bool :=
+  match e with
+  | .ok _ => false
+  | .error _ => true
 
 /-- Countermodel for □p → p: build, take the first open branch, extract,
 and confirm the formula is false in the extracted model. -/
@@ -750,6 +772,222 @@ def kripkeCases : List Case := [
     && checkIndependence independentCell ["a", "b"] ∅ == true⟩
 ]
 
+/-! ## Stit (`Gamen.Stit`)
+
+Port of `test/StitSpec.hs` in full (all 21 `it`s), the "Lorini (2013) —
+Temporal STIT logic" describe block of `test/PaperCorrespondence.hs` (all
+15 `it`s — the only such block Stit unblocks; every other block mentioning
+`Stit`/`ChoiceDiamond`/`GroupStit` is inside a DeonticStit fixture and
+already ported in `deonticStitCases`/`counterModelCases`), and one `it`
+from `test/WorldGuardsSpec.hs`'s "World-existence guards (gamen-hs#7)"
+block ("sSatisfies errors on world not in StitModel") that this port
+unblocks — its siblings (`eSatisfies`/`xSatisfies`/`lSatisfies`) still need
+`Gamen.Epistemic`/`.Xstit`/`.Laca`.
+
+`agentAccessible`/`choiceCell` and `sSatisfies`/`sIsTrueIn` return
+`Except`; results are compared with `okIs`/`isErr` or, for `Except (Std.
+TreeSet World)`, `okIs` again (it needs only `BEq`), never unwrapped. -/
+
+/-- StitSpec.hs's shared fixture: a single moment `{w1, w2}`. Agent "a"
+distinguishes w1 from w2 (choice cells `{w1}`, `{w2}`); agent "b" is
+trivial (one cell `{w1, w2}`). No future (R_G = ∅). -/
+def stitFrame : StitFrame :=
+  mkStitFrame ["w1", "w2"]
+    [("w1", "w1"), ("w1", "w2"), ("w2", "w1"), ("w2", "w2")]
+    [ ("a", [("w1", "w1"), ("w2", "w2")])
+    , ("b", [("w1", "w1"), ("w1", "w2"), ("w2", "w1"), ("w2", "w2")]) ]
+    []
+
+def stitModel : StitModel :=
+  mkStitModel stitFrame [("p", ["w1"]), ("q", ["w2"])]
+
+def stitCases : List Case := [
+  -- describe "STIT formula construction"
+  ⟨"displays Stit, ChoiceDiamond, GroupStit",
+    toString (Formula.stit "i" p) == "[i]p"
+    && toString (Formula.choiceDiamond "i" p) == "<i>p"
+    && toString (Formula.groupStit p) == "[Agt]p"⟩,
+  ⟨"STIT formulas are not modal-free",
+    !(Formula.stit "i" p).isModalFree
+    && !(Formula.choiceDiamond "i" p).isModalFree
+    && !(Formula.groupStit p).isModalFree⟩,
+  ⟨"collects atoms from STIT formulas",
+    (Formula.stit "i" (.implies p q)).atoms.toList == [(⟨"p"⟩ : Atom), ⟨"q"⟩]
+    && (Formula.choiceDiamond "i" p).atoms.toList == [(⟨"p"⟩ : Atom)]
+    && (Formula.groupStit p).atoms.toList == [(⟨"p"⟩ : Atom)]⟩,
+  ⟨"dstit smart constructor uses Box for settledness",
+    Formula.dstit "i" p == .and (.stit "i" p) (.not (.box p))⟩,
+  -- describe "STIT model construction"
+  ⟨"builds frame with correct worlds", stitFrame.sWorlds.size == 2⟩,
+  ⟨"auto-computes R_Agt as intersection of R_i",
+    sAccessible stitFrame.rGrandCoal "w1" == Std.TreeSet.ofList ["w1"]
+    && sAccessible stitFrame.rGrandCoal "w2" == Std.TreeSet.ofList ["w2"]⟩,
+  ⟨"moment returns R_□ equivalence class",
+    moment stitFrame "w1" == Std.TreeSet.ofList ["w1", "w2"]⟩,
+  ⟨"choiceCell returns R_i equivalence class",
+    okIs (choiceCell stitFrame "a" "w1") (Std.TreeSet.ofList ["w1"])
+    && okIs (choiceCell stitFrame "a" "w2") (Std.TreeSet.ofList ["w2"])
+    && okIs (choiceCell stitFrame "b" "w1") (Std.TreeSet.ofList ["w1", "w2"])⟩,
+  -- describe "STIT satisfaction"
+  ⟨"evaluates [i]phi (agent stit)",
+    okIs (sSatisfies stitModel "w1" (.stit "a" p)) true
+    && okIs (sSatisfies stitModel "w2" (.stit "a" p)) false
+    && okIs (sSatisfies stitModel "w1" (.stit "b" p)) false⟩,
+  ⟨"evaluates [Agt]phi (grand coalition stit)",
+    okIs (sSatisfies stitModel "w1" (.groupStit p)) true
+    && okIs (sSatisfies stitModel "w2" (.groupStit p)) false⟩,
+  ⟨"evaluates □phi (historical necessity, was Settled)",
+    okIs (sSatisfies stitModel "w1" (.box p)) false
+    && okIs (sSatisfies stitModel "w1" (.box (.or p q))) true⟩,
+  ⟨"evaluates ◇phi (historical possibility)",
+    okIs (sSatisfies stitModel "w1" (.diamond p)) true⟩,
+  ⟨"evaluates <i>phi (choice diamond, dual of [i])",
+    okIs (sSatisfies stitModel "w1" (.choiceDiamond "a" p)) true
+    && okIs (sSatisfies stitModel "w2" (.choiceDiamond "a" p)) false
+    && okIs (sSatisfies stitModel "w1" (.choiceDiamond "b" p)) true⟩,
+  ⟨"evaluates deliberative stit",
+    okIs (sSatisfies stitModel "w1" (Formula.dstit "a" p)) true
+    && okIs (sSatisfies stitModel "w1" (Formula.dstit "a" (.or p q))) false⟩,
+  ⟨"evaluates temporal operators (vacuous with no future)",
+    okIs (sSatisfies stitModel "w1" (.futureBox p)) true
+    && okIs (sSatisfies stitModel "w1" (.futureDiamond p)) false⟩,
+  -- describe "STIT frame constraint checking"
+  ⟨"valid frame passes all constraints", isValidStitFrame stitFrame == true⟩,
+  ⟨"C1: R_i must be subset of R_□",
+    checkC1 stitFrame == true
+    -- A frame where agent sees across moments fails C1
+    && checkC1 (mkStitFrame ["w1", "w2"]
+          [("w1", "w1"), ("w2", "w2")]
+          [("a", [("w1", "w1"), ("w1", "w2"), ("w2", "w1"), ("w2", "w2")])]
+          []) == false⟩,
+  ⟨"C2: independence of agents", checkC2 stitFrame == true⟩,
+  ⟨"C3: R_Agt is intersection of R_i", checkC3 stitFrame == true⟩,
+  ⟨"C7: R_G irreflexive within R_□ classes",
+    checkC7 stitFrame == true
+    -- A frame with future within the same moment would fail
+    && checkC7 (mkStitFrame ["w1", "w2"]
+          [("w1", "w1"), ("w1", "w2"), ("w2", "w1"), ("w2", "w2")]
+          []
+          [("w1", "w2")]) == false⟩,
+  ⟨"sIsTrueIn checks all worlds",
+    okIs (sIsTrueIn stitModel (.or p q)) true
+    && okIs (sIsTrueIn stitModel p) false⟩,
+  -- WorldGuardsSpec.hs:29, "sSatisfies errors on world not in StitModel"
+  -- (gamen-hs#7).
+  ⟨"sSatisfies errors on world not in StitModel",
+    let sfr := mkStitFrame ["a", "b"] [("a", "a"), ("a", "b"), ("b", "b")]
+      [("ag", [("a", "a"), ("b", "b")])] []
+    let sm := mkStitModel sfr [("p", ["a", "b"]), ("q", ["b"]), ("r", ["a"])]
+    let probeFormula : Formula :=
+      .implies (.or (.atom "p") (.atom "q")) (.and (.not (.atom "q")) (.atom "r"))
+    okIs (sSatisfies sm "a" probeFormula) true
+      && isErr (sSatisfies sm "c" probeFormula)⟩
+]
+
+/-! ### Lorini (2013) — Temporal STIT logic (`test/PaperCorrespondence.hs`)
+
+The only `PaperCorrespondence.hs` describe block Stit unblocks: "Lorini
+(2013) — Temporal STIT logic", Definition 1 (pp. 373–374) and Example 5
+(p. 376), all 15 `it`s. -/
+
+/-- Definition 1 (Lorini 2013, pp. 373–374): minimal two-world T-STIT
+frame. W = {w1,w2}, one moment {w1,w2}. Agent "a": one big choice {w1,w2}.
+Agent "b": two singleton choices. R_G = ∅ (no temporal structure needed for
+C1–C7 / semantic tests). -/
+def miniStitFrame : StitFrame :=
+  mkStitFrame ["w1", "w2"]
+    [("w1", "w1"), ("w1", "w2"), ("w2", "w1"), ("w2", "w2")]
+    [ ("a", [("w1", "w1"), ("w1", "w2"), ("w2", "w1"), ("w2", "w2")])
+    , ("b", [("w1", "w1"), ("w2", "w2")]) ]
+    []
+
+def miniStitModel : StitModel :=
+  mkStitModel miniStitFrame [("p", ["w1"])]
+
+/-- Frame violating C1: agent "a"'s choice spans two singleton moments. -/
+def c1ViolFrame : StitFrame :=
+  mkStitFrame ["w1", "w2"]
+    [("w1", "w1"), ("w2", "w2")]
+    [("a", [("w1", "w1"), ("w1", "w2"), ("w2", "w1"), ("w2", "w2")])]
+    []
+
+/-- Frame violating C7: w2 is in the same moment as w1 yet also in
+R_G(w1). -/
+def c7ViolFrame : StitFrame :=
+  mkStitFrame ["w1", "w2"]
+    [("w1", "w1"), ("w1", "w2"), ("w2", "w1"), ("w2", "w2")]
+    [("a", [("w1", "w1"), ("w1", "w2"), ("w2", "w1"), ("w2", "w2")])]
+    [("w1", "w2")]
+
+def stitPaperCorrespondenceCases : List Case := [
+  -- describe "Definition 1 (pp. 373–374): T-STIT frame constraints C1–C7"
+  ⟨"C1 (p. 373): checkC1 miniStitFrame = True — every R_i is a subset of R_□",
+    checkC1 miniStitFrame == true⟩,
+  ⟨"C1 violated: checkC1 c1ViolFrame = False — agent choice spans two singleton moments",
+    checkC1 c1ViolFrame == false⟩,
+  ⟨"C2 (p. 374): checkC2 miniStitFrame = True — cross-agent choice selections have nonempty intersection",
+    checkC2 miniStitFrame == true⟩,
+  ⟨"C3 (p. 374): checkC3 miniStitFrame = True — R_Agt equals pointwise intersection of R_i",
+    checkC3 miniStitFrame == true⟩,
+  ⟨"C7 (p. 374): checkC7 miniStitFrame = True — no world in the moment is in its R_G future",
+    checkC7 miniStitFrame == true⟩,
+  ⟨"C7 violated: checkC7 c7ViolFrame = False — w2 ∈ R_□(w1) yet w2 ∈ R_G(w1)",
+    checkC7 c7ViolFrame == false⟩,
+  ⟨"isValidStitFrame miniStitFrame = True — satisfies all C1–C7",
+    isValidStitFrame miniStitFrame == true⟩,
+  ⟨"isValidStitFrame c1ViolFrame = False — fails C1",
+    isValidStitFrame c1ViolFrame == false⟩,
+  -- describe "Definition 1 (p. 373): moment and choice-cell accessors"
+  ⟨"moment w1 = {w1,w2}: both worlds share the same R_□ equivalence class",
+    moment miniStitFrame "w1" == Std.TreeSet.ofList ["w1", "w2"]⟩,
+  ⟨"choiceCell b w1 = {w1}: agent b has a singleton choice at w1",
+    okIs (choiceCell miniStitFrame "b" "w1") (Std.TreeSet.ofList ["w1"])⟩,
+  -- describe "Example 5 (p. 376): semantics of [i]φ, □φ, ⟨Agt⟩φ, ⟨i⟩φ"
+  ⟨"[b stit]p = True at w1: b's choice cell {w1} ⊆ V(p)",
+    okIs (sSatisfies miniStitModel "w1" (.stit "b" p)) true⟩,
+  ⟨"[a stit]p = False at w1: a's choice {w1,w2} includes w2 ∉ V(p)",
+    okIs (sSatisfies miniStitModel "w1" (.stit "a" p)) false⟩,
+  ⟨"□p = False at w1: moment {w1,w2} includes w2 ∉ V(p)",
+    okIs (sSatisfies miniStitModel "w1" (.box p)) false⟩,
+  ⟨"[Agt stit]p = True at w1: grand coalition cell {w1} ⊆ V(p)",
+    okIs (sSatisfies miniStitModel "w1" (.groupStit p)) true⟩,
+  ⟨"⟨a⟩p = True at w1: a's choice {w1,w2} contains w1 ∈ V(p)",
+    okIs (sSatisfies miniStitModel "w1" (.choiceDiamond "a" p)) true⟩
+]
+
+/-! ### RegressionIssue18.hs: Stit-side "B1" and "B7" blocks
+
+Both unblocked by this port:
+
+* "B1: unknown agent errors, never vacuous truth" — the two `Stit: …` `it`s
+  (the two `Epistemic: …` sibling `it`s need `Gamen.Epistemic`, not yet
+  ported).
+* "B7: isValidStitFrame enforces Lorini Def. 1 typing" — all 3 `it`s.
+  `checkTyping` presupposes typing (R_□, each R_i, and R_Agt are
+  equivalence relations; R_G is transitive) that C1–C7 alone don't enforce;
+  before `checkTyping` existed, the C1–C7-only validator wrongly accepted a
+  frame with a non-transitive R_G. -/
+
+def stitRegressionCases : List Case :=
+  -- B1 fixture: a single reflexive world, one agent "a" whose relation is
+  -- the identity.
+  let b1Model := mkStitModel (mkStitFrame ["w"] [("w", "w")] [("a", [("w", "w")])] [])
+    [("p", ["w"])]
+  -- B7 fixture: three singleton moments with a non-transitive R_G
+  -- (w1→w2, w2→w3, but NOT w1→w3). This satisfies every interaction
+  -- constraint C1–C7, yet R_G is not transitive, so the frame is not a
+  -- T-STIT frame.
+  let ntFrame := mkStitFrame ["w1", "w2", "w3"]
+    [("w1", "w1"), ("w2", "w2"), ("w3", "w3")]
+    [("a", [("w1", "w1"), ("w2", "w2"), ("w3", "w3")])]
+    [("w1", "w2"), ("w2", "w3")]
+  [ ⟨"Stit: a known agent evaluates normally", okIs (sSatisfies b1Model "w" (.stit "a" p)) true⟩,
+    ⟨"Stit: [typo]⊥ errors (not vacuously true)", isErr (sSatisfies b1Model "w" (.stit "typo" .bot))⟩,
+    ⟨"the frame still satisfies C1 and C7", checkC1 ntFrame == true && checkC7 ntFrame == true⟩,
+    ⟨"checkTyping rejects the non-transitive R_G", checkTyping ntFrame == false⟩,
+    ⟨"isValidStitFrame now rejects it (was accepted under C1–C7 only)",
+      isValidStitFrame ntFrame == false⟩ ]
+
 /-! ## Semantics (`Gamen.Semantics`)
 
 Port of `test/KripkeSemanticsSpec.hs` (all 9 `it`s), the rest of
@@ -1233,26 +1471,15 @@ in full (15 `it`s), then "B4: ranking theory κ=∞ no longer leaks into
 arithmetic" from `test/RegressionIssue18.hs` (5 `it`s). An `it` with several
 `shouldBe`s is one case joining them with `&&`.
 
-Every `Except` result is compared against `.ok v` (`okIs`), so an error
-fails the case whichever answer was expected; the Haskell `shouldThrow`
-cases check for `.error` (`isErr`). Tableau verdicts are compared against
-`.definitely true`/`.definitely false`, so budget exhaustion fails too.
+Every `Except` result is compared against `.ok v` (`okIs`, defined near
+the top of this file alongside `Case`/`p`/`q`), so an error fails the case
+whichever answer was expected; the Haskell `shouldThrow` cases check for
+`.error` (`isErr`). Tableau verdicts are compared against `.definitely
+true`/`.definitely false`, so budget exhaustion fails too.
 
 One case name differs from the Haskell: "conditionalize is overwrite, not
 additive (Spohn p.117)" cites p.118 here, where the quoted passage is in
 `notes/spohn1988-ordinal-conditional-functions.pdf`. -/
-
-/-- `e` succeeded with value `v`; an error fails. -/
-def okIs [BEq α] (e : Except String α) (v : α) : Bool :=
-  match e with
-  | .ok a => a == v
-  | .error _ => false
-
-/-- `e` is an error (Haskell `shouldThrow anyErrorCall`). -/
-def isErr (e : Except String α) : Bool :=
-  match e with
-  | .ok _ => false
-  | .error _ => true
 
 def rkX : Formula := .atom "X"
 
@@ -2440,6 +2667,17 @@ def properties : List (String × IO Bool) :=
     -- Gamen.RankingTheory: structural invariants — the two `isContingent
     -- ⇒ …` properties now live in `Tests/SlowMain.lean` alongside the
     -- other five `==>`-shaped properties (see the comment above).
+    --
+    -- Gamen.Kripke: not in gamen-hs. `checkIndependence` was reworked from
+    -- building every combination via `sections` to an early-exit,
+    -- depth-first search (`PORTING.md`'s Stit row); this checks the two
+    -- implementations agree on every instance, not just the fixed cases in
+    -- `kripkeCases`.
+    ("checkIndependence agrees with the sections-based search it replaced",
+      run (NamedBinder "inst" <| ∀ inst : IndependenceInstance,
+        (let mom := Std.TreeSet.ofList inst.worlds
+         checkIndependence inst.choiceCell inst.agents mom
+           == legacyCheckIndependence inst.choiceCell inst.agents mom) = true) 300),
     ]
 where
   toNNF := Formula.toNNF
@@ -2918,7 +3156,8 @@ def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
-      ++ kripkeCases ++ semanticsCases ++ fragmentCases ++ temporalCases ++ doxasticCases ++ rankingTheoryCases
+      ++ kripkeCases ++ stitCases ++ stitPaperCorrespondenceCases ++ stitRegressionCases
+      ++ semanticsCases ++ fragmentCases ++ temporalCases ++ doxasticCases ++ rankingTheoryCases
       ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
       ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases ++ cgsCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
@@ -2929,7 +3168,8 @@ def main : IO UInt32 := do
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
   let total := unitCases.length + tableauCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
-    + framePropertiesCases.length + kripkeCases.length + semanticsCases.length
+    + framePropertiesCases.length + kripkeCases.length
+    + stitCases.length + stitPaperCorrespondenceCases.length + stitRegressionCases.length + semanticsCases.length
     + fragmentCases.length + temporalCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
     + deonticStitCases.length + counterModelCases.length + closureCases.length

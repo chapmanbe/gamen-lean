@@ -133,7 +133,10 @@ Haskell's `sequence :: [[a]] -> [[a]]` for the list monad exactly
 (the *last* list varies fastest): `sections [[1,2],[3,4]] =
 [[1,3],[1,4],[2,3],[2,4]]`. Batteries' `List.sections` enumerates in a
 different order (assessment §2); this 4-line local definition keeps the
-Haskell order instead of adding the dependency. -/
+Haskell order instead of adding the dependency. Shared with
+`Tests/PropertyHelpers.lean`'s `genDSModel`; `checkIndependence` below
+used to build its search space this way but now searches depth-first
+instead (see its docstring). -/
 def sections {α : Type} : List (List α) → List (List α)
   | [] => [[]]
   | xs :: rest =>
@@ -146,22 +149,32 @@ For any selection of one choice cell per agent, the intersection must be
 non-empty. The first argument is a function returning an agent's choice
 cell at a given world.
 
-Haskell's `foldl1 Set.intersection` is partial on an empty list; that
-case is unreachable there because the empty-agent case returns `True`
-first. Here the same case split keeps `combinations.all` total: a
-selection with no cells never has to be folded. -/
+Haskell's `all` walks a lazily-built `sequence` and stops at the first
+combination whose intersection is empty, but never prunes *within* a
+combination: each one it does look at still folds all of its cells before
+`all` can move on. An earlier Lean version built the entire `sections`
+list before checking any combination — the exact laziness this module's
+`sections` was written to avoid, since `sections` itself is strict. This
+version instead searches depth-first, one agent at a time, carrying the
+intersection of the cells chosen so far: once that running intersection is
+empty, no cell chosen for a later agent can grow it back, so the whole
+branch is pruned without visiting the remaining agents at all. Same
+Boolean result on every input as the `sections`-based version (checked by
+the "checkIndependence agrees with the sections-based search" property in
+`Tests/Main.lean`), not necessarily the same combination Haskell's laziness
+would have stopped on. -/
 def checkIndependence {agent : Type} (choiceCell : agent → World → Std.TreeSet World)
     (agents : List agent) (mom : Std.TreeSet World) : Bool :=
-  match agents with
-  | [] => true
-  | _ :: _ =>
-      let choiceCells (a : agent) : List (Std.TreeSet World) :=
-        (mom.toList.map (choiceCell a)).eraseDupsBy (fun s t => s.toList == t.toList)
-      let combinations := sections (agents.map choiceCells)
-      combinations.all fun cells =>
-        match cells with
-        | [] => true
-        | c :: cs => !(cs.foldl (· ∩ ·) c).isEmpty
+  go agents none
+where
+  cellsFor (a : agent) : List (Std.TreeSet World) :=
+    (mom.toList.map (choiceCell a)).eraseDupsBy (fun s t => s.toList == t.toList)
+  go : List agent → Option (Std.TreeSet World) → Bool
+    | [], _ => true
+    | a :: rest, acc =>
+        (cellsFor a).all fun cell =>
+          let acc' : Std.TreeSet World := acc.elim cell (· ∩ cell)
+          !acc'.isEmpty && go rest (some acc')
 
 -- --------------------------------------------------------------------
 -- Shared fixpoint iteration, with fuel

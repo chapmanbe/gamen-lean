@@ -2702,10 +2702,14 @@ def crossCheckCases : List Case :=
 
 /-! ## Cgs (`Gamen.Cgs`)
 
-There is no `test/CgsSpec.hs` in gamen-hs, and the `Cgs`-exercising
-`PaperCorrespondence.hs` sections all reach it only through `Coalition`,
-`Atl`/`Atl.ModelCheck`, `Atel`, or `Laca`'s `lacaToCgs`, none ported yet
-(`PORTING.md`):
+There is no `test/CgsSpec.hs` in gamen-hs, but `test/RegressionIssue18.hs`
+has a "B7: mkCgs rejects transitions that escape the state set" describe
+block (2 `it`s, lines 319–331), ported verbatim as `cgsCases`'s first two
+entries below (the same file's "B7: Kripke / FrameProperties dangling-edge
+and class fixes" block is `kripkeCases`, near `Tests/Main.lean:646`). Every
+other `Cgs`-exercising `PaperCorrespondence.hs` section reaches it only
+through `Coalition`, `Atl`/`Atl.ModelCheck`, `Atel`, or `Laca`'s
+`lacaToCgs`, none ported yet (`PORTING.md`):
 
 - "Pauly (2002) — Coalition Logic" (`coalSatisfies`, `checkTopEffectivity`,
   `checkBotMonotonicity`, `checkMonotonicity`, `checkSuperadditivity`: all
@@ -2721,19 +2725,25 @@ There is no `test/CgsSpec.hs` in gamen-hs, and the `Cgs`-exercising
   coercion sub-block (needs `Gamen.Laca`, and then `Gamen.Atl` again for
   `atlSatisfies`/`sat`/`CanNext`/`CanEventually`).
 
-So every case below is a not-in-spec sanity check on the raw `Cgs`
-primitives themselves (`mkCgs`, `availableMoves`, `jointMoves`,
-`applyJointMove`, `preC`), each flagged as such. The two fixtures are the
-`Cgs` values `PaperCorrespondence.hs` builds for the sections above —
-the "control game" (Pauly 2002, `Int` states/`String` actions, agents
-`alice`/`bob`) and the "loop" model (AHK 2002) — and the expected `preC`
-values are computed by hand from the Haskell file's own inline comments
-(cited below), not from the Lean code under test. Coverage of `mkCgs`'s
-two error branches (an agent with no moves at some state; a joint move
-escaping the state set) has no Haskell counterpart at all: `CgsSpec.hs`
-doesn't exist, so gamen-hs itself never exercises them; they matter for
-the same reason `Kripke.mkFrame`'s dangling-edge check does (adversarial
+So apart from the two `RegressionIssue18.hs` cases, every other case below
+is a not-in-spec sanity check on the raw `Cgs` primitives themselves
+(`mkCgs`, `availableMoves`, `jointMoves`, `applyJointMove`, `preC`), each
+flagged as such. The two fixtures used for those are the `Cgs` values
+`PaperCorrespondence.hs` builds for the sections above — the "control
+game" (Pauly 2002, `Int` states/`String` actions, agents `alice`/`bob`)
+and the "loop" model (AHK 2002) — and the expected `preC` values are
+computed by hand from the Haskell file's own inline comments (cited
+below), not from the Lean code under test. Coverage of `mkCgs`'s other
+error branch (an agent with no moves at some state) has no Haskell
+counterpart at all, not even in `RegressionIssue18.hs`; it matters for the
+same reason `Kripke.mkFrame`'s dangling-edge check does (adversarial
 review B7, cited in `Gamen.Cgs`'s `mkCgs` docstring). -/
+
+/-- `test/RegressionIssue18.hs:319–330`'s fixture, verbatim: states `{0,1}`,
+agents `{"a"}`, `mvs _ _ = {"go"}`, `lbl _ = ∅`. -/
+private def b7Moves (_ : Nat) (_ : String) : Std.TreeSet String := Std.TreeSet.ofList ["go"]
+
+private def b7Label (_ : Nat) : Std.TreeSet String := ∅
 
 /-- Pauly (2002) control game: `PaperCorrespondence.hs` ~1241–1262. Agent
 `alice` controls `p` (plays `"p"`/`"not-p"`), agent `bob` controls `q`
@@ -2779,6 +2789,18 @@ private def loopCgs : Except String (Cgs Nat String) :=
   mkCgs (Std.TreeSet.ofList [0, 1, 2]) (Std.TreeSet.ofList ["alice"]) loopMoves loopTrans loopLabel
 
 def cgsCases : List Case := [
+  -- RegressionIssue18.hs: "B7: mkCgs rejects transitions that escape the
+  -- state set" (lines 319–331).
+  ⟨"RegressionIssue18 B7: an escaping successor (→ state 9 ∉ states) is rejected",
+    match mkCgs (Std.TreeSet.ofList [0, 1]) (Std.TreeSet.ofList ["a"]) b7Moves
+        (fun _ _ => 9) b7Label with
+    | .error _ => true
+    | .ok _ => false⟩,
+  ⟨"RegressionIssue18 B7: a closed transition builds normally",
+    match mkCgs (Std.TreeSet.ofList [0, 1]) (Std.TreeSet.ofList ["a"]) b7Moves
+        (fun s _ => s) b7Label with
+    | .ok _ => true
+    | .error _ => false⟩,
   ⟨"Not in gamen-hs (no CgsSpec.hs): mkCgs accepts the Pauly (2002) control game \
     (non-empty moves for alice and bob at every state)",
     match controlCgs with
@@ -2867,6 +2889,16 @@ def cgsCases : List Case := [
     instead of its complement, since that bug still gets {0,1}/{0,2} right by accident)",
     match controlCgs with
     | .ok cgs => preC cgs (Std.TreeSet.ofList ["alice"]) (Std.TreeSet.ofList [1, 3]) == ∅
+    | .error _ => false⟩,
+  ⟨"Not in gamen-hs: preC(control, {bob}, {2}) = ∅ — bob alone can't force landing in \
+    exactly {2}: playing \"q\" also allows alice to steer to 0 (not 2), and playing \
+    \"not-q\" also allows alice to steer to 1 or 3 (not 2); the true opponent is alice, \
+    not bob himself (this is the {bob} mirror of the {alice} case above: emptying the \
+    opponents set, or setting it to the coalition, would wrongly make \"q\" sufficient, \
+    since q alone forces landing in {0,2} and this fixture's target set only contains \
+    one of the two)",
+    match controlCgs with
+    | .ok cgs => preC cgs (Std.TreeSet.ofList ["bob"]) (Std.TreeSet.ofList [2]) == ∅
     | .error _ => false⟩,
   ⟨"Not in gamen-hs, but PaperCorrespondence.hs ~1425–1431 (\"sat(⟨⟨alice⟩⟩Xq) = {0,1}\"): \
     preC(loop, {alice}, {1}) = {0,1} — state 0 plays \"next\" into 1, state 1 plays \

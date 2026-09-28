@@ -210,8 +210,10 @@ errors when `K_a`/`B_a` follows it, as in the Haskell.
 `[B]C` is true at `w` iff (M, w ⊩ B) implies (M|B, w ⊩ C). The restricted
 model is built here, on demand, only when `B` holds at `w` (see the module
 docstring on the Haskell's lazy table); building it evaluates `B` at every
-world of `M` in ascending order, and the first error there propagates, as
-Haskell's `restrictModel` would raise it. -/
+world of `M` in ascending order and raises the first error met. Haskell's
+`restrictModel` errors in exactly the same situations, but its `Set.filter`
+does not fix which world is evaluated first, so when two worlds error with
+different messages the message raised may differ. -/
 def eSatisfies (m : EpistemicModel) (w : World) (f : Formula) : Except String Bool := do
   unless m.eFrame.eWorlds.contains w do
     throw s!"eSatisfies: world {repr w} is not in model"

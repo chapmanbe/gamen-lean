@@ -1448,7 +1448,16 @@ def epistemicCases : List Case := [
   -- but reaches `□q` at w3 (where p is false), so the whole thing errors,
   -- as Haskell's `restrictModel` would.
   ⟨"Not in gamen-hs: [p ∨ □q]p at w1 errors — the restriction evaluates the body at every world",
-    isErr (eSatisfies eSpecMPA "w1" (.announce (.or p (.box q)) p))⟩
+    isErr (eSatisfies eSpecMPA "w1" (.announce (.or p (.box q)) p))⟩,
+  -- Not in gamen-hs (which has the same gap: every `commonKnowledge` case
+  -- there is settled by one step). R_G⁺ must reach w3 from w1 in two steps
+  -- (a: w1→w2, b: w2→w3), where p fails; a one-step "closure" sees only
+  -- w2 and answers true.
+  ⟨"Not in gamen-hs: common knowledge follows the transitive closure past one step",
+    let m := mkEpistemicModel
+      (mkEpistemicFrame ["w1", "w2", "w3"] [("a", [("w1", "w2")]), ("b", [("w2", "w3")])])
+      [("p", ["w1", "w2"])]
+    okIs (commonKnowledge m "w1" ["a", "b"] p) false⟩
 ]
 
 /-! ### PaperCorrespondence.hs: "B&D Chapter 15 — Epistemic Logics (Zach 2025)" -/
@@ -3264,6 +3273,18 @@ def properties : List (String × IO Bool) :=
         (let mom := Std.TreeSet.ofList inst.worlds
          checkIndependence inst.choiceCell inst.agents mom
            == legacyCheckIndependence inst.choiceCell inst.agents mom) = true) 300),
+    -- Gamen.Epistemic: not in gamen-hs. `commonKnowledge`'s closure was
+    -- rewritten from Haskell's BFS to `iterateToFixpoint`; this checks the
+    -- two agree (value or error alike) on random one-agent models, whose
+    -- random edge sets include multi-step chains, from the world "w1"
+    -- every generated model has.
+    ("commonKnowledge agrees with the breadth-first search it replaced",
+      run (NamedBinder "m" <| ∀ m : EpistemicModel, NamedBinder "f" <| ∀ f : PropFormula,
+        (match commonKnowledge m "w1" ["a"] f.getFormula,
+               bfsCommonKnowledge m "w1" ["a"] f.getFormula with
+         | .ok a, .ok b => a == b
+         | .error x, .error y => x == y
+         | _, _ => false) = true) 200),
     ]
 where
   toNNF := Formula.toNNF

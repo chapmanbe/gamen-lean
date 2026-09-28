@@ -152,6 +152,34 @@ QuickCheck's default (no shrinking) applies; same here. -/
 instance : Shrinkable EpistemicModel where
   shrink _ := []
 
+/-- Haskell `commonKnowledge`'s breadth-first `go` (`Epistemic.hs` ~300–307),
+with fuel: dequeues are bounded by the seed plus every visited world's
+out-degree, so `(n + 1)² + n + 1` for `n = |W| + Σ|targets|` suffices. -/
+private def bfsReach (step : World → List World) :
+    Nat → Std.TreeSet World → List World → Except String (Std.TreeSet World)
+  | _, visited, [] => pure visited
+  | 0, _, _ => throw "bfsCommonKnowledge: out of fuel"
+  | fuel + 1, visited, curr :: queue =>
+      if visited.contains curr then bfsReach step fuel visited queue
+      else bfsReach step fuel (visited.insert curr) (queue ++ step curr)
+
+/-- Reference for `Gamen.Epistemic.commonKnowledge`, whose closure was
+rewritten from Haskell's BFS to `iterateToFixpoint` (a termination-forced
+rewrite; CLAUDE.md asks for a property that the results agree). This is
+the Haskell's BFS, with the same up-front agent check; the "commonKnowledge
+agrees with the breadth-first search it replaced" property in
+`Tests/Main.lean` compares the two on random epistemic models. -/
+def bfsCommonKnowledge (m : EpistemicModel) (w : World) (agentList : List String)
+    (f : Formula) : Except String Bool := do
+  agentList.forM fun a => discard <| eAccessible m.eFrame a w
+  let rels := agentList.map fun a => m.eFrame.eRelations.getD a ∅
+  let step (u : World) : List World :=
+    (rels.foldl (fun acc rel => acc.insertMany (rel.getD u ∅)) (∅ : Std.TreeSet World)).toList
+  let n := m.eFrame.eWorlds.size
+    + rels.foldl (fun n rel => rel.foldl (fun n _ succs => n + succs.size) n) 0
+  let reachable ← bfsReach step ((n + 1) * (n + 1) + n + 1) ∅ (step w)
+  reachable.toList.allM (eSatisfies m · f)
+
 /-- `∃ w, M,w ⊩ f`, staying in `Except`: an error (unreachable for the
 Bot/Atom/Not/And/Or/Implies/Iff/Box/Diamond fragment these generators
 produce, over a well-formed `Model`) must propagate as an error, not get

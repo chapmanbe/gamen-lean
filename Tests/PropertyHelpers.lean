@@ -4,6 +4,7 @@ import Gamen.FrameProperties
 import Gamen.DeonticStit
 import Gamen.DeonticStit.Prove
 import Gamen.DeonticStit.CounterModel
+import Gamen.Epistemic
 import Plausible
 
 /-!
@@ -72,9 +73,8 @@ def truthsIn (m : Option Model) (f : Formula) : Option (List Bool) :=
 Mirrors `test/Properties.hs`'s `ArbModel`/`ArbKappaModel` newtypes. The
 Haskell wrappers exist only to dodge orphan-`Arbitrary`-instance
 restrictions; Lean's typeclass resolution has no such restriction, so the
-instances below attach directly to `Model` and `KappaModel`.
-(`ArbEpistemicModel` is out of scope here: `Gamen.Epistemic` is not
-ported.) -/
+instances below attach directly to `Model`, `KappaModel`, and
+`EpistemicModel` (`ArbEpistemicModel`). -/
 
 private def propAtomNames : List String := ["p", "q", "r"]
 
@@ -128,6 +128,28 @@ def genKappaModel : Gen KappaModel := do
 instance : Arbitrary KappaModel := ⟨genKappaModel⟩
 
 instance : Shrinkable KappaModel where
+  shrink _ := []
+
+/-- Single-agent epistemic model: 1–3 worlds, random R_a, random valuation
+over {p,q,r}. Mirrors `genEpistemicModel`/`ArbEpistemicModel`.
+`mkEpistemicFrame` does not check edge endpoints (nor does the Haskell),
+and every edge here is drawn from `ws ×ˢ ws` anyway, so there is nothing
+to throw. -/
+def genEpistemicModel : Gen EpistemicModel := do
+  let ⟨n, _⟩ ← Gen.choose Nat 1 3 (by omega)
+  let ws := (List.range n).map fun i => s!"w{i + 1}"
+  let allPairs := ws.flatMap fun w1 => ws.map fun w2 => (w1, w2)
+  let edges ← genSublist allPairs
+  let val ← propAtomNames.mapM fun a => do
+    let vs ← genSublist ws
+    return (a, vs)
+  return mkEpistemicModel (mkEpistemicFrame ws [("a", edges)]) val
+
+instance : Arbitrary EpistemicModel := ⟨genEpistemicModel⟩
+
+/-- Haskell's `ArbEpistemicModel` defines no custom `shrink`, so
+QuickCheck's default (no shrinking) applies; same here. -/
+instance : Shrinkable EpistemicModel where
   shrink _ := []
 
 /-- `∃ w, M,w ⊩ f`, staying in `Except`: an error (unreachable for the
@@ -326,6 +348,16 @@ where
   genAtom : Gen Formula := do
     let ⟨i, _⟩ ← Gen.choose Nat 0 2 (by omega)
     return .atom (propAtomNames.getD i "p")
+
+/-- Haskell's `ArbPropFormula` newtype: a propositional-fragment formula
+drawn by `sized genPropFormula`, uncapped, for properties that quantify
+over it directly (`Tests/Main.lean`'s `Gamen.Epistemic` properties). -/
+structure PropFormula where
+  getFormula : Formula
+  deriving Repr
+
+instance : Arbitrary PropFormula := ⟨PropFormula.mk <$> Gen.sized genPropFormula⟩
+instance : Shrinkable PropFormula where shrink _ := []
 
 /-- True when φ is neither a tautology nor a contradiction in `m`.
 Mirrors `isContingent`, but stays in `Except`: for the propositional

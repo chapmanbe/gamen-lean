@@ -21,6 +21,7 @@ import Gamen.Teaching
 import Gamen.Cgs
 import Gamen.Stit
 import Gamen.Xstit
+import Gamen.Epistemic
 
 /-!
 # gamen

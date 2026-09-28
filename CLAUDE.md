@@ -38,9 +38,16 @@ Plan and per-module status: `PORTING.md`. Why Lean, and the evidence:
 - **When termination forces a rewrite, keep the results identical** and add
   a property test that checks it (see the `toNNF` note in `Formula.lean`).
 - **No `sorry`** in committed code.
-- **Laziness.** gamen-hs relies on it deliberately in one place
-  (`Epistemic.hs` ~148–158, the announcement-restriction memo); port it as an
-  explicit lazy memo. Everywhere else, strict evaluation is safe.
+- **Laziness: match outputs, not evaluation order.** Don't mimic Haskell's
+  laziness; match its results *and errors*. The one place it matters is
+  `Epistemic.hs` ~148–158: the per-announcement table of restricted models
+  is built lazily, so a restriction (which evaluates the announcement body
+  at every world, and can error) runs only when `[B]C` is reached. A literal
+  strict translation that builds the table up front would raise errors
+  gamen-hs never raises (e.g. `p ∧ [B]C` with `p` false). Restrict on
+  demand instead; add a cache filled on first use only if speed demands
+  it, with a property test against the uncached version. Everywhere else,
+  strict evaluation is safe.
 - **Pairs as keys**: Lean core has no `Ord (α × β)` instance; use
   `attribute [local instance] lexOrd` (see `Tableau.lean`).
 - **Shared relation checks live in `Kripke.lean`.** gamen-hs writes

@@ -73,13 +73,20 @@ parentheses):
    `Kripke.checkIndependence` as an early-exit search (Haskell stops early;
    Lean builds every combination), same results, plus a property test.
 3. **Xstit** (opus).
-4. **Epistemic** (fable) — riskiest: port `Epistemic.hs` ~148–158's
-   announcement-restriction memo as an explicit lazy memo (CLAUDE.md,
-   Laziness). Unblocks: `WorldGuardsSpec` `eSatisfies` case, two Doxastic
-   PaperCorrespondence blocks, `ArbEpistemicModel` generator.
-   **Before starting:** brainstorm the porting strategy with the user
-   (`superpowers:brainstorming`), especially the lazy memo's design, and
-   agree on it before launching the porter.
+4. **Epistemic** (fable) — riskiest part is `Epistemic.hs` ~148–158's
+   announcement-restriction table. Decided 2026-09-28: do not mimic the
+   laziness (CLAUDE.md, Laziness). Keep the Haskell names and structure,
+   restrict the model when `[B]C` is reached (same results and errors as
+   gamen-hs), and add a fill-on-first-use cache only if speed demands it,
+   with a property test against the uncached version. Planted check: a
+   build-everything-up-front version must fail a test (e.g. `p ∧ [B]C`,
+   `p` false, `B` erroring). Unblocks: `WorldGuardsSpec` `eSatisfies` case,
+   two Doxastic PaperCorrespondence blocks, `ArbEpistemicModel` generator.
+   **Before starting:** brainstorm the remaining strategy with the user
+   (`superpowers:brainstorming`): whether Epistemic reaches
+   `gamen-validate` (compare.py), how unsupported operators fail, and
+   whether an evaluation-state design also suits common knowledge. Agree
+   on it before launching the porter.
 5. **Laca** (sonnet) — Cgs, Formula; `Laca.trajectory` goes through the
    shared fuel-checked fixpoint helper. Unblocks `lSatisfies` guard test.
 6. **Coalition** (sonnet), **Atl.Strategy**, **Atl.ModelCheck**, **Atl**
@@ -150,7 +157,7 @@ Then wave 5 (Dcleg, `protocol/Service/*`, service, `app/Main.hs`).
 3. `/port-module Stit` (include the `checkIndependence` early-exit rework).
 4. `/port-module Xstit`.
 5. Brainstorm the Epistemic porting strategy with the user first, then
-   `/port-module Epistemic` (lazy memo; then port the unblocked
+   `/port-module Epistemic` (restrict on demand, no lazy memo; then port the unblocked
    WorldGuards/Doxastic tests and `ArbEpistemicModel`).
 6. `/port-module Laca`, then Coalition, Atl.Strategy, Atl.ModelCheck, Atl,
    Atel, Atl.ImperfectInfo.

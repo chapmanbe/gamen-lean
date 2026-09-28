@@ -82,11 +82,25 @@ parentheses):
    build-everything-up-front version must fail a test (e.g. `p ∧ [B]C`,
    `p` false, `B` erroring). Unblocks: `WorldGuardsSpec` `eSatisfies` case,
    two Doxastic PaperCorrespondence blocks, `ArbEpistemicModel` generator.
-   **Before starting:** brainstorm the remaining strategy with the user
-   (`superpowers:brainstorming`): whether Epistemic reaches
-   `gamen-validate` (compare.py), how unsupported operators fail, and
-   whether an evaluation-state design also suits common knowledge. Agree
-   on it before launching the porter.
+   Also decided 2026-09-28:
+   - **Not reachable from `gamen-validate`.** gamen-hs's
+     `validate/Main.hs` and every other library module leave
+     `Gamen.Epistemic` unimported (mentions are comments and error
+     strings). compare.py cannot check this port; it rests on its own
+     tests (EpistemicSpec, the B&D Ch. 13–15 and Doxastic
+     PaperCorrespondence blocks, the WorldGuards case,
+     `ArbEpistemicModel`) and on planted checks.
+   - **Unsupported operators are `Except` errors, Haskell wording
+     verbatim.** `eSatisfies` gives meaning only to the propositional
+     connectives, `knowledge`, `belief` and `announce`. The 20 others
+     throw: operators from other logics (temporal, STIT, deontic, ranking,
+     coalition, ATL) because the model has nothing to evaluate them
+     against, and plain `box`/`diamond` because a multi-agent model has
+     no single accessibility relation (gamen-hs's choice; it says "use
+     Knowledge"). Never a default truth value.
+   - **Common knowledge** takes a transitive closure: route it through
+     the shared fuel-checked fixpoint helper (`|W|² + 1`). It needs no
+     announcement cache.
 5. **Laca** (sonnet) — Cgs, Formula; `Laca.trajectory` goes through the
    shared fuel-checked fixpoint helper. Unblocks `lSatisfies` guard test.
 6. **Coalition** (sonnet), **Atl.Strategy**, **Atl.ModelCheck**, **Atl**

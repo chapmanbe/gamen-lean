@@ -13,6 +13,7 @@ import Gamen.DeonticStit.Prove
 import Gamen.DeonticStit.CounterModel
 import Gamen.Cgs
 import Gamen.Stit
+import Gamen.Xstit
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
@@ -987,6 +988,234 @@ def stitRegressionCases : List Case :=
     ⟨"checkTyping rejects the non-transitive R_G", checkTyping ntFrame == false⟩,
     ⟨"isValidStitFrame now rejects it (was accepted under C1–C7 only)",
       isValidStitFrame ntFrame == false⟩ ]
+
+/-! ## Xstit (`Gamen.Xstit`)
+
+Port of `test/XstitSpec.hs` in full (all 19 `it`s) plus `test/WorldGuardsSpec.hs`'s
+"xSatisfies errors on world not in XstitModel" `it` (`xstitCases`); the
+"Broersen (2011) — Epistemic deontic XSTIT" block of
+`test/PaperCorrespondence.hs` (all 34 `it`s, `xstitPaperCorrespondenceCases`);
+and `test/RegressionIssue18.hs`'s "B7: mkXstitFrame rejects a non-functional
+R_X" block (both `it`s, `xstitRegressionCases`).
+
+`mkXstitFrame` returns `Except`, so every fixture is an `Except String
+XstitFrame`/`XstitModel`; `xSat`/`xFr` bind through it, so an error in the
+fixture or in the check fails the case whichever answer was expected. -/
+
+/-- `xSatisfies` through an `Except` model. -/
+def xSat (em : Except String XstitModel) (w : World) (f : Formula) : Except String Bool :=
+  em >>= fun m => xSatisfies m w f
+
+/-- A pure frame check through an `Except` frame. -/
+def xFr (ef : Except String XstitFrame) (check : XstitFrame → Bool) : Except String Bool :=
+  check <$> ef
+
+/-- XstitSpec.hs's clinical prescribing scenario: 4 worlds, 2 moments × 2
+histories. The clinician "c" chooses between safe (h1) and unsafe (h2)
+medication but cannot tell the histories apart at moment 0. -/
+def xFrame' : Except String XstitFrame :=
+  mkXstitFrame
+    ["s0_h1", "s0_h2", "s1_h1", "s1_h2"]
+    -- R_X: deterministic next-state
+    [ ("s0_h1", "s1_h1"), ("s0_h2", "s1_h2")
+    , ("s1_h1", "s1_h1"), ("s1_h2", "s1_h2") ]  -- terminal loops
+    -- R_□: settledness (equivalence classes = moments)
+    [ ("s0_h1", "s0_h1"), ("s0_h1", "s0_h2")
+    , ("s0_h2", "s0_h1"), ("s0_h2", "s0_h2")
+    , ("s1_h1", "s1_h1"), ("s1_h1", "s1_h2")
+    , ("s1_h2", "s1_h1"), ("s1_h2", "s1_h2") ]
+    -- R_[c]: each world is its own cell at both moments
+    [ ("c", [ ("s0_h1", "s0_h1"), ("s0_h2", "s0_h2")
+            , ("s1_h1", "s1_h1"), ("s1_h2", "s1_h2") ]) ]
+    -- R_{K_c}: can't distinguish at moment 0
+    [ ("c", [ ("s0_h1", "s0_h1"), ("s0_h1", "s0_h2")
+            , ("s0_h2", "s0_h1"), ("s0_h2", "s0_h2")
+            , ("s1_h1", "s1_h1"), ("s1_h2", "s1_h2") ]) ]
+
+def xModel' : Except String XstitModel :=
+  xFrame'.map fun fr => mkXstitModel fr
+    [ ("safe_med", ["s1_h1"])
+    , ("unsafe_med", ["s1_h2"])
+    , ("allergy_known", ["s0_h1"])
+    , ("v_c", ["s1_h2"]) ]  -- violation when unsafe med prescribed
+
+def safeMed : Formula := .atom "safe_med"
+def unsafeMed : Formula := .atom "unsafe_med"
+
+def xstitCases : List Case := [
+  -- describe "XSTIT frame conditions (Broersen 2011, Definition 3.1)"
+  -- (sic: frames are Definitions 2.2 + 3.2; 3.1 is the language)
+  ⟨"valid frame passes all conditions", okIs (xFr xFrame' isValidXstitFrame) true⟩,
+  ⟨"XC1: R_X is serial", okIs (xFr xFrame' checkXC1) true⟩,
+  ⟨"XC2: R_□ is an equivalence relation", okIs (xFr xFrame' checkXC2) true⟩,
+  ⟨"XC3: R_[A] are equivalence relations", okIs (xFr xFrame' checkXC3) true⟩,
+  ⟨"XC4: R_[A] refines R_□", okIs (xFr xFrame' checkXC4) true⟩,
+  ⟨"XC5: independence of agents", okIs (xFr xFrame' checkXC5) true⟩,
+  ⟨"XC6: R_{K_a} are equivalence relations", okIs (xFr xFrame' checkXC6) true⟩,
+  -- describe "XSTIT satisfaction (Broersen 2011, Definition 3.2)"
+  -- (sic: truth is Definitions 2.4 + 3.3)
+  ⟨"evaluates Next (next-state)",
+    okIs (xSat xModel' "s0_h1" (.next safeMed)) true
+    && okIs (xSat xModel' "s0_h2" (.next unsafeMed)) true
+    && okIs (xSat xModel' "s0_h2" (.next safeMed)) false⟩,
+  ⟨"evaluates □ (historical necessity, was Settled)",
+    okIs (xSat xModel' "s1_h1" (.box safeMed)) false
+    && okIs (xSat xModel' "s1_h1" (.box (.or safeMed unsafeMed))) true⟩,
+  ⟨"evaluates [a xstit]phi (choice guarantees at next state)",
+    okIs (xSat xModel' "s0_h1" (.stit "c" safeMed)) true
+    && okIs (xSat xModel' "s0_h2" (.stit "c" safeMed)) false
+    && okIs (xSat xModel' "s0_h2" (.stit "c" unsafeMed)) true⟩,
+  ⟨"evaluates K_a phi (epistemic knowledge)",
+    okIs (xSat xModel' "s0_h1" (.knowledge "c" (.atom "allergy_known"))) false
+    && okIs (xSat xModel' "s1_h1" (.knowledge "c" safeMed)) true⟩,
+  ⟨"clinician does NOT know they see to safe_med (epistemic uncertainty)",
+    okIs (xSat xModel' "s0_h1" (knowingly "c" safeMed)) false⟩,
+  -- describe "XSTIT obligation and mens rea (Broersen 2011, Section 5)"
+  ⟨"evaluates Ought via violation constants",
+    okIs (xSat xModel' "s0_h1" (.ought "c" safeMed)) true⟩,
+  ⟨"evaluates Permitted",
+    okIs (xSat xModel' "s0_h1" (.permitted "c" safeMed)) true⟩,
+  ⟨"strict liability at s0_h2",
+    okIs (xSat xModel' "s0_h2" (strictLiability "c" safeMed)) true
+    && okIs (xSat xModel' "s0_h1" (strictLiability "c" safeMed)) false⟩,
+  ⟨"mens rea classification",
+    okIs ((xModel' >>= fun m => mensReaCheck m "s0_h2" "c" safeMed).map
+      (·.contains .mrStrictLiability)) true
+    && okIs (xModel' >>= fun m => mensReaCheck m "s0_h1" "c" safeMed) []⟩,
+  -- describe "XSTIT application functions"
+  ⟨"duty check identifies obligations",
+    okIs (xModel' >>= fun m => xDutyCheck m "s0_h1" "c" [safeMed, unsafeMed]) [safeMed]⟩,
+  ⟨"knowledge check identifies known facts",
+    okIs (xModel' >>= fun m => xKnowledgeCheck m "s1_h1" "c" [safeMed, unsafeMed]) [safeMed]⟩,
+  ⟨"epistemic duty check: clinician knows obligation but not compliance",
+    okIs (xModel' >>= fun m => xEpistemicDutyCheck m "s0_h1" "c" [safeMed, unsafeMed])
+      [(safeMed, true)]⟩,
+  -- WorldGuardsSpec.hs:43, "xSatisfies errors on world not in XstitModel"
+  -- (gamen-hs#7).
+  ⟨"xSatisfies errors on world not in XstitModel",
+    let xm := (mkXstitFrame ["a", "b"] [("a", "b"), ("b", "b")]
+      [("a", "a"), ("b", "b")]
+      [("ag", [("a", "a"), ("b", "b")])]
+      [("ag", [("a", "a"), ("b", "b")])]).map fun xfr =>
+        mkXstitModel xfr [("p", ["a", "b"]), ("q", ["b"]), ("r", ["a"])]
+    let probeFormula : Formula :=
+      .implies (.or (.atom "p") (.atom "q")) (.and (.not (.atom "q")) (.atom "r"))
+    okIs (xSat xm "a" probeFormula) true
+      && isErr (xSat xm "c" probeFormula)⟩
+]
+
+/-! ### Broersen (2011) — Epistemic deontic XSTIT (`test/PaperCorrespondence.hs`)
+
+All 34 `it`s. Two citations in the describe titles are corrected here
+against `notes/Broersen2011.pdf`: Definition 3.3 is on p. 145 (the Haskell
+says 144), and "Knowingly (Def. 3.3/5.2)" is introduced after Definition
+3.3 on p. 145 — Definition 5.2 is a weaker obligation. -/
+
+/-- 4-world fixture: moment 1 = {w0,w1}, where agent "a" chooses w0 (next
+w2, p true) or w1 (next w3, v_a true); moment 2 = {w2,w3}, terminal. Unit
+epistemic cells: the agent knows the actual world. -/
+def xstitFr : Except String XstitFrame :=
+  mkXstitFrame
+    ["w0", "w1", "w2", "w3"]
+    -- R_X: serial, deterministic next-state
+    [("w0", "w2"), ("w1", "w3"), ("w2", "w2"), ("w3", "w3")]
+    -- R_□: two moments {w0,w1} and {w2,w3}
+    [ ("w0", "w0"), ("w0", "w1"), ("w1", "w0"), ("w1", "w1")
+    , ("w2", "w2"), ("w2", "w3"), ("w3", "w2"), ("w3", "w3") ]
+    -- R_[a]: fine choices in moment 1 (singletons); whole moment in moment 2
+    [("a", [ ("w0", "w0"), ("w1", "w1")
+           , ("w2", "w2"), ("w2", "w3"), ("w3", "w2"), ("w3", "w3") ])]
+    -- R_{K_a}: unit equivalence classes
+    [("a", [("w0", "w0"), ("w1", "w1"), ("w2", "w2"), ("w3", "w3")])]
+
+def xstitM : Except String XstitModel :=
+  xstitFr.map fun fr => mkXstitModel fr [("p", ["w2"]), ("v_a", ["w3"])]
+
+/-- `mensReaCheck xstitM w "a" p` contains `mr`. -/
+def xMensReaHas (w : World) (mr : MensRea) : Except String Bool :=
+  (xstitM >>= fun m => mensReaCheck m w "a" p).map (·.contains mr)
+
+def xstitPaperCorrespondenceCases : List Case := [
+  -- describe "Definitions 2.2 (p. 140) + 3.2 (p. 144): frame conditions XC1–XC6"
+  ⟨"isValidXstitFrame xstitFr — all XC1–XC6 hold", okIs (xFr xstitFr isValidXstitFrame) true⟩,
+  ⟨"XC1 (Def. 2.2, p. 140): R_X is serial — every world has a next state",
+    okIs (xFr xstitFr checkXC1) true⟩,
+  ⟨"XC2 (Def. 2.2, p. 140): R_□ is an equivalence relation (historical necessity)",
+    okIs (xFr xstitFr checkXC2) true⟩,
+  ⟨"XC3 (Def. 2.2, p. 140): each R_[A] is an equivalence relation (choice effectivity)",
+    okIs (xFr xstitFr checkXC3) true⟩,
+  ⟨"XC4 (Def. 2.2, p. 140): R_[A](w) ⊆ R_□(w) — choice cells refine historical necessity",
+    okIs (xFr xstitFr checkXC4) true⟩,
+  ⟨"XC5 (Def. 2.2, p. 140): Indep-G — joint choices of disjoint groups always intersect",
+    okIs (xFr xstitFr checkXC5) true⟩,
+  ⟨"XC6 (Def. 3.2, p. 144): each R_{K_a} is an equivalence relation (epistemic)",
+    okIs (xFr xstitFr checkXC6) true⟩,
+  ⟨"frame with no R_X entries violates XC1 (not serial)",
+    okIs (xFr (mkXstitFrame ["w0", "w1"] [] [] [] []) checkXC1) false⟩,
+  -- describe "Definitions 2.4 + 3.3 (pp. 142, 145): truth conditions — X, □, [a xstit], K_a"
+  -- (Haskell: "pp. 142, 144"; Definition 3.3 is on p. 145)
+  ⟨"p = False at w0 (pre-action moment; V(p) = {w2})", okIs (xSat xstitM "w0" p) false⟩,
+  ⟨"p = True at w2 (good-outcome world; w2 ∈ V(p))", okIs (xSat xstitM "w2" p) true⟩,
+  ⟨"Xp true at w0: R_X(w0)=w2, p holds at w2  (Definition 2.4, Xφ clause)",
+    okIs (xSat xstitM "w0" (.next p)) true⟩,
+  ⟨"Xp false at w1: R_X(w1)=w3, p does not hold at w3", okIs (xSat xstitM "w1" (.next p)) false⟩,
+  ⟨"[a xstit]p true at w0: R_[a](w0)={w0}, next(w0)=w2, p at w2  (Definition 2.4, [A xstit] clause)",
+    okIs (xSat xstitM "w0" (.stit "a" p)) true⟩,
+  ⟨"[a xstit]p false at w1: R_[a](w1)={w1}, next(w1)=w3, p not at w3",
+    okIs (xSat xstitM "w1" (.stit "a" p)) false⟩,
+  ⟨"K_a p false at w0: R_{K_a}(w0)={w0}, p not at w0  (Definition 3.3, K_a clause)",
+    okIs (xSat xstitM "w0" (.knowledge "a" p)) false⟩,
+  ⟨"K_a p true at w2: R_{K_a}(w2)={w2}, p at w2", okIs (xSat xstitM "w2" (.knowledge "a" p)) true⟩,
+  ⟨"K_a[a xstit]p true at w0: agent knows they see to p (unit epistemic cell, correct choice)",
+    okIs (xSat xstitM "w0" (.knowledge "a" (.stit "a" p))) true⟩,
+  ⟨"K_a[a xstit]p false at w1: agent knows they do NOT see to p",
+    okIs (xSat xstitM "w1" (.knowledge "a" (.stit "a" p))) false⟩,
+  -- describe "Definition 5.1 (p. 147): O[a xstit]φ = □(¬[a xstit]φ → [a xstit]V)"
+  ⟨"violationAtom 'a' = Atom 'v_a'  (Anderson-style, p. 147)", violationAtom "a" == .atom "v_a"⟩,
+  ⟨"O[a xstit]p holds at w0: settled cell {w0,w1} — w1 branch fails p → triggers v_a",
+    okIs (xSat xstitM "w0" (.ought "a" p)) true⟩,
+  ⟨"O[a xstit]p also holds at w1 (same settled cell, same obligation)",
+    okIs (xSat xstitM "w1" (.ought "a" p)) true⟩,
+  ⟨"O[a xstit](¬p) is false at w0: w0 branch fails ¬p but v_a not triggered at w2",
+    okIs (xSat xstitM "w0" (.ought "a" (.not p))) false⟩,
+  -- describe "Definitions 5.1-5.3 (pp. 147–148): derived mens rea operators"
+  ⟨"strictLiability a p false at w0: agent IS seeing to p (obligation but no breach)",
+    okIs (xSat xstitM "w0" (strictLiability "a" p)) false⟩,
+  ⟨"strictLiability a p true at w1: obligated, agent does NOT see to p",
+    okIs (xSat xstitM "w1" (strictLiability "a" p)) true⟩,
+  ⟨"knowingly a p true at w0: K_a([a xstit]p) — agent knows they see to p",
+    okIs (xSat xstitM "w0" (knowingly "a" p)) true⟩,
+  ⟨"knowingly a p false at w1: agent knows they do not see to p",
+    okIs (xSat xstitM "w1" (knowingly "a" p)) false⟩,
+  ⟨"obligatedKnowingly a p true at w0: obligated AND K_a[a xstit]p",
+    okIs (xSat xstitM "w0" (obligatedKnowingly "a" p)) true⟩,
+  ⟨"obligatedKnowingly a p false at w1: obligated but agent does not knowingly see to p",
+    okIs (xSat xstitM "w1" (obligatedKnowingly "a" p)) false⟩,
+  ⟨"mensReaCheck at w0: MRKnowing applies — agent knowingly fulfils obligation",
+    okIs (xMensReaHas "w0" .mrKnowing) true⟩,
+  ⟨"mensReaCheck at w0: MRStrictLiability does not apply — agent sees to p",
+    okIs (xMensReaHas "w0" .mrStrictLiability) false⟩,
+  ⟨"mensReaCheck at w1: MRStrictLiability applies — obligated but fails to see to p",
+    okIs (xMensReaHas "w1" .mrStrictLiability) true⟩,
+  ⟨"mensReaCheck at w1: MRKnowing does not apply — agent doesn't see to p",
+    okIs (xMensReaHas "w1" .mrKnowing) false⟩,
+  -- describe "Application functions (Gamen.Xstit module): duty and epistemic duty checks"
+  ⟨"xDutyCheck at w0: agent is obligated to see to p but not ¬p",
+    okIs (xstitM >>= fun m => xDutyCheck m "w0" "a" [p, .not p]) [p]⟩,
+  ⟨"xEpistemicDutyCheck at w0: agent knows their obligation to see to p",
+    okIs ((xstitM >>= fun m => xEpistemicDutyCheck m "w0" "a" [p]).map (·.map (·.2))) [true]⟩
+]
+
+/-! ### RegressionIssue18.hs: "B7: mkXstitFrame rejects a non-functional R_X" -/
+
+def xstitRegressionCases : List Case := [
+  ⟨"a world with two next-states errors (was silently repaired)",
+    isErr (mkXstitFrame ["w0", "w1", "w2"] [("w0", "w1"), ("w0", "w2")] [] [] [])⟩,
+  ⟨"a functional R_X builds normally",
+    match mkXstitFrame ["w0", "w1"] [("w0", "w1"), ("w1", "w1")] [] [] [] with
+    | .ok _ => true
+    | .error _ => false⟩
+]
 
 /-! ## Semantics (`Gamen.Semantics`)
 
@@ -3157,6 +3386,7 @@ def main : IO UInt32 := do
   IO.println "Unit cases"
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
       ++ kripkeCases ++ stitCases ++ stitPaperCorrespondenceCases ++ stitRegressionCases
+      ++ xstitCases ++ xstitPaperCorrespondenceCases ++ xstitRegressionCases
       ++ semanticsCases ++ fragmentCases ++ temporalCases ++ doxasticCases ++ rankingTheoryCases
       ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
       ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases ++ cgsCases do
@@ -3169,7 +3399,8 @@ def main : IO UInt32 := do
     unless ok do failures := failures + 1
   let total := unitCases.length + tableauCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
     + framePropertiesCases.length + kripkeCases.length
-    + stitCases.length + stitPaperCorrespondenceCases.length + stitRegressionCases.length + semanticsCases.length
+    + stitCases.length + stitPaperCorrespondenceCases.length + stitRegressionCases.length
+    + xstitCases.length + xstitPaperCorrespondenceCases.length + xstitRegressionCases.length + semanticsCases.length
     + fragmentCases.length + temporalCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
     + deonticStitCases.length + counterModelCases.length + closureCases.length

@@ -20,6 +20,7 @@ import Gamen.Protocol
 import Gamen.Teaching
 import Gamen.Cgs
 import Gamen.Stit
+import Gamen.Xstit
 
 /-!
 # gamen

@@ -34,7 +34,7 @@ namespace Gamen
 Caller supplies the (already-sorted, per `Std.TreeSet`/`Std.TreeMap`
 iteration order) node list, the edge list, and a function that produces
 the `dot` statement for each node. -/
-def render (nodes : List World) (edges : List (World × World))
+private def render (nodes : List World) (edges : List (World × World))
     (nodeStmt : World → String) : String :=
   let lines :=
     [ "digraph K {"

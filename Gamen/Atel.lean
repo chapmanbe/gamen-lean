@@ -17,11 +17,26 @@ relations are orthogonal.
 References:
   van der Hoek & Wooldridge (2003), *Cooperation, Knowledge, and Time:
   Alternating-time Temporal Epistemic Logic*, Studia Logica 75(1): 125–157.
+  The "Definition 3 (p. 134)" citations below and in `Tests/Main.lean`'s
+  `atelCases` match `gamen-hs/notes/vanderhoek-wooldridge2003-correspondence.md`
+  ("Definition 3 (p. 134): Satisfaction Relation"); the paper itself is not
+  among the PDFs in `gamen-hs/notes/`, so the page number is unverified
+  against a primary source.
 
 `atelSat`'s eighteen unsupported-operator `error` calls (everything outside
 the ATL/Coalition/propositional/knowledge fragment) become `Except`, wording
 kept verbatim, matching `Gamen.Atl.ModelCheck`'s precedent. `atelSatisfies`'s
-world guard is likewise `Except`, matching `Gamen.Atl.atlSatisfies`. -/
+world guard is likewise `Except`, matching `Gamen.Atl.atlSatisfies`.
+
+**Laziness.** `atelSat`'s propositional connectives (`Not`/`And`/`Or`/
+`Implies`/`Iff`) follow `Gamen.Atl.ModelCheck.sat`'s laziness fix exactly
+(same `Data.Set` combinators, same clauses) — see that module's docstring
+for the full derivation and the GHC checks behind it. The `Knowledge`
+clause (`Set.isSubsetOf`) and the `CanAlways`/`CanEventually`/`CanUntil`
+fixpoint step functions were audited the same way and need no such
+handling (also documented there): `Data.Set.isSubsetOf`'s left argument
+being empty does not skip forcing the right, and `lfp`/`gfp` always force
+`satPhi`/`satPsi` on their first step regardless of `preC`. -/
 namespace Gamen
 
 -- ── Model ────────────────────────────────────────────────────────────────
@@ -121,25 +136,51 @@ where
   | .bot => pure ∅
   | .atomF atm =>
       pure (states.filter fun st => (cgs.cgsLabeling st).contains atm.name)
-  | .not f' => do
-      let sf ← go f'
-      pure (states \ sf)
+  | .not f' =>
+      -- Laziness (see the module docstring): skip `f'` when `states` is
+      -- empty, matching `Data.Set.difference ∅ e = ∅` without forcing `e`.
+      if states.isEmpty then pure ∅
+      else do
+        let sf ← go f'
+        pure (states \ sf)
   | .and l r => do
+      -- `go l` always forced (`intersection`'s first argument); `go r`
+      -- skipped exactly when `go l`'s result is empty.
       let sl ← go l
-      let sr ← go r
-      pure (sl ∩ sr)
+      if sl.isEmpty then pure ∅
+      else do
+        let sr ← go r
+        pure (sl ∩ sr)
   | .or l r => do
+      -- `union` forces both sides unconditionally under full demand — no
+      -- shortcut to replicate.
       let sl ← go l
       let sr ← go r
       pure (sl ∪ sr)
   | .implies l r => do
-      let sl ← go l
+      -- Antecedent follows `Not`'s rule (skip `go l` iff `states` empty);
+      -- consequent `go r` is `union`'s second argument, always forced.
+      let diffPart ← do
+        if states.isEmpty then pure (∅ : Std.TreeSet s)
+        else do
+          let sl ← go l
+          pure (states \ sl)
       let sr ← go r
-      pure ((states \ sl) ∪ sr)
+      pure (diffPart ∪ sr)
   | .iff l r => do
+      -- `go l` always forced; `go r` skipped only when `states` is *also*
+      -- empty and `go l`'s result is empty (when `states` is nonempty, the
+      -- antecedent's own `Set.union sl sr` unconditionally forces `sr`
+      -- regardless of `sl`, so there is no shortcut in that case).
       let sl ← go l
-      let sr ← go r
-      pure ((sl ∩ sr) ∪ (states \ (sl ∪ sr)))
+      if states.isEmpty then
+        if sl.isEmpty then pure ∅
+        else do
+          let sr ← go r
+          pure (sl ∩ sr)
+      else do
+        let sr ← go r
+        pure ((sl ∩ sr) ∪ (states \ (sl ∪ sr)))
 
   -- K_a φ — van der Hoek & Wooldridge (2003), Definition 3(i)
   | .knowledge agent phi => do

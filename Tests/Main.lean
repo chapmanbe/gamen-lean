@@ -3879,6 +3879,16 @@ private def irCgs : Cgs Nat String :=
     cgsTransition := irTrans
     cgsLabeling := irLabel }
 
+/-- A zero-state CGS: `mkCgs` does not reject an empty state set (both of
+its checks — no agent has an empty move set at any state; every joint
+move is closed — are vacuously true when `states = ∅`), used by
+`atlModelCheckCases`'s laziness cases below. Confirmed to build
+successfully against gamen-hs directly (`cabal repl`,
+`mkCgs Set.empty Set.empty (const (const Set.empty)) const (const Set.empty)`
+→ `Right`, not an `error`). -/
+private def zeroCgs : Except String (Cgs Nat String) :=
+  mkCgs ∅ ∅ (fun _ _ => (∅ : Std.TreeSet String)) (fun s _ => s) (fun _ => (∅ : Std.TreeSet String))
+
 def atlModelCheckCases : List Case :=
   let al : List String := ["alice"]
   let p_ : Formula := .atom "p"
@@ -3996,6 +4006,63 @@ def atlModelCheckCases : List Case :=
     ⟨"Not in gamen-hs: sat errors on Ought (needs Gamen.DeonticStit)",
       match loopCgs with
       | .ok cgs => isErr (sat cgs (.ought "alice" p_))
+      | .error _ => false⟩,
+    -- Not in gamen-hs: laziness. Each expected value/error below was
+    -- checked directly against gamen-hs's `sat`, not derived from its
+    -- source alone (`cabal repl`, `Gamen.Atl.ModelCheck`; see the module
+    -- docstring's "Laziness" note for the full derivation).
+    ⟨"Not in gamen-hs: laziness — sat(And Bot (Box p)) = ∅ on a nonempty-state \
+      CGS: And's left conjunct (Bot) is empty, so Data.Set.intersection never \
+      forces the right (Box, unsupported) — confirmed against gamen-hs \
+      (`sat loop (And Bot (Box p_))` → `Right (fromList [])`)",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs (.and .bot (.box p_))) ∅
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — sat(And p (Box p)) errors when p is nonempty \
+      (sat(p) = {0}): the left conjunct being *nonempty* forces the right, \
+      unlike the Bot case above — confirmed against gamen-hs",
+      match loopCgs with
+      | .ok cgs => isErr (sat cgs (.and p_ (.box p_)))
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — sat(Not (Box p)) = ∅ on a zero-state CGS \
+      (mkCgs does not reject cgsStates = ∅): Data.Set.difference ∅ e = ∅ \
+      without forcing e, so Box's error is never reached — confirmed against \
+      gamen-hs (`sat zeroCgs (Not (Box p_))` → `Right (fromList [])`)",
+      match zeroCgs with
+      | .ok cgs => okIs (sat cgs (.not (.box p_))) ∅
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — sat(Implies (Box p) q) = ∅ on a zero-state \
+      CGS: the antecedent's Box is inside a Set.difference states (...) with \
+      states = ∅, so it is never forced — confirmed against gamen-hs",
+      match zeroCgs with
+      | .ok cgs => okIs (sat cgs (.implies (.box p_) q_)) ∅
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — sat(Implies p (Box q)) errors on the SAME \
+      zero-state CGS: the consequent is union's second argument, always \
+      forced regardless of states/antecedent — confirmed against gamen-hs, \
+      pinning the antecedent/consequent asymmetry above",
+      match zeroCgs with
+      | .ok cgs => isErr (sat cgs (.implies p_ (.box q_)))
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — sat(Iff Bot (Box p)) errors on a \
+      NONEMPTY-state CGS even though the left side is Bot: Iff's own \
+      Set.union sl sr unconditionally forces sr once states is nonempty, \
+      unlike And — confirmed against gamen-hs (`sat loop (Iff Bot (Box p_))`)",
+      match loopCgs with
+      | .ok cgs => isErr (sat cgs (.iff .bot (.box p_)))
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — sat(Iff p (Box q)) = ∅ on a zero-state CGS: \
+      sl (=sat(p) = ∅, states empty) forces first and is empty, so — with \
+      states also empty — sr (Box q) is skipped, unlike the nonempty-state \
+      case above — confirmed against gamen-hs",
+      match zeroCgs with
+      | .ok cgs => okIs (sat cgs (.iff p_ (.box q_))) ∅
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — sat(Iff (Box p) q) errors on a zero-state \
+      CGS: Iff's left side (sl) is always forced, in every case — confirmed \
+      against gamen-hs",
+      match zeroCgs with
+      | .ok cgs => isErr (sat cgs (.iff (.box p_) q_))
       | .error _ => false⟩
   ]
 
@@ -4301,6 +4368,14 @@ private def atelSurgModel : Except String (AtelModel Nat String) := do
   let cgs ← surgCgs
   mkAtelModel cgs surgEpistemic
 
+/-- A zero-state ATEL model (over `zeroCgs`, `Gamen.Atl.ModelCheck`'s row):
+the epistemic relation is trivially reflexive/symmetric/transitive/uniform
+when there are no states to check, so `mkAtelModel` accepts it. Used by
+`atelCases`'s laziness cases below, mirroring `atlModelCheckCases`'s. -/
+private def zeroAtelModel : Except String (AtelModel Nat String) := do
+  let cgs ← zeroCgs
+  mkAtelModel cgs (fun _ _ => (∅ : Std.TreeSet Nat))
+
 def atelCases : List Case :=
   let al : List String := ["alice"]
   let p_ : Formula := .atom "p"
@@ -4392,7 +4467,55 @@ def atelCases : List Case :=
     ⟨"atelSat of tautology (¬⊥) = all states",
       match atelSurgModel, surgCgs with
       | .ok m, .ok cgs => okIs (atelSat m (.not .bot)) cgs.cgsStates
-      | _, _ => false⟩
+      | _, _ => false⟩,
+    -- Not in gamen-hs: laziness. `atelSat`'s propositional connectives
+    -- follow `Gamen.Atl.ModelCheck.sat`'s laziness fix exactly (same
+    -- fixtures/values as `atlModelCheckCases`'s laziness cases, confirmed
+    -- against gamen-hs the same way — see `Gamen.Atl.ModelCheck`'s
+    -- docstring for the full derivation).
+    ⟨"Not in gamen-hs: laziness — atelSat(And Bot (Box p)) = ∅ on a \
+      nonempty-state model: the left conjunct (Bot) is empty, so Box \
+      (unsupported) is never forced",
+      match atelLoopModel with
+      | .ok m => okIs (atelSat m (.and .bot (.box p_))) ∅
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — atelSat(And p (Box p)) errors when p is \
+      nonempty (sat(p) = {0} on the loop model)",
+      match atelLoopModel with
+      | .ok m => isErr (atelSat m (.and p_ (.box p_)))
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — atelSat(Not (Box p)) = ∅ on a zero-state \
+      ATEL model (mkAtelModel accepts cgsStates = ∅)",
+      match zeroAtelModel with
+      | .ok m => okIs (atelSat m (.not (.box p_))) ∅
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — atelSat(Implies (Box p) q) = ∅ on the SAME \
+      zero-state model: antecedent's Box never forced when states = ∅",
+      match zeroAtelModel with
+      | .ok m => okIs (atelSat m (.implies (.box p_) q_)) ∅
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — atelSat(Implies p (Box q)) errors on the \
+      SAME zero-state model: consequent always forced, pinning the \
+      antecedent/consequent asymmetry",
+      match zeroAtelModel with
+      | .ok m => isErr (atelSat m (.implies p_ (.box q_)))
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — atelSat(Iff Bot (Box p)) errors on a \
+      NONEMPTY-state model even though the left side is Bot",
+      match atelLoopModel with
+      | .ok m => isErr (atelSat m (.iff .bot (.box p_)))
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — atelSat(Iff p (Box q)) = ∅ on a zero-state \
+      model: sl (=∅, states empty) forces first and is empty, so sr is \
+      skipped",
+      match zeroAtelModel with
+      | .ok m => okIs (atelSat m (.iff p_ (.box q_))) ∅
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — atelSat(Iff (Box p) q) errors on a \
+      zero-state model: Iff's left side is always forced, in every case",
+      match zeroAtelModel with
+      | .ok m => isErr (atelSat m (.iff (.box p_) q_))
+      | .error _ => false⟩
   ]
 
 /-! ## Atel (`test/RegressionIssue18.hs`)
@@ -4442,7 +4565,50 @@ def atelRegressionCases : List Case :=
         | 1, "alice" => Std.TreeSet.ofList ["left"]
         | s, ag => atelB7Moves s ag
       let cgsBad : Cgs Nat String := { atelB7Cgs with cgsMoves := movesBad }
-      isErr (mkAtelModel cgsBad atelB7Epi)⟩
+      isErr (mkAtelModel cgsBad atelB7Epi)⟩,
+    -- Not in gamen-hs: the two cases above (ported from RegressionIssue18,
+    -- whose own `it`s only check `Left _`, not exact text) do not isolate
+    -- the reflexivity/transitivity checks — each fixture that violates
+    -- symmetry/move-uniformity there happens to be caught regardless of
+    -- whether the reflexivity/transitivity checks are even present, so
+    -- disabling either silently would still pass every existing case. These
+    -- two fixtures are constructed to violate *only* reflexivity/*only*
+    -- transitivity (worked out by hand, cross-checked against gamen-hs's
+    -- actual `mkAtelModel` via `cabal repl` — confirmed both report the
+    -- checks below, not a different one, i.e. every other check silently
+    -- passes on each fixture), and the expected error text is gamen-hs's
+    -- own (`src/Gamen/Atel.hs`'s `reflexivity`/`transitivity` messages,
+    -- confirmed verbatim against the `cabal repl` output), compared exactly
+    -- rather than via `isErr`, so a disabled/broken check (which would
+    -- either accept the model or report a *different* violation's message)
+    -- fails this case.
+    ⟨"Not in gamen-hs: mkAtelModel rejects a reflexivity-only violation \
+      (loop model, alice's class at 0 is ∅ instead of {0}; classes at 1 and \
+      2 are the unmodified {1,2} each, so symmetry/transitivity/move-\
+      uniformity all still hold)",
+      let reflOnlyBadEpi : String → Nat → Std.TreeSet Nat
+        | _, 0 => ∅
+        | _, _ => Std.TreeSet.ofList [1, 2]
+      match loopCgs with
+      | .ok cgs =>
+          match mkAtelModel cgs reflOnlyBadEpi with
+          | .error msg => msg == "mkAtelModel: agent alice has a non-reflexive epistemic \
+              relation (state not in own class)"
+          | .ok _ => false
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: mkAtelModel rejects a transitivity-only violation \
+      (loop model, classes {0,1}/{0,1,2}/{1,2} at states 0/1/2: reflexive \
+      and symmetric, but 0~1 and 1~2 without 0~2)",
+      let transOnlyBadEpi : String → Nat → Std.TreeSet Nat
+        | _, 0 => Std.TreeSet.ofList [0, 1]
+        | _, 1 => Std.TreeSet.ofList [0, 1, 2]
+        | _, _ => Std.TreeSet.ofList [1, 2]
+      match loopCgs with
+      | .ok cgs =>
+          match mkAtelModel cgs transOnlyBadEpi with
+          | .error msg => msg == "mkAtelModel: agent alice has a non-transitive epistemic relation"
+          | .ok _ => false
+      | .error _ => false⟩
   ]
 
 def main : IO UInt32 := do

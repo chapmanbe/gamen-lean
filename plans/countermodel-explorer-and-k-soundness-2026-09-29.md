@@ -1,9 +1,10 @@
-# Plan: tableau countermodel explorer, and a machine-checked soundness proof for K
+# Plan: tableau countermodel explorer, a machine-checked soundness proof for K, and edition-proof B&D citations
 
-*Written 2026-09-29. Read this once; implement against it. Two independent
+*Written 2026-09-29. Read this once; implement against it. Three independent
 parts. Part A is a teaching feature (one or two sessions). Part B is a
 research milestone (several sessions, merged one milestone at a time).
-Neither part waits on anything outside the repo. In particular, no step
+Part C is tooling that keeps B&D citations correct across editions (one
+session; added the same day). No part waits on anything outside the repo. In particular, no step
 waits on student testing: none is available, so every check below is
 automated or done by an agent.*
 
@@ -18,6 +19,11 @@ automated or done by an agent.*
   runs) is sound for K. A closed tableau means the assumptions are
   unsatisfiable (B&D Theorem 6.6). That makes "the tableau says valid" a
   checked theorem, not a tested hope.
+- **Part C.** Give every B&D citation an anchor in the Open Logic sources
+  that survives renumbering, and a checked index, so that wrong citations
+  fail a test today, and moving to a new edition is a reviewed report
+  rather than a hunt. The evidence is in
+  `docs/assessment/bd-source-anchors-2026-09-29.md`.
 
 ## Where things stand (2026-09-29; verify with `git log`)
 
@@ -272,9 +278,94 @@ shows 0 disagreements, and `docs/assessment/` has a dated note with what
 was proved, what was refactored (with the equivalence tests), and B0's
 outcome.
 
+## Part C: B&D citations that survive new editions
+
+Background and evidence: `docs/assessment/bd-source-anchors-2026-09-29.md`.
+In short:
+- OpenLogic labels, written without the part tag, survived 2019 → 2026
+  unchanged: 89 of 89 in normal modal logic.
+- Only 106 of 226 numbered statements are labeled, and only 20 of 85
+  definitions.
+- Printed numbers depend on B&D's build tags, so they can't be computed
+  from the source.
+
+### Design
+
+1. **Citation syntax.** Write the number, then an anchor in brackets:
+   - labeled statements: `B&D Thm. 6.6 [tab:sou:thm:tableau-soundness]`,
+     the label without its part tag;
+   - unlabeled statements: `B&D Def. 6.3 [tab:sou, defn 1]`, the section
+     plus the statement's position among statements of that kind in the
+     section;
+   - tables, figures and pages keep plain numbers, since OpenLogic doesn't
+     label them consistently.
+2. **Index: `notes/bd-citations.tsv`,** committed. It has one row per
+   anchor we cite: anchor, kind, number and page in the pinned PDF, the
+   first words of the statement, and the file:line locations that cite it.
+3. **Tool: `tools/bd/citations.py`,** in Python like `compare.py`.
+   - **`index`:** regenerates the TSV. It sparse-clones OpenLogic at the
+     revision in `notes/bd-edition.md`, pulls each anchored statement's
+     text, and finds it in `pdftotext -layout notes/bd-screen.pdf` by
+     normalized text. Anything it can't match with confidence is printed
+     for a human, never guessed.
+   - **`check`:** every anchored citation in `Gamen/`, `Notebooks/`,
+     `Tests/`, `Widgets/` and CLAUDE.md must have an index row whose kind
+     and number agree. Any "B&D" line with a Def/Prop/Thm/… number but no
+     anchor is reported. It exits nonzero on errors.
+   - **`migrate NEW.pdf [--olp REV]`:** for each index row, finds the
+     statement in the new edition, by label where there is one and by text
+     otherwise. It reports moved, reworded and missing statements, and
+     edits nothing.
+4. **One-pass migration of existing citations.** Add anchors to the B&D
+   citations already in the code (80-plus in 20 files). Where the number
+   in the code is wrong, fix it against the PDF and list each fix in the
+   commit message, as the porter does.
+5. **Wire it in.** Add `python3 tools/bd/citations.py check` to CLAUDE.md's
+   Build list, and to the module-porter's and module-reviewer's citation
+   steps, next to the `pdftotext` instruction.
+
+### Verification
+
+- **Planted citations, each of which `check` must reject:**
+  - a Def. 6.4 anchor labeled as 6.3;
+  - "B&D Definition 2.1", which doesn't exist; gamen-hs's `FrameProperties.hs`
+    had exactly this, per the stale-citation list in gamen-hs's
+    `notes/bd-edition.md`;
+  - a B&D number with no anchor.
+- **`index` must reproduce known rows exactly:**
+  - Thm. 6.6 on p. 99 (`tab:sou:thm:tableau-soundness`);
+  - Defs. 6.3 and 6.4 on pp. 98–99;
+  - Example 6.22 on p. 111;
+  - Def. 1.6 and Def. 1.7, per CLAUDE.md.
+- **`migrate` dry run:** run it with the pinned PDF as the "new" edition.
+  Every row must come back unchanged. A real old edition isn't available
+  locally, so this only tests the harness.
+
+### Offer the labels upstream (ask the user first)
+
+Once the index exists, it lists the unlabeled statements we cite. Draft a
+pull request to `OpenLogicProject/OpenLogic` adding `\ollabel` to them,
+following the existing naming (`defn:…`, `ex:…`). Opening it is
+outward-facing, so the user decides.
+
+### Watch for new editions (optional; the user decides)
+
+A monthly scheduled check fetches the B&D PDF from bd.openlogicproject.org
+and compares its SHA-256 with the pin. If it differs, it notifies the user
+and runs nothing else. Move the pin only on purpose, before a teaching
+term, in gamen-hs and gamen-lean together, using `migrate`'s report.
+
+### Done when
+`check` passes on `main`, every existing B&D citation has an anchor, the
+planted citations are rejected, the known rows reproduce, and CLAUDE.md and
+the agents run `check`.
+
 ## Order and models
 
-- **Part A first.** It is short and stands on its own. Opus writes it,
+- **Part C can go first, or at any time.** It is small and independent.
+  Doing it before Part B means B's new citations are anchored from the
+  start. Sonnet can build it; Opus reviews it.
+- **Part A next.** It is short and stands on its own. Opus writes it,
   because the widget constraints are unforgiving; Opus reviews it, and the
   Fable agent walkthrough follows.
 - **Part B can run alongside the Dcleg port**, since they share no files.

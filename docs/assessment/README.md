@@ -21,3 +21,4 @@ Later records, written in this repository:
 |---|---|
 | `lean-library-reuse-2026-09-23.md` | Which Lean library definitions the port can reuse, and why most cannot |
 | `bug-provenance-2026-09-26.md` | Where the bugs found during waves 2–3 and the cross-checks came from: the language, the port, mechanical checks, or an independent oracle |
+| `bd-source-anchors-2026-09-29.md` | Whether the Open Logic sources give B&D citations anchors that survive renumbering: label coverage, 2019→2026 stability, why numbers can't be computed from source |

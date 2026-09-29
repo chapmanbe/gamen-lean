@@ -46,7 +46,65 @@ really through the subset lattice of a universe of size `cgs.cgsStates.size`,
 monotone lfp/gfp iteration over which stabilizes within that many rounds by
 the usual pigeonhole argument (each non-final round changes the set's size
 by at least one, in a fixed direction). Running out of fuel is an error
-naming `lfp`/`gfp`, never a default. -/
+naming `lfp`/`gfp`, never a default.
+
+**Laziness.** `sat`'s Haskell body is pure (no `Except`; `error` is a bare
+partial-function call), so `Data.Set`'s own laziness decides, for the
+propositional connectives, whether an illegal sub-formula on one side of
+`And`/`Or`/`Implies`/`Iff` is ever forced — and a strict left-then-right
+`Except` translation can throw where the Haskell, having never forced the
+illegal side, returns a definite answer. Confirmed directly against GHC's
+`containers` (`cabal repl`, `Data.Set.intersection`/`union`/`difference`,
+forcing an `error` thunk on one side under `seq`): `intersection ∅ e = ∅`
+and `difference ∅ e = ∅` *without evaluating* `e`; `intersection a e`
+(`a` nonempty) and `difference a e` (`a` nonempty) force `e`; `union`
+forces its second argument unconditionally, and — since every caller here
+(including every test in `Tests/Main.lean`) eventually forces the union's
+*result* to compare it — its first argument too, so `union` itself adds no
+observable short-circuit under full demand. Working through `sat`'s five
+propositional clauses under these rules (confirmed against gamen-hs
+directly for every case below, via `cabal repl`):
+- `Not f'`: `Set.difference states (go f')` skips `f'` exactly when
+  `states` (`cgs.cgsStates`, plain data, never itself throws) is empty —
+  relevant on a CGS with no states, which `mkCgs` does not reject.
+- `And l r`: `go l` is always forced (it is `intersection`'s first
+  argument); `go r` is skipped exactly when `go l`'s result is empty (e.g.
+  `sat cgs (And Bot (Box p)) = ∅`, confirmed, never touching `Box`'s error).
+- `Or l r`: both sides always forced (per `union`'s rule above) — ported
+  unchanged, no shortcut to replicate.
+- `Implies l r`: the antecedent `Set.difference states (go l)` follows
+  `Not`'s rule (`go l` skipped iff `states` is empty); the consequent
+  `go r` is `union`'s second argument, so it is *always* forced regardless
+  of `states`/`l` — confirmed asymmetric: on a zero-state CGS,
+  `sat cgs (Implies (Box p) q) = ∅` (antecedent's `Box` never reached) but
+  `sat cgs (Implies p (Box q))` errors (consequent's `Box` always reached).
+- `Iff l r`: `go l` is always forced, in every case (it is the shared
+  `intersection sl sr`'s first argument, and that `intersection` is itself
+  always eventually forced, directly or via `union`'s pass-through under
+  full demand). `go r` is skipped only when `states` is *also* empty and
+  `go l`'s result is empty — when `states` is nonempty, the antecedent's
+  own `Set.union sl sr` unconditionally forces `sr` regardless of `sl`, so
+  there is no shortcut to replicate in that case (confirmed:
+  `sat loop (Iff Bot (Box p))` errors, on a *nonempty*-state model, even
+  though the left side is `Bot`).
+
+Every one of these eight shapes (each connective's short-circuit and
+non-short-circuit side) was checked against gamen-hs's actual `sat`, not
+derived from the Haskell source alone; see `atlModelCheckCases`'s "Not in
+gamen-hs: laziness" cases. The ATL temporal operators (`CanAlways`,
+`CanEventually`, `CanUntil`) were audited the same way and need no such
+handling: `satPhi`/`satPsi` are each an unconditionally-forced first
+argument to their step function's own `intersection`/`union` (as above),
+and `lfp`/`gfp` always invoke the step function at least once (to test the
+initial iterate), so they are always forced regardless of `preC`'s
+value — confirmed directly (`sat loop (CanAlways ["alice"] (Box p))` and
+its `CanEventually`/`CanUntil` siblings, phi or psi illegal, all error).
+`Gamen.Atel.atelSat`'s `Knowledge` clause (`Set.isSubsetOf`) was audited
+too and also needs no handling: unlike `intersection`/`difference`,
+`Data.Set.isSubsetOf`'s *left* argument being empty does not skip forcing
+the right (confirmed: `Set.isSubsetOf Set.empty (error …)` still throws
+under `seq`), so `go phi` is unconditionally forced there, matching the
+existing strict translation already. -/
 namespace Gamen
 
 -- ── Fixpoint utilities ──────────────────────────────────────────────────
@@ -85,25 +143,74 @@ def sat {s a : Type} [Ord s] [Ord a] [BEq s] (cgs : Cgs s a) (f : Formula) :
   | .bot => pure ∅
   | .atomF atm =>
       pure (cgs.cgsStates.filter fun st => (cgs.cgsLabeling st).contains atm.name)
-  | .not f' => do
-      let sf ← sat cgs f'
-      pure (cgs.cgsStates \ sf)
+  | .not f' =>
+      -- `Set.difference states (go f')`: `Data.Set.difference ∅ e = ∅`
+      -- *without evaluating* `e` (checked against GHC's `containers`, see the
+      -- module docstring's "Laziness" note). `cgs.cgsStates` is plain data
+      -- (never itself throws), so this is the one place its emptiness alone
+      -- decides whether `f'` is evaluated at all — relevant on a CGS with no
+      -- states, which `mkCgs` does not reject.
+      if cgs.cgsStates.isEmpty then pure ∅
+      else do
+        let sf ← sat cgs f'
+        pure (cgs.cgsStates \ sf)
   | .and l r => do
+      -- `Set.intersection (go l) (go r)`: `Data.Set.intersection ∅ e = ∅`
+      -- without evaluating `e`; `go l` (the first/left argument) is always
+      -- evaluated first regardless. So `r` is skipped exactly when `l`'s
+      -- satisfaction set is empty — e.g. `And Bot (Box p)` = ∅, never
+      -- reaching `Box`'s error, even though `Box` is unsupported.
       let sl ← sat cgs l
-      let sr ← sat cgs r
-      pure (sl ∩ sr)
+      if sl.isEmpty then pure ∅
+      else do
+        let sr ← sat cgs r
+        pure (sl ∩ sr)
   | .or l r => do
+      -- `Set.union (go l) (go r)`: `Data.Set.union` forces its second
+      -- argument unconditionally (checked against GHC's `containers`), and
+      -- forcing its result (as every caller here eventually does, to
+      -- compare sets) forces the first argument too — no short-circuit to
+      -- replicate; both sides are always evaluated, as below.
       let sl ← sat cgs l
       let sr ← sat cgs r
       pure (sl ∪ sr)
   | .implies l r => do
-      let sl ← sat cgs l
+      -- `Set.union (Set.difference states (go l)) (go r)`: `go r` (union's
+      -- second argument) is always forced, unconditionally — matching `r`
+      -- below, evaluated regardless of `l`/`states`. The antecedent
+      -- `Set.difference states (go l)` follows `Not`'s rule: `go l` is
+      -- skipped exactly when `states` is empty.
+      let diffPart ← do
+        if cgs.cgsStates.isEmpty then pure (∅ : Std.TreeSet s)
+        else do
+          let sl ← sat cgs l
+          pure (cgs.cgsStates \ sl)
       let sr ← sat cgs r
-      pure ((cgs.cgsStates \ sl) ∪ sr)
+      pure (diffPart ∪ sr)
   | .iff l r => do
+      -- `Set.union (Set.intersection sl sr) (Set.difference states (Set.union sl sr))`
+      -- (`sl`/`sr` shared thunks for `go l`/`go r`). `sl` is always forced
+      -- first (it is `intersection`'s first argument, and that
+      -- `intersection` is itself always eventually forced — either directly,
+      -- when the difference/`states` part is empty and `union` returns it
+      -- unevaluated to a caller that then demands it, or as part of the
+      -- general merge otherwise). When `states` is nonempty, `sr` is *also*
+      -- always forced regardless of `sl`, via the difference part's own
+      -- `Set.union sl sr` (whose second argument, `sr`, is unconditionally
+      -- forced) — so there is no shortcut to replicate in that case. Only
+      -- when `states` is empty does `sl`'s emptiness decide whether `sr` is
+      -- ever touched, matching `Not`/`Implies`'s antecedent above. All four
+      -- shapes (`states` empty or not, crossed with which of `l`/`r` is the
+      -- illegal operand) were checked against GHC's `containers` directly.
       let sl ← sat cgs l
-      let sr ← sat cgs r
-      pure ((sl ∩ sr) ∪ (cgs.cgsStates \ (sl ∪ sr)))
+      if cgs.cgsStates.isEmpty then
+        if sl.isEmpty then pure ∅
+        else do
+          let sr ← sat cgs r
+          pure (sl ∩ sr)
+      else do
+        let sr ← sat cgs r
+        pure ((sl ∩ sr) ∪ (cgs.cgsStates \ (sl ∪ sr)))
 
   -- [C]φ ≡ ⟨⟨C⟩⟩Xφ — one-step coalition preimage
   | .coalition c f' => do

@@ -4887,7 +4887,7 @@ def atlirCases : List Case :=
       withIr fun m => uniformActions m "alice" 0 == Std.TreeSet.ofList ["left", "right"]⟩,
     ⟨"Not in gamen-hs: uniformActions intersects move sets across the class: \
       alice has {left,right} at 0 but only {left} at 1 (hand-built model, \
-      bypassing mkAtelModel's uniformity check) → {left} (GHCi)",
+      bypassing mkAtelModel's uniformity check) → {left} (GHCi; gamen-hs#54)",
       -- GHCi, 2026-09-29: `uniformActions (AtelModel (irCgs { cgsMoves =
       -- mixMoves }) irEpi) "alice" 0` → `fromList ["left"]`.
       let mixMoves : Nat → String → Std.TreeSet String
@@ -5074,7 +5074,7 @@ Citations fixed against the pinned DCLEG v5.0 draft (`notes/dcleg-edition.md`):
 Table 1 ("Some Validities") is §2.7, not §2.5 or §1.2; □'s uniformity is
 §2.5's text, not Table 1; Presence and Self-Awareness are §2.2's doxastic
 conditions 1 and 5, not §2.4. Table 1 states PerfectInfo, TurnStr, and
-SinglePref with the counterfactual □→; the Haskell tests check the material
+SinglePref with the counterfactual □→ (gamen-hs#53); the Haskell tests check the material
 → at one point, and are ported as they are.
 
 Every satisfaction result is compared with `okIs`/`bothOkEq`, so an error
@@ -5427,7 +5427,8 @@ def dclegPaperCorrespondenceCases : List Case :=
         (sat "γL" "v0" (dfAnd (.dfMove "L") (.dfTurn "p1")))⟩,
     -- "§2.5 / Table 1 (Some Validities): structural game laws". Table 1 is
     -- in §2.7 ("Some Validities"), not §2.5. Table 1 writes TurnStr,
-    -- PerfectInfo, and SinglePref with □→; these check the material →.
+    -- PerfectInfo, and SinglePref with □→; these check the material →
+    -- (filed as gamen-hs#53).
     ⟨t ++ "§2.7 Table 1: TurnStr: turn_p1 → □(turn_p1) at (γL,v0)",
       okIs (sat "γL" "v0" (dfImplies (.dfTurn "p1") (.dfBox (.dfTurn "p1")))) true⟩,
     ⟨t ++ "§2.7 Table 1: PerfectInfo: □(turn_p1) → B_p1(turn_p1) at (γL,v0)",

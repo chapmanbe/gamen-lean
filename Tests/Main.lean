@@ -26,6 +26,7 @@ import Gamen.Visualize
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
+import Notebooks.Ch6Countermodels
 import Validate.Core
 import Tests.PropertyHelpers
 
@@ -411,6 +412,24 @@ def g2At (st : Gamen.Widgets.ExplorerState) : Bool :=
   | .ok m => holdsAt m "w1" ml[ □blood_cultures ]
   | .error _ => false
 
+/-- The countermodel view for B&D Example 6.22 (`Notebooks/Ch6Countermodels.lean`). -/
+def ex622View : Gamen.Widgets.CountermodelView := Gamen.Widgets.countermodelView systemK [] example622
+
+def ex622Scenario : Gamen.Widgets.Scenario :=
+  match ex622View with
+  | .countermodel sc _ => sc
+  | _ => default
+
+def ex622State : Gamen.Widgets.ExplorerState :=
+  { scenario := ex622Scenario, valuation := ex622Scenario.valuation }
+
+/-- Each check evaluated where the widget evaluates it (`evalAt`), on the
+widget's current model, as `render` does. -/
+def checkResults (st : Gamen.Widgets.ExplorerState) : List (Option Bool) :=
+  match st.model with
+  | .ok m => st.scenario.checks.map fun c => (satisfies m st.scenario.evalAt c.formula).toOption
+  | .error _ => []
+
 def widgetCases : List Case := [
   ⟨"widget: G2 initially fails at w1", !g2At byo0⟩,
   ⟨"widget: select blood_cultures, click w3 → G2 holds",
@@ -422,7 +441,14 @@ def widgetCases : List Case := [
   ⟨"widget: non-editable world w1 ignores clicks",
     (simulateClicks byo0 ["atom-0", "world-w1"]).valuation == byo0.valuation⟩,
   ⟨"widget: a click on empty space changes nothing",
-    (simulateClicks byo0 ["nothing-here"]).valuation == byo0.valuation⟩ ]
+    (simulateClicks byo0 ["nothing-here"]).valuation == byo0.valuation⟩,
+  ⟨"widget: Example 6.22 countermodel: the conclusion's check is ✗ at the root",
+    checkResults ex622State == [some false]⟩,
+  ⟨"widget: Example 6.22: select q, click 1.2 → the conclusion's check flips to ✓",
+    checkResults (simulateClicks ex622State ["atom-1", "world-1.2"]) == [some true]⟩,
+  ⟨"widget: Example 6.22: clicking 1.2 twice restores the countermodel",
+    checkResults (simulateClicks ex622State ["atom-1", "world-1.2", "world-1.2-label"])
+      == [some false]⟩ ]
 
 /-! ## Notebook answer keys
 
@@ -447,7 +473,169 @@ def answerKeyCases : List Case := [
     && consistency [g4, g7, ml[ active_bleeding ]] == "inconsistent: no model satisfies all of them"
     && consistency [g8, g9, ml[ sepsis ]] == "consistent: some model satisfies all of them"
     && consistency [g8, g9, ml[ sepsis ], ml[ fluid_overload ]]
-         == "inconsistent: no model satisfies all of them"⟩ ]
+         == "inconsistent: no model satisfies all of them"⟩,
+  -- B&D Example 6.22, pp. 111–113 (Figure 6.1), Fall 2025 edition.
+  ⟨"ch6 Example 6.22: W = {1, 1.1, 1.2}, R = {⟨1,1.1⟩, ⟨1,1.2⟩}, V(p) = {1.2}, V(q) = {1.1}",
+    ex622Scenario.worlds.map (·.1) == ["1", "1.1", "1.2"]
+    && ex622Scenario.edges == [("1", "1.1"), ("1", "1.2")]
+    && ex622Scenario.valuation == [("p", ["1.2"]), ("q", ["1.1"])]
+    && ex622View.summary == "countermodel (open branch 1): W = {1, 1.1, 1.2}; \
+         R = {⟨1, 1.1⟩, ⟨1, 1.2⟩}; V(p) = {1.2}; V(q) = {1.1}"⟩,
+  ⟨"ch6 exercises: □p → □□p invalid in K, valid in S4; (□p ∨ □q) → □(p ∨ q) valid in K",
+    [(Gamen.Widgets.countermodelView systemK [] exercise1).isValid,
+     (Gamen.Widgets.countermodelView systemS4 [] exercise1).isValid,
+     (Gamen.Widgets.countermodelView systemK [] exercise3).isValid] == [false, true, true]⟩,
+  ⟨"ch6 exercise 1 hint: the K countermodel is the chain 1 → 1.1 → 1.1.1 with V(p) = {1.1}",
+    match Gamen.Widgets.countermodelView systemK [] exercise1 with
+    | .countermodel sc _ => sc.edges == [("1", "1.1"), ("1.1", "1.1.1")]
+        && sc.valuation == [("p", ["1.1"])]
+    | _ => false⟩ ]
+
+/-! ## Countermodel view (`Widgets/Countermodel.lean`)
+
+Lean-only (plans/countermodel-explorer-and-k-soundness-2026-09-29.md,
+Part A). -/
+
+namespace CountermodelViewTests
+open Gamen.Widgets
+
+def view (sys : System) (prem : List Formula) (c : Formula) : CountermodelView :=
+  countermodelView sys prem c
+
+def scenarioOf : CountermodelView → Option Scenario
+  | .countermodel sc _ => some sc
+  | _ => none
+
+def unknownWhy : CountermodelView → String
+  | .unknown w => w
+  | _ => ""
+
+/-- The scenario's model is the extracted model: same worlds, relation and
+valuation. -/
+def sameModel (a b : Model) : Bool :=
+  a.frame.worlds.toList == b.frame.worlds.toList
+    && modelEdges a == modelEdges b && modelValuation a == modelValuation b
+
+def firstExtracted (sys : System) (prem : List Formula) (c : Formula) : Option Model :=
+  match buildTableau sys defaultMaxSteps (proofAssumptions prem c) with
+  | .stillOpen bs => (firstVerified sys bs).toOption.map (·.1)
+  | _ => none
+
+/-- A synthetic scenario with the layout's positions, for the canvas limits. -/
+def synth (worlds atoms : List String) (checks : Nat := 1) (loops := true) : Scenario :=
+  { title := "", worlds := layout worlds atoms,
+    edges := if loops then worlds.map fun w => (w, w) else []
+    atoms, editable := worlds, evalAt := "1",
+    checks := (List.range checks).map fun _ => { label := "c", formula := .bot },
+    valuation := atoms.map (·, []) }
+
+/-- Every prefix tree with `n` worlds: world i + 1 picks a parent among the
+first i worlds (with repeats up to sibling order). -/
+def trees : Nat → List (List String)
+  | 0 => [[]]
+  | 1 => [["1"]]
+  | n + 1 => (trees n).flatMap fun ws => ws.map fun parent =>
+      let k := (ws.filter fun w => w.startsWith (parent ++ ".") &&
+        !((w.drop (parent.length + 1)).toString.contains '.')).length
+      ws ++ [s!"{parent}.{k + 1}"]
+
+def depthOK (ws : List String) : Bool := ws.all fun w => depth w ≤ 2
+
+def chain (d : Nat) : List String :=
+  (List.range (d + 1)).map fun i => ".".intercalate (List.replicate (i + 1) "1")
+
+def star (n : Nat) : List String := "1" :: (List.range n).map fun i => s!"1.{i + 1}"
+
+def atoms4 : List String := ["p", "q", "r", "s"]
+
+def cases : List Case := [
+  ⟨"countermodelView: the K axiom □(p → q) → (□p → □q) is valid",
+    (view systemK [] ml[ □(p → q) → (□p → □q) ]).isValid⟩,
+  ⟨"countermodelView: □p → □□p has a countermodel in K and is valid in S4",
+    (scenarioOf (view systemK [] ml[ □p → □□p ])).isSome
+      && (view systemS4 [] ml[ □p → □□p ]).isValid⟩,
+  ⟨"countermodelView: □p → p has a countermodel in K with no ⟨1, 1⟩ edge, and is valid in KT",
+    (match scenarioOf (view systemK [] ml[ □p → p ]) with
+      | some sc => !sc.edges.contains ("1", "1")
+      | none => false)
+      && (view systemKT [] ml[ □p → p ]).isValid⟩,
+  ⟨"countermodelView: a formula outside the Kripke fragment gives .unknown, not an error",
+    unknownWhy (view systemK [] (.knowledge "a" p))
+      == "extractCountermodel: formula outside the Kripke fragment: K[a]p"⟩,
+  ⟨"countermodelView: an exhausted step budget gives .unknown",
+    unknownWhy (countermodelView systemK [] ml[ □(p ∨ q) → □p ∨ □q ] (maxSteps := 2))
+      == "the tableau ran out of its step budget (2 steps)"⟩,
+  -- gamen-hs#42 (open): KTB's only open branch for ◇□□¬p fails the
+  -- re-check, so there is no verified model to show.
+  ⟨"countermodelView: KTB ◇□□¬p: the only open branch fails its re-check → .unknown, no picture",
+    (unknownWhy (view systemKB [] ml[ ◇□□¬p ])).startsWith
+      "extractCountermodel: extracted model fails to satisfy"⟩,
+  ⟨"firstVerified: an unexpanded (truncated) branch is rejected, not drawn",
+    isErr (firstVerified systemK [Branch.ofList [pfFalse .root ml[ p → p ]]])⟩,
+  ⟨"firstVerified: skips a failing branch and numbers the one it uses",
+    match firstVerified systemK [Branch.ofList [pfFalse .root ml[ p → p ]],
+        Branch.ofList [pfFalse .root ml[ p ]]] with
+    | .ok (_, i) => i == 2
+    | .error _ => false⟩,
+  ⟨"countermodelView: the scenario's model is exactly the extracted model \
+    (Example 6.22; S4 ◇p → □◇p)",
+    [(systemK, ml[ □(p ∨ q) → □p ∨ □q ]), (systemS4, ml[ ◇p → □◇p ])].all fun (sys, c) =>
+      match scenarioOf (view sys [] c), firstExtracted sys [] c with
+      | some sc, some m => sameModel sc.toModel m
+      | _, _ => false⟩,
+  ⟨"countermodelView: an S4 countermodel draws the closed relation (reflexive and transitive)",
+    match scenarioOf (view systemS4 [] ml[ ◇p → □◇p ]) with
+    | some sc => isReflexive sc.toModel.frame && isTransitive sc.toModel.frame
+        && sc.edges.contains ("1", "1")
+    | none => false⟩,
+  ⟨"countermodelView: checks at the root, every world editable, labeled conclusion then premises",
+    match scenarioOf (view systemK [ml[ □p ], ml[ q ]] ml[ □□p ]) with
+    | some sc => sc.evalAt == "1" && sc.editable == sc.worlds.map (·.1)
+        && sc.checks.map (·.label) == ["conclusion", "premise 1", "premise 2"]
+        && checkResults { scenario := sc, valuation := sc.valuation }
+             == [some false, some true, some true]
+    | none => false⟩,
+  ⟨"countermodelView: premises that entail the conclusion give .valid",
+    (view systemK [ml[ □p ], ml[ □(p → q) ]] ml[ □q ]).isValid⟩,
+  ⟨"countermodelView: Example 6.22 fits the canvas",
+    fitsCanvas ex622Scenario⟩,
+  ⟨"layout: every prefix tree with ≤ 4 worlds fits, with 4 one-letter atoms",
+    (List.range 4).all fun n => (trees (n + 1)).all fun ws => fitsCanvas (synth ws atoms4)⟩,
+  ⟨"layout: every 5-world prefix tree of depth ≤ 2 fits, and a root with 5 children",
+    (trees 5).all (fun ws => !depthOK ws || fitsCanvas (synth ws atoms4))
+      && fitsCanvas (synth (star 5) atoms4)⟩,
+  ⟨"layout: no prefix tree with 7 worlds fits",
+    (trees 7).all fun ws => !fitsCanvas (synth ws ["p"])⟩,
+  ⟨"layout: depth 4 does not fit (1.1.1.1.1 runs off the canvas)",
+    !fitsCanvas (synth (chain 4) ["p"]) && fitsCanvas (synth (chain 3) atoms4)⟩,
+  ⟨"layout: 5 atoms do not fit (fact chips); 4 do",
+    !fitsCanvas (synth (star 1) (atoms4 ++ ["t"])) && fitsCanvas (synth (star 1) atoms4)⟩,
+  ⟨"layout: a 15-character atom name fits 3 worlds, not 4",
+    fitsCanvas (synth (star 2) ["active_bleeding"])
+      && !fitsCanvas (synth (star 3) ["active_bleeding"])⟩,
+  ⟨"layout: 6 checks fit (5 premises), 7 do not",
+    fitsCanvas (synth (star 2) ["p"] 6) && !fitsCanvas (synth (star 2) ["p"] 7)⟩,
+  ⟨"layout: positions stay inside the canvas and at y ≥ 4.9 + 0.3 × atoms",
+    (List.range 6).all fun n => (trees (n + 1)).all fun ws =>
+      (synth ws atoms4).worlds.all fun (_, x, y) =>
+        0 ≤ x && x ≤ 10 && y ≤ 9 && y ≥ bottomRow atoms4 - 1e-9⟩ ]
+
+/-- The property-test invariant for one system, premise and conclusion: a
+shown countermodel falsifies the conclusion where the widget evaluates it
+(the root), satisfies the premise there, and is drawn inside the canvas at
+y ≥ 4.9 + 0.3 × atoms; `.valid` means `tableauProves` proved it. -/
+def viewOK (sys : System) (prem conc : Formula) : Bool :=
+  match countermodelView sys [prem] conc with
+  | .valid => tableauProves sys defaultMaxSteps [prem] conc == .definitely true
+  | .unknown _ => true
+  | .countermodel sc _ =>
+    sc.evalAt == "1"
+      && okIs (satisfies sc.toModel sc.evalAt conc) false
+      && okIs (satisfies sc.toModel "1" prem) true
+      && sc.worlds.all fun (_, x, y) =>
+           0 ≤ x && x ≤ 10 && y ≤ 9 && y ≥ bottomRow sc.atoms - 1e-9
+
+end CountermodelViewTests
 
 /-! ## Frame properties
 
@@ -3223,6 +3411,13 @@ def properties : List (String × IO Bool) :=
     ("tableau-valid formulas are true in the test model (soundness spot-check)",
       run (NamedBinder "f" <| ∀ f : Formula,
         (!proves [] f || truthsIn testModel f == some [true, true, true]) = true)),
+    -- Widgets/Countermodel.lean (Lean-only; plan Part A): K, KT, S4, one
+    -- premise, formulas capped at size 12 by the `Arbitrary Formula` instance.
+    ("countermodel view: shown models refute the conclusion at the root, satisfy the premise, \
+      and fit the canvas; .valid agrees with tableauProves (K, KT, S4)",
+      run (NamedBinder "f" <| ∀ f : Formula, NamedBinder "g" <| ∀ g : Formula,
+        ([systemK, systemKT, systemS4].all fun sys => CountermodelViewTests.viewOK sys g f)
+          = true) 100),
     -- Gamen.Tableau: K satisfiability — internal soundness invariant
     -- (issue #18): a formula and its negation can never both close.
     ("no formula and its negation are both provably unsatisfiable",
@@ -5587,7 +5782,7 @@ end VisualizeTests
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
-  for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
+  for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ CountermodelViewTests.cases ++ framePropertiesCases
       ++ kripkeCases ++ stitCases ++ stitPaperCorrespondenceCases ++ stitRegressionCases
       ++ xstitCases ++ xstitPaperCorrespondenceCases ++ xstitRegressionCases
       ++ epistemicCases ++ epistemicPaperCorrespondenceCases ++ epistemicRegressionCases
@@ -5607,6 +5802,7 @@ def main : IO UInt32 := do
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
   let total := unitCases.length + tableauCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
+    + CountermodelViewTests.cases.length
     + framePropertiesCases.length + kripkeCases.length
     + stitCases.length + stitPaperCorrespondenceCases.length + stitRegressionCases.length
     + xstitCases.length + xstitPaperCorrespondenceCases.length + xstitRegressionCases.length

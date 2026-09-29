@@ -58,6 +58,12 @@ nothing left to port.
 | `protocol/Service/*` + `service/Main.hs` (dcleg service) | 893 | Not started |
 | `app/Main.hs` (`gamen-repl` demo) | 43 | Not started |
 
+### Lean-only additions (no gamen-hs counterpart)
+
+| Component | Status |
+|---|---|
+| `Widgets/Countermodel.lean` | **Done** (plans/countermodel-explorer-and-k-soundness-2026-09-29.md, Part A): `countermodelView` runs the tableau and shows a countermodel that `extractCountermodel` verified in the Kripke explorer (B&D §6.9, Example 6.22), or a static text view when the model is too large to draw. Shares `proofAssumptions` (`Gamen/Tableau.lean`) with `tableauProves`. Notebook: `Notebooks/Ch6Countermodels.lean`. Tests: `CountermodelViewTests.cases`, the Example 6.22 widget and answer-key cases, and one Plausible property (K, KT, S4). |
+
 ### Tests
 
 | gamen-hs test | Lines | Lean status |

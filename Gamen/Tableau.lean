@@ -547,12 +547,19 @@ where
             (saturated.toList.map fun s => if s > idx then s + shift else s)
           go (branches.take idx ++ nbs ++ branches.drop (idx + 1)) saturated' fuel
 
+/-- The assumptions of a tableau for `premises ⊢ conclusion`:
+1 T B₁, …, 1 T Bₙ, 1 F A (B&D §6.2, pp. 94–95). Lean-only: shared by
+`tableauProves` and the countermodel view (`Widgets/Countermodel.lean`) so
+the two cannot drift apart. -/
+def proofAssumptions (premises : List Formula) (conclusion : Formula) :
+    List PrefixedFormula :=
+  premises.map (pfTrue .root) ++ [pfFalse .root conclusion]
+
 /-- Does `premises ⊢ conclusion` hold in `sys`? Closed tableau for
 {1 T pᵢ} ∪ {1 F conclusion} means yes. -/
 def tableauProves (sys : System) (maxSteps : Nat) (premises : List Formula)
     (conclusion : Formula) : Verdict :=
-  let assumptions := premises.map (pfTrue .root) ++ [pfFalse .root conclusion]
-  match buildTableau sys maxSteps assumptions with
+  match buildTableau sys maxSteps (proofAssumptions premises conclusion) with
   | .closed => .definitely true
   | .stillOpen _ => .definitely false
   | .exhausted n => .unknown (.budgetExhausted n)

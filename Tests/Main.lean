@@ -12,6 +12,7 @@ import Gamen.DeonticStit.Saturation
 import Gamen.DeonticStit.Prove
 import Gamen.DeonticStit.CounterModel
 import Gamen.Cgs
+import Gamen.Atl.ModelCheck
 import Gamen.Laca
 import Gamen.Stit
 import Gamen.Xstit
@@ -3812,6 +3813,180 @@ def cgsCases : List Case := [
     | .error _ => false⟩
 ]
 
+/-! ## Atl.ModelCheck (`Gamen.Atl.ModelCheck`)
+
+There is no `test/Atl*.hs` spec in gamen-hs — `find test -iname '*atl*'`
+returns nothing. Ported here: from `test/PaperCorrespondence.hs`'s "Alur,
+Henzinger & Kupferman (2002) — ATL" section, every `it` that calls only
+`sat` (16 of the section's 25 `it`s, across the "Definition 3 (pp.
+683–684): sat — global satisfaction sets", "Definition 3(1)"–"(4)", and
+"AHK 2002 §3.2: ATL axioms" `describe` blocks); and, from the "Jamroga &
+van der Hoek (2004) — ATLir" section, the two `sat`-only `it`s under "§4
+Theorem: sat_ATL ≥ sat_ATLir" (the perfect-info half of each
+strict-containment pair, reusing that section's `irCgs` fixture, which
+needs only `Cgs`/`Formula`). Every sibling `it` in both sections also
+calls `atlSatisfies` (`Gamen.Atl`), and the ATLir section's other `it`s
+also call `atlirSat`/`atlirSatObjective`/`epistemicClasses`/
+`uniformActions`/`subjectiveClass`/`allUniformStrategies`
+(`Gamen.Atl.ImperfectInfo`) or `mkAtelModel` (`Gamen.Atel`); none of those
+three modules are ported yet, so those `it`s stay unported, and so does
+the whole "van der Hoek & Wooldridge (2003) — ATEL" section and its
+"Healthcare application" sub-block (every `it` there needs `Gamen.Atel`).
+
+One title/value mismatch found while porting, kept as the Haskell has it:
+`test/PaperCorrespondence.hs`'s `it "sat(⟨⟨alice⟩⟩Xp) = {1,2}: …"` (line
+1443) actually asserts `sat loop (CanNext al p_) \`shouldBe\` Set.fromList
+[0, 2 :: Int]` — the title says `{1,2}`, the value checked is `{0,2}`; the
+ported case below checks the value the Haskell test actually runs, per
+"port every `it`", and the comment on it here flags the mismatch instead of
+silently fixing the Haskell's title.
+
+AHK 2002 is not among the PDFs in `gamen-hs/notes/` (`Gamen.Cgs`'s
+docstring makes the same point about its own §2/§4 citations), so the page
+numbers below are kept exactly as the Haskell's comments give them,
+unverified against a primary source. -/
+
+/-- Jamroga & van der Hoek (2004) imperfect-info example (Schobbens 2004,
+§3), `PaperCorrespondence.hs` ~1725–1739: single agent `alice`, states
+`{0,1,2}`, `p` only at state 2, moves `{"left","right"}` everywhere,
+`(0,left)→2`, `(0,right)→0`, `(1,left)→1`, `(1,right)→2`, `2` absorbing. -/
+private def irMoves (_ : Nat) (ag : String) : Std.TreeSet String :=
+  if ag == "alice" then Std.TreeSet.ofList ["left", "right"] else ∅
+
+private def irTrans : Nat → Std.TreeMap String String → Nat
+  | 0, jm => if jm.get? "alice" == some "left" then 2 else 0
+  | 1, jm => if jm.get? "alice" == some "right" then 2 else 1
+  | _, _ => 2
+
+private def irLabel : Nat → Std.TreeSet String
+  | 2 => Std.TreeSet.ofList ["p"]
+  | _ => ∅
+
+private def irCgs : Cgs Nat String :=
+  { cgsStates := Std.TreeSet.ofList [0, 1, 2]
+    cgsAgents := Std.TreeSet.ofList ["alice"]
+    cgsMoves := irMoves
+    cgsTransition := irTrans
+    cgsLabeling := irLabel }
+
+def atlModelCheckCases : List Case :=
+  let al : List String := ["alice"]
+  let p_ : Formula := .atom "p"
+  let q_ : Formula := .atom "q"
+  [ -- Definition 3 (pp. 683–684): sat — global satisfaction sets.
+    ⟨"sat(p) = {0}: only state 0 has 'p' in its labeling",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs p_) (Std.TreeSet.ofList [0])
+      | .error _ => false⟩,
+    ⟨"sat(q) = {1}: only state 1 has 'q' in its labeling",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs q_) (Std.TreeSet.ofList [1])
+      | .error _ => false⟩,
+    ⟨"sat(¬p) = {1,2}: complement of {0}",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs (.not p_)) (Std.TreeSet.ofList [1, 2])
+      | .error _ => false⟩,
+    ⟨"sat(p ∧ q) = ∅: p and q never hold simultaneously",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs (.and p_ q_)) ∅
+      | .error _ => false⟩,
+    ⟨"sat(p ∨ q) = {0,1}: union of the two singleton sets",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs (.or p_ q_)) (Std.TreeSet.ofList [0, 1])
+      | .error _ => false⟩,
+    -- Definition 3(1) (p. 684): ⟨⟨C⟩⟩Xφ = preC(C, sat(φ)).
+    ⟨"sat(⟨⟨alice⟩⟩Xq) = {0,1}: alice plays 'next' from 0 → 1, which has q",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs (.canNext al q_)) (Std.TreeSet.ofList [0, 1])
+      | .error _ => false⟩,
+    ⟨"sat(⟨⟨alice⟩⟩Xp) = {0,2}: title in PaperCorrespondence.hs says {1,2}, \
+      but the value it actually checks is {0,2} — ported as run, not as titled",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs (.canNext al p_)) (Std.TreeSet.ofList [0, 2])
+      | .error _ => false⟩,
+    -- Definition 3(2) (p. 684): ⟨⟨C⟩⟩Gφ = ν X. sat(φ) ∩ preC(C, X).
+    ⟨"sat(⟨⟨alice⟩⟩Gp) = {0}: alice can maintain p forever only from state 0",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs (.canAlways al p_)) (Std.TreeSet.ofList [0])
+      | .error _ => false⟩,
+    ⟨"sat(⟨⟨alice⟩⟩Gq) = {1}: alice can maintain q only from state 1",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs (.canAlways al q_)) (Std.TreeSet.ofList [1])
+      | .error _ => false⟩,
+    -- Definition 3(3) (p. 684): ⟨⟨C⟩⟩Fφ = μ X. sat(φ) ∪ preC(C, X).
+    ⟨"sat(⟨⟨alice⟩⟩Fq) = {0,1,2}: alice can reach q from any state",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs (.canEventually al q_)) (Std.TreeSet.ofList [0, 1, 2])
+      | .error _ => false⟩,
+    ⟨"sat(⟨⟨alice⟩⟩Fp) = {0,1,2}: alice can also reach p from any state",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs (.canEventually al p_)) (Std.TreeSet.ofList [0, 1, 2])
+      | .error _ => false⟩,
+    -- Definition 3(4) (p. 684): ⟨⟨C⟩⟩(φ U ψ) = μ X. sat(ψ) ∪ (sat(φ) ∩ preC(C, X)).
+    ⟨"sat(⟨⟨alice⟩⟩(p U q)) = {0,1}: alice can maintain p until q from states 0 and 1",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs (.canUntil al p_ q_)) (Std.TreeSet.ofList [0, 1])
+      | .error _ => false⟩,
+    -- AHK 2002 §3.2: ATL axioms (S, Mono, ⊤, ⊥).
+    ⟨"S — ⟨⟨C⟩⟩Fφ ↔ φ ∨ ⟨⟨C⟩⟩X(⟨⟨C⟩⟩Fφ): unrolling of least fixpoint",
+      match loopCgs with
+      | .ok cgs =>
+        okIs (sat cgs (.or p_ (.canNext al (.canEventually al p_))))
+          (match sat cgs (.canEventually al p_) with | .ok s => s | .error _ => ∅)
+      | .error _ => false⟩,
+    ⟨"⊤-effectivity: ⟨⟨alice⟩⟩X⊤ holds everywhere (sat = all states)",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs (.canNext al (.not .bot))) cgs.cgsStates
+      | .error _ => false⟩,
+    ⟨"⊥-witness: ⟨⟨alice⟩⟩X⊥ = ∅ (no move forces ⊥)",
+      match loopCgs with
+      | .ok cgs => okIs (sat cgs (.canNext al .bot)) ∅
+      | .error _ => false⟩,
+    ⟨"Mono — sat monotone: sat(φ) ⊆ sat(φ ∨ ψ)",
+      match loopCgs with
+      | .ok cgs =>
+        match sat cgs p_, sat cgs (.or p_ q_) with
+        | .ok sp, .ok spq => sp.all fun w => spq.contains w
+        | _, _ => false
+      | .error _ => false⟩,
+    -- Jamroga & van der Hoek (2004) — ATLir, §4 Theorem: sat_ATL ≥ sat_ATLir
+    -- (the perfect-info `sat` half of each strict-containment pair; the
+    -- `atlirSat` half needs `Gamen.Atl.ImperfectInfo`, not ported).
+    ⟨"sat_ATL (⟨⟨alice⟩⟩ X p) = {0,1,2} — perfect info: each state picks the right action",
+      okIs (sat irCgs (.canNext al p_)) (Std.TreeSet.ofList [0, 1, 2])⟩,
+    ⟨"sat_ATL (⟨⟨alice⟩⟩ F p) = {0,1,2} — perfect info: alice picks optimally at each visit",
+      okIs (sat irCgs (.canEventually al p_)) (Std.TreeSet.ofList [0, 1, 2])⟩,
+    -- Not in gamen-hs: `lfp`/`gfp` have no fuel bound in the Haskell (there
+    -- is nothing there to run out); this pins the Lean-only deviation
+    -- (module docstring) that turns "iterate until stable" into
+    -- `Except`-with-fuel, the same shape as `Tableau.transitiveClose`'s
+    -- "errors when fuel runs out" case.
+    ⟨"Not in gamen-hs: lfp errors when fuel runs out (no partial fixpoint)",
+      isErr (lfp (fun x => x ∪ (Std.TreeSet.ofList [(0 : Nat)])) 0)⟩,
+    ⟨"Not in gamen-hs: gfp errors when fuel runs out (no partial fixpoint)",
+      isErr (gfp (Std.TreeSet.ofList [(0 : Nat), 1]) (fun x => x.filter (· == 0)) 0)⟩,
+    -- Not in gamen-hs: `sat`'s eighteen unsupported-operator branches are
+    -- `Except`, never a `panic!`/default (a representative sample; every
+    -- branch's message is checked to match the Haskell verbatim in
+    -- `Gamen.Atl.ModelCheck`'s own source comments).
+    ⟨"Not in gamen-hs: sat errors on Box (not supported in ATL)",
+      match loopCgs with
+      | .ok cgs => isErr (sat cgs (.box p_))
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: sat errors on Knowledge (needs Gamen.Atel)",
+      match loopCgs with
+      | .ok cgs => isErr (sat cgs (.knowledge "alice" p_))
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: sat errors on Next (needs Gamen.Laca)",
+      match loopCgs with
+      | .ok cgs => isErr (sat cgs (.next p_))
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: sat errors on Ought (needs Gamen.DeonticStit)",
+      match loopCgs with
+      | .ok cgs => isErr (sat cgs (.ought "alice" p_))
+      | .error _ => false⟩
+  ]
+
 /-! ## Laca (`Gamen.Laca`)
 
 Port of `test/LacaSpec.hs` in full (11 `it`s across its three describe
@@ -3944,7 +4119,7 @@ def main : IO UInt32 := do
       ++ semanticsCases ++ fragmentCases ++ temporalCases ++ doxasticCases ++ rankingTheoryCases
       ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
       ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases ++ cgsCases
-      ++ lacaCases ++ lacaPaperCorrespondenceCases do
+      ++ atlModelCheckCases ++ lacaCases ++ lacaPaperCorrespondenceCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
@@ -3961,7 +4136,7 @@ def main : IO UInt32 := do
     + fragmentCases.length + temporalCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
     + deonticStitCases.length + counterModelCases.length + closureCases.length
-    + crossCheckCases.length + cgsCases.length
+    + crossCheckCases.length + cgsCases.length + atlModelCheckCases.length
     + lacaCases.length + lacaPaperCorrespondenceCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

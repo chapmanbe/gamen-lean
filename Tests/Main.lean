@@ -22,6 +22,7 @@ import Gamen.Stit
 import Gamen.Xstit
 import Gamen.Epistemic
 import Gamen.Dcleg
+import Gamen.Visualize
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
@@ -5469,6 +5470,120 @@ def dclegRegressionCases : List Case :=
 
 end DclegTests
 
+/-! ## Visualize (`Gamen.Visualize`)
+
+gamen-hs has no spec for `Gamen.Visualize` and no `test/PaperCorrespondence.hs`
+section exercises it (`grep -rlw toGraphviz test/*.hs` and the same for
+`toGraphvizModel` both return nothing, `grep -n Visualize test/*.hs` is
+empty). `visualizeCases` is therefore checked directly against `cabal repl
+gamen:lib:gamen`'s output on the same inputs, not a ported `it`. Transcript
+(gamen-hs at the commit this section was written against):
+
+```
+ghci> putStrLn (toGraphviz (mkFrame ["w1","w2","w3"]
+        [("w1","w2"),("w2","w3"),("w1","w1")]))
+digraph K {
+  rankdir=LR;
+  bgcolor="transparent";
+  node [shape=circle, fontname="et-book, Palatino, serif", fontsize=12, color="#111", fontcolor="#111"];
+  edge [color="#555", arrowsize=0.7];
+  w1 [label="w1"];
+  w2 [label="w2"];
+  w3 [label="w3"];
+  w1 -> w1;
+  w1 -> w2;
+  w2 -> w3;
+}
+```
+
+and the same frame's model with `("p", ["w1","w2"])`, `("q", ["w2"])`
+added (`toGraphvizModel`), plus the empty frame/model and a single world
+with an atom that holds nowhere. -/
+section VisualizeTests
+
+/-- The GHCi transcript's worked frame: `w1 -> w1`, `w1 -> w2`, `w2 -> w3`. -/
+def visFrame : Except String Frame :=
+  mkFrame ["w1", "w2", "w3"] [("w1", "w2"), ("w2", "w3"), ("w1", "w1")]
+
+/-- Same frame with `p` at `w1,w2` and `q` at `w2`. -/
+def visModel : Except String Model :=
+  visFrame.map fun fr => mkModel fr [("p", ["w1", "w2"]), ("q", ["w2"])]
+
+def visEmptyFrame : Except String Frame := mkFrame [] []
+
+def visEmptyModel : Except String Model := visEmptyFrame.map fun fr => mkModel fr []
+
+/-- One world, one atom that holds nowhere: exercises the "no atoms at
+this world" branch of `toGraphvizModel`'s node label. -/
+def visNoAtomsModel : Except String Model :=
+  (mkFrame ["w1"] []).map fun fr => mkModel fr [("p", [])]
+
+def visualizeCases : List Case :=
+  [ ⟨"Visualize toGraphviz: three worlds, a loop and a chain (GHCi transcript)",
+      okIs (visFrame.map toGraphviz)
+        ("digraph K {\n" ++
+         "  rankdir=LR;\n" ++
+         "  bgcolor=\"transparent\";\n" ++
+         "  node [shape=circle, fontname=\"et-book, Palatino, serif\", fontsize=12, \
+           color=\"#111\", fontcolor=\"#111\"];\n" ++
+         "  edge [color=\"#555\", arrowsize=0.7];\n" ++
+         "  w1 [label=\"w1\"];\n" ++
+         "  w2 [label=\"w2\"];\n" ++
+         "  w3 [label=\"w3\"];\n" ++
+         "  w1 -> w1;\n" ++
+         "  w1 -> w2;\n" ++
+         "  w2 -> w3;\n" ++
+         "}\n")⟩,
+    ⟨"Visualize toGraphvizModel: node labels carry the atoms holding there, \
+      sorted, comma-separated (GHCi transcript)",
+      okIs (visModel.map toGraphvizModel)
+        ("digraph K {\n" ++
+         "  rankdir=LR;\n" ++
+         "  bgcolor=\"transparent\";\n" ++
+         "  node [shape=circle, fontname=\"et-book, Palatino, serif\", fontsize=12, \
+           color=\"#111\", fontcolor=\"#111\"];\n" ++
+         "  edge [color=\"#555\", arrowsize=0.7];\n" ++
+         "  w1 [label=\"w1\\np\"];\n" ++
+         "  w2 [label=\"w2\\np, q\"];\n" ++
+         "  w3 [label=\"w3\"];\n" ++
+         "  w1 -> w1;\n" ++
+         "  w1 -> w2;\n" ++
+         "  w2 -> w3;\n" ++
+         "}\n")⟩,
+    ⟨"Visualize toGraphviz: empty frame is just the scaffolding, no nodes or edges \
+      (GHCi transcript)",
+      okIs (visEmptyFrame.map toGraphviz)
+        ("digraph K {\n" ++
+         "  rankdir=LR;\n" ++
+         "  bgcolor=\"transparent\";\n" ++
+         "  node [shape=circle, fontname=\"et-book, Palatino, serif\", fontsize=12, \
+           color=\"#111\", fontcolor=\"#111\"];\n" ++
+         "  edge [color=\"#555\", arrowsize=0.7];\n" ++
+         "}\n")⟩,
+    ⟨"Visualize toGraphvizModel: empty model matches empty frame (GHCi transcript)",
+      okIs (visEmptyModel.map toGraphvizModel)
+        ("digraph K {\n" ++
+         "  rankdir=LR;\n" ++
+         "  bgcolor=\"transparent\";\n" ++
+         "  node [shape=circle, fontname=\"et-book, Palatino, serif\", fontsize=12, \
+           color=\"#111\", fontcolor=\"#111\"];\n" ++
+         "  edge [color=\"#555\", arrowsize=0.7];\n" ++
+         "}\n")⟩,
+    ⟨"Visualize toGraphvizModel: an atom with no worlds in its extension leaves the \
+      node's second label line off (GHCi transcript)",
+      okIs (visNoAtomsModel.map toGraphvizModel)
+        ("digraph K {\n" ++
+         "  rankdir=LR;\n" ++
+         "  bgcolor=\"transparent\";\n" ++
+         "  node [shape=circle, fontname=\"et-book, Palatino, serif\", fontsize=12, \
+           color=\"#111\", fontcolor=\"#111\"];\n" ++
+         "  edge [color=\"#555\", arrowsize=0.7];\n" ++
+         "  w1 [label=\"w1\"];\n" ++
+         "}\n")⟩
+  ]
+
+end VisualizeTests
+
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
@@ -5482,7 +5597,8 @@ def main : IO UInt32 := do
       ++ coalitionCases
       ++ atlModelCheckCases ++ atlCases ++ lacaCases ++ lacaPaperCorrespondenceCases
       ++ atelCases ++ atelRegressionCases ++ atlirCases ++ atlirRegressionCases
-      ++ dclegCases ++ dclegPaperCorrespondenceCases ++ dclegRegressionCases do
+      ++ dclegCases ++ dclegPaperCorrespondenceCases ++ dclegRegressionCases
+      ++ visualizeCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
@@ -5505,6 +5621,7 @@ def main : IO UInt32 := do
     + atelCases.length + atelRegressionCases.length
     + atlirCases.length + atlirRegressionCases.length
     + dclegCases.length + dclegPaperCorrespondenceCases.length + dclegRegressionCases.length
+    + visualizeCases.length
     + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

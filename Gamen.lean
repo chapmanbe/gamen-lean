@@ -30,6 +30,7 @@ import Gamen.Atl
 import Gamen.Atel
 import Gamen.Atl.ImperfectInfo
 import Gamen.Dcleg
+import Gamen.Visualize
 
 /-!
 # gamen

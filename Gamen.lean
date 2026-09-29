@@ -19,6 +19,7 @@ import Gamen.Notation
 import Gamen.Protocol
 import Gamen.Teaching
 import Gamen.Cgs
+import Gamen.Coalition
 import Gamen.Atl.ModelCheck
 import Gamen.Laca
 import Gamen.Stit

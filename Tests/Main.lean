@@ -3834,7 +3834,7 @@ the whole "van der Hoek & Wooldridge (2003) — ATEL" section and its
 "Healthcare application" sub-block (every `it` there needs `Gamen.Atel`).
 
 Two title/value mismatches found while porting, both kept as the Haskell
-has them:
+has them (filed as gamen-hs#51):
 `test/PaperCorrespondence.hs`'s `it "sat(⟨⟨alice⟩⟩Xq) = {0}: …"` (line
 1425) actually asserts `sat loop (CanNext al q_) \`shouldBe\` Set.fromList
 [0, 1 :: Int]` — the title says `{0}`, the value checked is `{0,1}`; the
@@ -3904,12 +3904,12 @@ def atlModelCheckCases : List Case :=
     -- Definition 3(1) (p. 684): ⟨⟨C⟩⟩Xφ = preC(C, sat(φ)).
     ⟨"sat(⟨⟨alice⟩⟩Xq) = {0,1}: title in PaperCorrespondence.hs says {0} (line 1425), but \
       its own inline comments work out {0,1} and the value it actually checks is {0,1} — \
-      ported as run, not as titled",
+      ported as run, not as titled (gamen-hs#51)",
       match loopCgs with
       | .ok cgs => okIs (sat cgs (.canNext al q_)) (Std.TreeSet.ofList [0, 1])
       | .error _ => false⟩,
     ⟨"sat(⟨⟨alice⟩⟩Xp) = {0,2}: title in PaperCorrespondence.hs says {1,2}, \
-      but the value it actually checks is {0,2} — ported as run, not as titled",
+      but the value it actually checks is {0,2} — ported as run, not as titled (gamen-hs#51)",
       match loopCgs with
       | .ok cgs => okIs (sat cgs (.canNext al p_)) (Std.TreeSet.ofList [0, 2])
       | .error _ => false⟩,

@@ -40,11 +40,9 @@ automated or done by an agent.*
   Formula → Except String Bool`. It is built on `Std.TreeSet`/`TreeMap` and
   uses well-founded recursion, which is why the notebooks use
   `native_decide`, not `decide` (see CLAUDE.md).
-- The B&D citations below were checked against `gamen-hs/notes/bd-screen.pdf`.
-  Its SHA-256 is `3c50d5da…bc453`, which matches the Fall 2025 pin.
-  **Caveat:** that pin file, `notes/bd-edition.md`, exists only on the
-  gamen-hs branch `docs/pin-bd-edition` (PR #50, open), not on gamen-hs
-  `main`, although CLAUDE.md points to it.
+- The B&D citations below were checked against `notes/bd-screen.pdf`
+  (SHA-256 `3c50d5da…bc453`, the Fall 2025 edition pinned in
+  `notes/bd-edition.md`).
 
 ## Part A: tableau → countermodel → explorer
 

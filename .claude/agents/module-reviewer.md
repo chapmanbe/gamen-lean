@@ -47,7 +47,7 @@ missed when it is not.
    behavior, dropped branches, and changed edge cases (empty sets, missing
    worlds, fuel running out).
 5. **Citations.** Check a sample of the B&D numbers against the PDF
-   (`pdftotext ~/Projects/Logic/Haskell/gamen-hs/notes/bd-screen.pdf -`),
+   (`pdftotext -layout notes/bd-screen.pdf -`; edition pinned in `notes/bd-edition.md`),
    including every one the port changed from the Haskell.
 6. **Build.** `lake build` and `lake test` on the branch, and
    `tools/compare/compare.py` if the gamen-hs binary is built.

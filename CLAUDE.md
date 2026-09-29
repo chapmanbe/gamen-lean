@@ -24,10 +24,10 @@ Plan and per-module status: `PORTING.md`. Why Lean, and the evidence:
   Haskell function names in lowerCamelCase; constructors are lowerCamelCase
   (`.box`, `.stit`).
 - **Cite B&D definition numbers** in docstrings, and check them against the
-  PDF (`gamen-hs/notes/bd-screen.pdf`, `pdftotext`), never from memory.
+  PDF (`notes/bd-screen.pdf`, `pdftotext`), never from memory.
   B&D is revised continually: unqualified citations mean the edition pinned
-  in `gamen-hs/notes/bd-edition.md` (Fall 2025). Check the PDF's SHA-256
-  against that file first, and name any other edition explicitly. Ch. 1:
+  in `notes/bd-edition.md` (Fall 2025, the same as gamen-hs). Check the
+  PDF's SHA-256 against that file first, and name any other edition explicitly. Ch. 1:
   model = Def 1.6, truth at a world = 1.7, truth in a model = 1.9,
   validity = 1.11, entailment = 1.23.
 - **`error` becomes `Except`, not `panic!`.** Lean's `panic!` logs and then

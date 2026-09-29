@@ -8,7 +8,7 @@ import Gamen.Kripke
 Port of `gamen-hs/src/Gamen/Epistemic.hs`: multi-agent epistemic models
 with per-agent accessibility relations, public announcement semantics,
 group/common knowledge, and bisimulation. B&D Chapter 15, "Epistemic
-Logics" (`gamen-hs/notes/bd-screen.pdf`, Fall 2025 edition, pp. 190–203).
+Logics" (`notes/bd-screen.pdf`, Fall 2025 edition, pp. 190–203).
 
 The Haskell cites "Chapter 13, B&D Fall 2019" and Definitions 13.3, 13.4,
 13.5, 13.7, and 13.11. In the PDF in `notes/` Chapter 13 is conditional

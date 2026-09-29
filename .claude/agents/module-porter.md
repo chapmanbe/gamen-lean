@@ -69,7 +69,8 @@ likely to get past the build and the tests, so apply it everywhere:
 ## B&D citations
 
 Check every definition, table, and proposition number against the PDF:
-`pdftotext ~/Projects/Logic/Haskell/gamen-hs/notes/bd-screen.pdf - | grep -n …`.
+`pdftotext -layout notes/bd-screen.pdf - | grep -n …` (the edition pinned in
+`notes/bd-edition.md`).
 The Haskell's own citations have been wrong before; fix them in the Lean
 and list each fix in your report.
 

@@ -12,6 +12,7 @@ import Gamen.DeonticStit.Saturation
 import Gamen.DeonticStit.Prove
 import Gamen.DeonticStit.CounterModel
 import Gamen.Cgs
+import Gamen.Coalition
 import Gamen.Atl.ModelCheck
 import Gamen.Atl
 import Gamen.Atel
@@ -3607,16 +3608,18 @@ and class fixes" block is `kripkeCases`, near `Tests/Main.lean:646`). Every
 other `Cgs`-exercising `PaperCorrespondence.hs` section reaches it only
 through `Coalition`, `Atl`/`Atl.ModelCheck`, or `Atel`; `Gamen.Atl` and
 `Gamen.Atl.ModelCheck` are now ported (see below and `PORTING.md`), the
-other two are not:
+the ATEL one is not; `Gamen.Coalition` is now ported too (see
+`coalitionCases`, right after this list):
 
 - "Pauly (2002) — Coalition Logic" (`coalSatisfies`, `checkTopEffectivity`,
   `checkBotMonotonicity`, `checkMonotonicity`, `checkSuperadditivity`: all
-  `Gamen.Coalition`, not ported);
+  `Gamen.Coalition`; ported in full as `coalitionCases`, reusing this
+  section's "control game" `Cgs` fixture, `controlCgs`, below);
 - "Alur, Henzinger & Kupferman (2002) — ATL" (`sat`: `atlModelCheckCases`
   below; `atlSatisfies`, `CanNext`/`CanAlways`/`CanEventually`/`CanUntil`:
   `atlCases`, `Gamen.Atl`'s section);
 - "van der Hoek & Wooldridge (2003) — ATEL" (adds `AtelModel`,
-  `mkAtelModel`, `atelSat`: `Gamen.Atel`, not ported);
+  `mkAtelModel`, `atelSat`: `Gamen.Atel`, ported as `atelCases`);
 - the imperfect-information ATEL section right after it (adds
   `Gamen.Atl.ImperfectInfo`, not ported).
 
@@ -3703,8 +3706,10 @@ def cgsCases : List Case := [
         (fun s _ => s) b7Label with
     | .ok _ => true
     | .error _ => false⟩,
-  ⟨"Not in gamen-hs (no CgsSpec.hs): mkCgs accepts the Pauly (2002) control game \
-    (non-empty moves for alice and bob at every state)",
+  ⟨"PaperCorrespondence.hs:1273 mkCgs accepts the control game (non-empty moves for all \
+    agents at all states) — the only `it` of the \"Pauly (2002) — Coalition Logic\" \
+    section's \"Definition 1\" block that exercises Cgs, not Coalition; its siblings are \
+    in coalitionCases",
     match controlCgs with
     | .ok _ => true
     | .error _ => false⟩,
@@ -3815,6 +3820,118 @@ def cgsCases : List Case := [
     | .ok cgs => preC cgs (Std.TreeSet.ofList ["alice"]) (Std.TreeSet.ofList [0]) == Std.TreeSet.ofList [0, 2]
     | .error _ => false⟩
 ]
+
+/-! ## Coalition (`Gamen.Coalition`)
+
+There is no `test/CoalitionSpec.hs` in gamen-hs (`for f in coalSatisfies
+coalIsTrueIn checkTopEffectivity checkBotMonotonicity checkMonotonicity
+checkSuperadditivity; do grep -lw "$f" test/*.hs; done` finds hits only in
+`test/PaperCorrespondence.hs`). `coalIsTrueIn` is not called by any `it`
+either. Ported below (`coalitionCases`): every `it` of `PaperCorrespondence.hs`'s
+"Pauly (2002) — Coalition Logic" section (lines 1227–1361, three `describe`
+blocks: "Definition 1 (p. 152)", "Definition 3 (p. 153)", "Theorem 3.2
+(p. 155)"), reusing that section's own "control game" `Cgs` fixture
+(`controlCgs`, `cgsCases`'s docstring above), except the one `it` that
+exercises only `mkCgs` ("mkCgs accepts the control game", line 1273):
+that assertion is already covered by `cgsCases`'s "Not in gamen-hs (no
+CgsSpec.hs): mkCgs accepts the Pauly (2002) control game" case, which
+turns out to be this very `it` under a "not in gamen-hs" label written
+before `Gamen.Coalition` was ported — corrected in place, since porting a
+second copy of the same assertion would be porting from scratch code that
+already exists.
+
+Pauly (2001), *Logic for Social Software* (ILLC DS-2001-10), and Pauly
+(2002), *A Modal Logic for Coalitional Power in Games* (J. Log. Comp.
+12(1): 149–166) — the Haskell module's two citations — are not among the
+PDFs in `gamen-hs/notes/` (only a correspondence note derived from the
+Haskell itself, `notes/pauly2002-correspondence.md`); the page numbers in
+the Haskell's `describe` titles below are kept exactly as given, unverified
+against a primary source (`Gamen.Cgs`/`Gamen.Atl.ModelCheck`'s docstrings
+make the same point about their own AHK 2002 citations). -/
+
+def coalitionCases : List Case :=
+  let p_ : Formula := .atom "p"
+  let q_ : Formula := .atom "q"
+  let cAlice : List String := ["alice"]
+  let cBob : List String := ["bob"]
+  let cAll : List String := ["alice", "bob"]
+  let cEmpty : List String := []
+  match controlCgs with
+  | .error _ => [⟨"Gamen.Coalition: controlCgs fixture failed to build", false⟩]
+  | .ok cgs =>
+  [ -- Definition 1 (p. 152): Concurrent Game Structure. The "mkCgs accepts
+    -- the control game" `it` (line 1273) is ported in `cgsCases`, above.
+    ⟨"PaperCorrespondence.hs:1280 propositional: p holds at state 0 (labeling)",
+      okIs (coalSatisfies cgs 0 p_) true⟩,
+    ⟨"PaperCorrespondence.hs:1283 propositional: p does not hold at state 2 (labeling)",
+      okIs (coalSatisfies cgs 2 p_) false⟩,
+    ⟨"PaperCorrespondence.hs:1286-1288 propositional: q holds at state 0 and 2, not at 1 and 3",
+      okIs (coalSatisfies cgs 0 q_) true && okIs (coalSatisfies cgs 1 q_) false
+        && okIs (coalSatisfies cgs 2 q_) true && okIs (coalSatisfies cgs 3 q_) false⟩,
+
+    -- Definition 3 (p. 153): [C]φ — one-step coalition effectivity.
+    ⟨"PaperCorrespondence.hs:1292 [{alice}]p at state 0: alice plays 'p'; whatever bob \
+      does, p holds next",
+      okIs (coalSatisfies cgs 0 (.coalition cAlice p_)) true⟩,
+    ⟨"PaperCorrespondence.hs:1297 [{alice}]p holds at ALL states (transition is \
+      state-independent)",
+      okIs (coalSatisfies cgs 0 (.coalition cAlice p_)) true
+        && okIs (coalSatisfies cgs 1 (.coalition cAlice p_)) true
+        && okIs (coalSatisfies cgs 2 (.coalition cAlice p_)) true
+        && okIs (coalSatisfies cgs 3 (.coalition cAlice p_)) true⟩,
+    ⟨"PaperCorrespondence.hs:1301 [{alice}]q at state 0 is FALSE: alice cannot control \
+      bob's choice",
+      okIs (coalSatisfies cgs 0 (.coalition cAlice q_)) false⟩,
+    ⟨"PaperCorrespondence.hs:1306 [{bob}]q at state 0: bob plays 'q'; whatever alice \
+      does, q holds next",
+      okIs (coalSatisfies cgs 0 (.coalition cBob q_)) true⟩,
+    ⟨"PaperCorrespondence.hs:1309 [{bob}]p at state 0 is FALSE: bob cannot control \
+      alice's choice",
+      okIs (coalSatisfies cgs 0 (.coalition cBob p_)) false⟩,
+    ⟨"PaperCorrespondence.hs:1312 [{alice,bob}](p ∧ q): grand coalition plays (p, q) → state 0",
+      okIs (coalSatisfies cgs 0 (.coalition cAll (.and p_ q_))) true⟩,
+    ⟨"PaperCorrespondence.hs:1316 [{alice,bob}](p ∧ ¬q): grand coalition plays \
+      (p, not-q) → state 1",
+      okIs (coalSatisfies cgs 0 (.coalition cAll (.and p_ (.not q_)))) true⟩,
+    ⟨"PaperCorrespondence.hs:1319 [{}](p ∧ q) is FALSE: bob can play 'not-q' so not all \
+      successors have q",
+      okIs (coalSatisfies cgs 0 (.coalition cEmpty (.and p_ q_))) false⟩,
+    ⟨"PaperCorrespondence.hs:1324 ¬[{alice}]q holds at state 0 (negation of a false \
+      coalition formula)",
+      okIs (coalSatisfies cgs 0 (.not (.coalition cAlice q_))) true⟩,
+    ⟨"PaperCorrespondence.hs:1327 [{alice}](p ∨ q) is TRUE: alice forces p, and p → p∨q",
+      okIs (coalSatisfies cgs 0 (.coalition cAlice (.or p_ q_))) true⟩,
+    ⟨"Not in gamen-hs: [{alice}]¬q at state 0 is FALSE — alice's own two moves alone \
+      can't decide it (bob's \"q\" beats alice's \"p\", bob's \"q\" also beats alice's \
+      \"not-p\"), unlike [{alice}]p/[{alice}]q above, where one of alice's two moves \
+      happens to decide the target either way; this is the coalSatisfies analogue of \
+      cgsCases' \"opponents-computed-wrong\" fixture note, and catches a coalSatisfies \
+      [C]φ clause that quantifies the ∀ over the coalition's own moves instead of the \
+      opponents' (that bug still gets every ported PaperCorrespondence.hs case above \
+      right, by the same accident: none of their target propositions is controlled \
+      solely by the opponent)",
+      okIs (coalSatisfies cgs 0 (.coalition cAlice (.not q_))) false⟩,
+    ⟨"Not in gamen-hs (no WorldGuardsSpec.hs coverage for Coalition, and \
+      `grep -n coalSatisfies test/WorldGuardsSpec.hs test/RegressionIssue18.hs` finds \
+      nothing): coalSatisfies errors on a state not in cgsStates (gamen-hs#7-style \
+      guard, mirroring Gamen.Laca/Gamen.Stit/Gamen.Atl's world-existence guards) — \
+      without it, an unseen state would silently satisfy every negative formula",
+      isErr (coalSatisfies cgs 99 p_)⟩,
+
+    -- Theorem 3.2 (p. 155): frame axioms N, ⊥, Mon, Super.
+    ⟨"PaperCorrespondence.hs:1333 N — ⊤-effectivity: checkTopEffectivity returns True",
+      checkTopEffectivity cgs⟩,
+    ⟨"PaperCorrespondence.hs:1338 ⊥ — ⊥-monotonicity: checkBotMonotonicity returns True",
+      checkBotMonotonicity cgs⟩,
+    ⟨"PaperCorrespondence.hs:1343 Mon — monotonicity: preC({alice}, {0,1}) ⊆ \
+      preC({alice}, {0,1,2})",
+      checkMonotonicity cgs (Std.TreeSet.ofList ["alice"]) (Std.TreeSet.ofList [0, 1])
+        (Std.TreeSet.ofList [2])⟩,
+    ⟨"PaperCorrespondence.hs:1352 Super — superadditivity: disjoint {alice},{bob} \
+      combine guarantees",
+      checkSuperadditivity cgs (Std.TreeSet.ofList ["alice"]) (Std.TreeSet.ofList ["bob"])
+        (Std.TreeSet.ofList [0, 1]) (Std.TreeSet.ofList [0, 2])⟩
+  ]
 
 /-! ## Atl.ModelCheck (`Gamen.Atl.ModelCheck`)
 
@@ -4621,6 +4738,7 @@ def main : IO UInt32 := do
       ++ semanticsCases ++ fragmentCases ++ temporalCases ++ doxasticCases ++ rankingTheoryCases
       ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
       ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases ++ cgsCases
+      ++ coalitionCases
       ++ atlModelCheckCases ++ atlCases ++ lacaCases ++ lacaPaperCorrespondenceCases
       ++ atelCases ++ atelRegressionCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
@@ -4639,7 +4757,8 @@ def main : IO UInt32 := do
     + fragmentCases.length + temporalCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
     + deonticStitCases.length + counterModelCases.length + closureCases.length
-    + crossCheckCases.length + cgsCases.length + atlModelCheckCases.length + atlCases.length
+    + crossCheckCases.length + cgsCases.length + coalitionCases.length
+    + atlModelCheckCases.length + atlCases.length
     + lacaCases.length + lacaPaperCorrespondenceCases.length
     + atelCases.length + atelRegressionCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"

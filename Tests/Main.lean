@@ -13,6 +13,7 @@ import Gamen.DeonticStit.Prove
 import Gamen.DeonticStit.CounterModel
 import Gamen.Cgs
 import Gamen.Atl.ModelCheck
+import Gamen.Atl
 import Gamen.Laca
 import Gamen.Stit
 import Gamen.Xstit
@@ -3603,26 +3604,27 @@ block (2 `it`s, lines 319–331), ported verbatim as `cgsCases`'s first two
 entries below (the same file's "B7: Kripke / FrameProperties dangling-edge
 and class fixes" block is `kripkeCases`, near `Tests/Main.lean:646`). Every
 other `Cgs`-exercising `PaperCorrespondence.hs` section reaches it only
-through `Coalition`, `Atl`/`Atl.ModelCheck`, or `Atel`, none ported yet
-(`PORTING.md`):
+through `Coalition`, `Atl`/`Atl.ModelCheck`, or `Atel`; `Gamen.Atl` and
+`Gamen.Atl.ModelCheck` are now ported (see below and `PORTING.md`), the
+other two are not:
 
 - "Pauly (2002) — Coalition Logic" (`coalSatisfies`, `checkTopEffectivity`,
   `checkBotMonotonicity`, `checkMonotonicity`, `checkSuperadditivity`: all
-  `Gamen.Coalition`);
-- "Alur, Henzinger & Kupferman (2002) — ATL" (`sat`, `atlSatisfies`,
-  `CanNext`/`CanAlways`/`CanEventually`/`CanUntil`: `Gamen.Atl`/
-  `Gamen.Atl.ModelCheck`);
+  `Gamen.Coalition`, not ported);
+- "Alur, Henzinger & Kupferman (2002) — ATL" (`sat`: `atlModelCheckCases`
+  below; `atlSatisfies`, `CanNext`/`CanAlways`/`CanEventually`/`CanUntil`:
+  `atlCases`, `Gamen.Atl`'s section);
 - "van der Hoek & Wooldridge (2003) — ATEL" (adds `AtelModel`,
-  `mkAtelModel`, `atelSat`: `Gamen.Atel`);
+  `mkAtelModel`, `atelSat`: `Gamen.Atel`, not ported);
 - the imperfect-information ATEL section right after it (adds
-  `Gamen.Atl.ImperfectInfo`).
+  `Gamen.Atl.ImperfectInfo`, not ported).
 
 `Gamen.Laca` is now ported (`Gamen/Laca.lean`); its `lacaToCgs` coercion
 sub-block of the "Herzig, Lorini & Perrotin (2022) — LACA" section is split
-across two case lists: the four `it`s that only exercise `Cgs` primitives
+across three case lists: the four `it`s that only exercise `Cgs` primitives
 (`cgsStates`, `cgsAgents`, two `cgsLabeling`) are ported in
 `lacaPaperCorrespondenceCases`; its other three `it`s (`atlSatisfies` × 2,
-`sat`) still need `Gamen.Atl` and stay unported.
+`sat`) are ported in `atlCases` (`Gamen.Atl`'s section).
 
 So apart from the two `RegressionIssue18.hs` cases, every other case below
 is a not-in-spec sanity check on the raw `Cgs` primitives themselves
@@ -3996,6 +3998,112 @@ def atlModelCheckCases : List Case :=
       | .error _ => false⟩
   ]
 
+/-! ## Atl (`Gamen.Atl`)
+
+There is no `test/Atl*.hs` spec in gamen-hs (`find test -iname '*atl*'`
+returns nothing, per `Gamen.Atl.ModelCheck`'s row above). Ported here,
+from `test/PaperCorrespondence.hs`: every `it` in the "Alur, Henzinger &
+Kupferman (2002) — ATL" section that calls `atlSatisfies` (the other 10
+of that section's 26 `it`s, complementing `atlModelCheckCases`'s 16
+`sat`-only ones — the "Definition 3(1)"/"(2)"/"(4)" and "sat(⟨⟨alice⟩⟩Fq)"
+`describe` blocks), plus the "Herzig, Lorini & Perrotin (2022) — LACA"
+section's "lacaToCgs coercion" sub-block's last three `it`s (`atlSatisfies`
+× 2, `sat` × 1 — held back together in `Gamen.Laca`'s and `Gamen.Cgs`'s
+rows pending this module, and ported together here). Every other
+`atlSatisfies`/`atlIsTrueIn`-calling `it` in gamen-hs's `test/` (checked:
+`grep -n atlSatisfies test/*.hs`, `grep -n atlIsTrueIn test/*.hs` — the
+latter has zero hits anywhere in gamen-hs) is one of these 12. `atlIsTrueIn`
+itself is exercised by no gamen-hs test at all; the two cases below marked
+"Not in gamen-hs" cover it directly. AHK 2002 page numbers kept exactly as
+the Haskell's comments give them (see `atlModelCheckCases`'s docstring),
+unverified against a primary source. -/
+
+def atlCases : List Case :=
+  let al : List String := ["alice"]
+  let p_ : Formula := .atom "p"
+  let q_ : Formula := .atom "q"
+  let h_ : Formula := .atom "h"
+  -- `test/PaperCorrespondence.hs`'s LACA fixture (Example 1, p. 2649):
+  -- agent "1" controls h, "2" controls w; both false initially. Same
+  -- fixture as `Gamen.Laca`'s `lacaModelHW`/`lacaS0`, defined locally here
+  -- since this section runs before those `private def`s below.
+  let lacaModelHW' : LacaModel := mkLacaModel [("h", "1"), ("w", "2")]
+  let lacaS0' : LacaState := Std.TreeMap.ofList [("h", false), ("w", false)]
+  let cgs' := lacaToCgs lacaModelHW'
+  [ -- Definition 3(1) (p. 684): ⟨⟨C⟩⟩Xφ = preC(C, sat(φ)).
+    ⟨"⟨⟨alice⟩⟩Xq holds at state 0: alice plays 'next', landing at 1 (q)",
+      match loopCgs with
+      | .ok cgs => okIs (atlSatisfies cgs 0 (.canNext al q_)) true
+      | .error _ => false⟩,
+    ⟨"⟨⟨alice⟩⟩Xq holds at state 1: alice plays 'stay', staying at 1 (q)",
+      match loopCgs with
+      | .ok cgs => okIs (atlSatisfies cgs 1 (.canNext al q_)) true
+      | .error _ => false⟩,
+    ⟨"⟨⟨alice⟩⟩Xq is FALSE at state 2: no move leads to a state with q",
+      match loopCgs with
+      | .ok cgs => okIs (atlSatisfies cgs 2 (.canNext al q_)) false
+      | .error _ => false⟩,
+    -- Definition 3(2) (p. 684): ⟨⟨C⟩⟩Gφ = ν X. sat(φ) ∩ preC(C, X).
+    ⟨"⟨⟨alice⟩⟩Gp holds at state 0 (play 'stay' forever)",
+      match loopCgs with
+      | .ok cgs => okIs (atlSatisfies cgs 0 (.canAlways al p_)) true
+      | .error _ => false⟩,
+    ⟨"⟨⟨alice⟩⟩Gp is FALSE at state 1: p does not hold at 1",
+      match loopCgs with
+      | .ok cgs => okIs (atlSatisfies cgs 1 (.canAlways al p_)) false
+      | .error _ => false⟩,
+    ⟨"⟨⟨alice⟩⟩Gp is FALSE at state 2: p does not hold at 2",
+      match loopCgs with
+      | .ok cgs => okIs (atlSatisfies cgs 2 (.canAlways al p_)) false
+      | .error _ => false⟩,
+    -- Definition 3(3) (p. 684): ⟨⟨C⟩⟩Fφ = μ X. sat(φ) ∪ preC(C, X).
+    ⟨"⟨⟨alice⟩⟩Fq holds at all states: alice can always reach q",
+      match loopCgs with
+      | .ok cgs =>
+        [0, 1, 2].all fun s => okIs (atlSatisfies cgs s (.canEventually al q_)) true
+      | .error _ => false⟩,
+    -- Definition 3(4) (p. 684): ⟨⟨C⟩⟩(φ U ψ) = μ X. sat(ψ) ∪ (sat(φ) ∩ preC(C, X)).
+    ⟨"⟨⟨alice⟩⟩(p U q) holds at state 0: play 'next' (p holds now, q holds at state 1)",
+      match loopCgs with
+      | .ok cgs => okIs (atlSatisfies cgs 0 (.canUntil al p_ q_)) true
+      | .error _ => false⟩,
+    ⟨"⟨⟨alice⟩⟩(p U q) holds at state 1: q already holds (until satisfied immediately)",
+      match loopCgs with
+      | .ok cgs => okIs (atlSatisfies cgs 1 (.canUntil al p_ q_)) true
+      | .error _ => false⟩,
+    ⟨"⟨⟨alice⟩⟩(p U q) is FALSE at state 2: p does not hold here, q not yet reached",
+      match loopCgs with
+      | .ok cgs => okIs (atlSatisfies cgs 2 (.canUntil al p_ q_)) false
+      | .error _ => false⟩,
+    -- "lacaToCgs coercion" sub-block, Gamen.Laca §3.1 (the three `it`s
+    -- held back from `lacaPaperCorrespondenceCases`/`cgsCases`).
+    ⟨"atlSatisfies cgs' s0 (⟨⟨1⟩⟩ X h) = True — agent 1 attempts h, flips it \
+      regardless of agent 2",
+      okIs (atlSatisfies cgs' lacaS0' (.canNext ["1"] h_)) true⟩,
+    ⟨"atlSatisfies cgs' s0 (⟨⟨2⟩⟩ X h) = False — agent 2 controls w, cannot guarantee h",
+      okIs (atlSatisfies cgs' lacaS0' (.canNext ["2"] h_)) false⟩,
+    ⟨"sat cgs' (⟨⟨1⟩⟩ F h) = all states — agent 1 can always flip h in one step",
+      okIs (sat cgs' (.canEventually ["1"] h_)) cgs'.cgsStates⟩,
+    -- Not in gamen-hs (no `atlIsTrueIn` call anywhere in gamen-hs's
+    -- `test/`): sanity checks on the raw function, mirroring `sat`'s own
+    -- fixtures.
+    ⟨"Not in gamen-hs: atlIsTrueIn loop p is False — p only holds at state 0, not 1 or 2",
+      match loopCgs with
+      | .ok cgs => okIs (atlIsTrueIn cgs p_) false
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: atlIsTrueIn loop (⟨⟨alice⟩⟩Fq) is True — alice can reach q \
+      from every state",
+      match loopCgs with
+      | .ok cgs => okIs (atlIsTrueIn cgs (.canEventually al q_)) true
+      | .error _ => false⟩,
+    -- Not in gamen-hs: `atlSatisfies`'s world-existence guard (gamen-hs#7
+    -- pattern, matching every other module's `s*Satisfies`/`x*Satisfies`).
+    ⟨"Not in gamen-hs: atlSatisfies errors on a state not in cgsStates",
+      match loopCgs with
+      | .ok cgs => isErr (atlSatisfies cgs 99 p_)
+      | .error _ => false⟩
+  ]
+
 /-! ## Laca (`Gamen.Laca`)
 
 Port of `test/LacaSpec.hs` in full (11 `it`s across its three describe
@@ -4070,9 +4178,10 @@ The "Herzig, Lorini & Perrotin (2022) — LACA" section: "Section 2.2 (p.
 `cgsLabeling`). Page numbers checked against `notes/Lorini2022.pdf`
 (Herzig, Lorini & Perrotin, *IJCAI 2022*, pp. 2648–2654) and are correct.
 
-Skipped: the sub-block's other three `it`s (`atlSatisfies cgs' s0
+The sub-block's other three `it`s (`atlSatisfies cgs' s0
 (CanNext ["1"] h_)`, `atlSatisfies cgs' s0 (CanNext ["2"] h_)`, and
-`sat cgs' (CanEventually ["1"] h_)`) need `Gamen.Atl`, not ported yet. -/
+`sat cgs' (CanEventually ["1"] h_)`) are ported in `atlCases`, above,
+`Gamen.Atl`'s section. -/
 
 def lacaPaperCorrespondenceCases : List Case := [
   -- Section 2.2 (p. 2649): succState — attempt flips the controlled atom.
@@ -4128,7 +4237,7 @@ def main : IO UInt32 := do
       ++ semanticsCases ++ fragmentCases ++ temporalCases ++ doxasticCases ++ rankingTheoryCases
       ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
       ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases ++ cgsCases
-      ++ atlModelCheckCases ++ lacaCases ++ lacaPaperCorrespondenceCases do
+      ++ atlModelCheckCases ++ atlCases ++ lacaCases ++ lacaPaperCorrespondenceCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
@@ -4145,7 +4254,7 @@ def main : IO UInt32 := do
     + fragmentCases.length + temporalCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
     + deonticStitCases.length + counterModelCases.length + closureCases.length
-    + crossCheckCases.length + cgsCases.length + atlModelCheckCases.length
+    + crossCheckCases.length + cgsCases.length + atlModelCheckCases.length + atlCases.length
     + lacaCases.length + lacaPaperCorrespondenceCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

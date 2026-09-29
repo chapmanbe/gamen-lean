@@ -53,8 +53,10 @@ Plan and per-module status: `PORTING.md`. Why Lean, and the evidence:
   model checkers (`Atl.ModelCheck.sat`, `Atel.atelSat`): `Data.Set`'s
   `intersection ∅ x` and `difference ∅ x` return ∅ without evaluating `x`,
   so `sat (⊥ ∧ □p)` is ∅ in gamen-hs, not an unsupported-operator error.
-  Evaluate the second operand only when Haskell would; `union` forces both.
-  Check any new set-algebra port against GHC. Everywhere else, strict
+  Evaluate the second operand only when Haskell would; `union` forces both,
+  its *second* argument first, so when both sides error gamen-hs reports
+  the right one (`Or`, `Implies`, `Iff`). Match which error surfaces, not
+  just whether one does. Check any new set-algebra port against GHC. Everywhere else, strict
   evaluation is safe.
 - **Pairs as keys**: Lean core has no `Ord (α × β)` instance; use
   `attribute [local instance] lexOrd` (see `Tableau.lean`).

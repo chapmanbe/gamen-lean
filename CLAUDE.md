@@ -42,15 +42,20 @@ Plan and per-module status: `PORTING.md`. Why Lean, and the evidence:
   a property test that checks it (see the `toNNF` note in `Formula.lean`).
 - **No `sorry`** in committed code.
 - **Laziness: match outputs, not evaluation order.** Don't mimic Haskell's
-  laziness; match its results *and errors*. The one place it matters is
-  `Epistemic.hs` ~148–158: the per-announcement table of restricted models
+  laziness; match its results *and errors*. It matters in two places.
+  First, `Epistemic.hs` ~148–158: the per-announcement table of restricted models
   is built lazily, so a restriction (which evaluates the announcement body
   at every world, and can error) runs only when `[B]C` is reached. A literal
   strict translation that builds the table up front would raise errors
   gamen-hs never raises (e.g. `p ∧ [B]C` with `p` false). Restrict on
   demand instead; add a cache filled on first use only if speed demands
-  it, with a property test against the uncached version. Everywhere else,
-  strict evaluation is safe.
+  it, with a property test against the uncached version. Second, set-valued
+  model checkers (`Atl.ModelCheck.sat`, `Atel.atelSat`): `Data.Set`'s
+  `intersection ∅ x` and `difference ∅ x` return ∅ without evaluating `x`,
+  so `sat (⊥ ∧ □p)` is ∅ in gamen-hs, not an unsupported-operator error.
+  Evaluate the second operand only when Haskell would; `union` forces both.
+  Check any new set-algebra port against GHC. Everywhere else, strict
+  evaluation is safe.
 - **Pairs as keys**: Lean core has no `Ord (α × β)` instance; use
   `attribute [local instance] lexOrd` (see `Tableau.lean`).
 - **Shared relation checks live in `Kripke.lean`.** gamen-hs writes

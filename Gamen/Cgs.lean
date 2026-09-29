@@ -102,7 +102,7 @@ reachable state set.
 
 Note: the bare `Cgs` constructor remains available for internal builders
 that produce a CGS by transformation (e.g.
-`Gamen.Atl.ImperfectInfo.residualCgs`, not ported yet) rather than from
+`Gamen.Atl.ImperfectInfo.residualCgs`) rather than from
 raw data; prefer `mkCgs` for models built from user input, as in the
 Haskell. -/
 def mkCgs {s a : Type} [Ord s] [Ord a]
@@ -164,7 +164,7 @@ state into `x` regardless of what the opposing agents do:
 non-c agents. transition(s, m_c ∪ m_(Ag∖c)) ∈ x }`
 
 This is the fundamental operation used by both Coalition Logic
-satisfaction and the ATL fixpoint algorithm (neither ported yet). -/
+satisfaction and the ATL fixpoint algorithm. -/
 def preC {s a : Type} [Ord s] [Ord a]
     (cgs : Cgs s a) (coalition : Std.TreeSet String) (x : Std.TreeSet s) :
     Std.TreeSet s :=
@@ -173,5 +173,24 @@ def preC {s a : Type} [Ord s] [Ord a]
     (jointMoves cgs coalition st).any fun coMove =>
       (jointMoves cgs opponents st).all fun oppMove =>
         x.contains (cgs.cgsTransition st (leftBiasedUnion coMove oppMove))
+
+/-- `preC` with a target set that is not yet evaluated and may be an error.
+Not in gamen-hs as a separate function: it reproduces the lazy Haskell
+`preC`, which forces `x` only on reaching a membership test. So `x`'s error
+is raised only if some state has a coalition joint move and, for it, an
+opponent joint move. It is never raised on a zero-state CGS, nor when a
+coalition member (or an opponent) has no moves anywhere. On `.ok x` it
+equals `preC cgs coalition x`. Used by `Gamen.Atl.ModelCheck.sat`,
+`Gamen.Atel.atelSat`, and `Gamen.Atl.ImperfectInfo`. -/
+def preCLazy {s a : Type} [Ord s] [Ord a]
+    (cgs : Cgs s a) (coalition : Std.TreeSet String) (x : Except String (Std.TreeSet s)) :
+    Except String (Std.TreeSet s) := do
+  let opponents := cgs.cgsAgents \ coalition
+  let kept ← cgs.cgsStates.toList.filterM fun st =>
+    (jointMoves cgs coalition st).anyM fun coMove =>
+      (jointMoves cgs opponents st).allM fun oppMove => do
+        let xs ← x
+        pure (xs.contains (cgs.cgsTransition st (leftBiasedUnion coMove oppMove)))
+  pure (Std.TreeSet.ofList kept)
 
 end Gamen

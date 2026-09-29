@@ -276,7 +276,7 @@ Note: the ATL semantics considers all combinations of agents' moves; use
 Uses the bare `Cgs` constructor, not `mkCgs`: this builds a `Cgs` by
 transformation from an already-validated `LacaModel`, exactly the kind of
 internal builder `Cgs.mkCgs`'s docstring carves out (alongside
-`Gamen.Atl.ImperfectInfo.residualCgs`, not ported yet), rather than from raw
+`Gamen.Atl.ImperfectInfo.residualCgs`), rather than from raw
 user data. -/
 def lacaToCgs (m : LacaModel) : Cgs LacaState (Std.TreeSet String) :=
   let atomList := m.lacaAtoms.toList

@@ -70,8 +70,9 @@ directly for every case below, via `cabal repl`):
 - `And l r`: `go l` is always forced (it is `intersection`'s first
   argument); `go r` is skipped exactly when `go l`'s result is empty (e.g.
   `sat cgs (And Bot (Box p)) = ∅`, confirmed, never touching `Box`'s error).
-- `Or l r`: both sides always forced (per `union`'s rule above) — ported
-  unchanged, no shortcut to replicate.
+- `Or l r`: both sides always forced (per `union`'s rule above), no
+  shortcut to replicate; but `union` forces its *second* argument first,
+  so `r` is evaluated before `l` (see "Error order" below).
 - `Implies l r`: the antecedent `Set.difference states (go l)` follows
   `Not`'s rule (`go l` skipped iff `states` is empty); the consequent
   `go r` is `union`'s second argument, so it is *always* forced regardless
@@ -103,8 +104,30 @@ its `CanEventually`/`CanUntil` siblings, phi or psi illegal, all error).
 too and also needs no handling: unlike `intersection`/`difference`,
 `Data.Set.isSubsetOf`'s *left* argument being empty does not skip forcing
 the right (confirmed: `Set.isSubsetOf Set.empty (error …)` still throws
-under `seq`), so `go phi` is unconditionally forced there, matching the
-existing strict translation already. -/
+under `seq`). But that `isSubsetOf` sits inside a `Set.filter` over
+`states`, so on a zero-state model `go phi` is never forced at all
+(GHCi, 2026-09-29: `atelSat zeroModel (Knowledge "alice" (Box p))` = ∅):
+`atelSat` now skips it when `states` is empty (correction, 2026-09-29).
+
+**Error order** (added 2026-09-29, checked in GHCi). When *both* operands
+of a connective error, which error GHC reports is also decided by
+`Data.Set`'s forcing order: `union` forces its second argument first, so
+`Or l r` and `Implies l r` report `r`'s error, and so does `Iff l r` when
+`states` is nonempty (its outer `union`'s second argument contains
+`Set.union sl sr`); `And` reports `l`'s (`intersection`'s first argument);
+`CanUntil` reports `φ`'s before `ψ`'s (the step function
+`union satPsi (intersection satPhi …)` forces the `intersection`, hence
+`satPhi`, first). The earlier port evaluated `l` first everywhere, which
+gave the left error for `Or`/`Implies`/`Iff`; fixed, with a "Not in
+gamen-hs: error order" case for each.
+
+**One-step coalition operators** (correction, 2026-09-29). `Coalition`
+and `CanNext` are `preC cgs c (go φ)`, and `preC` forces its target set
+only when it reaches a membership test: never on a zero-state CGS, never
+at a state where some coalition member has no moves, and never where
+some opponent has none. GHCi: `sat zeroCgs (CanNext ["alice"] (Box p))` =
+∅. The earlier port evaluated `go φ` first and threw; both clauses now go
+through `Gamen.Cgs.preCLazy`. -/
 namespace Gamen
 
 -- ── Fixpoint utilities ──────────────────────────────────────────────────
@@ -166,31 +189,31 @@ def sat {s a : Type} [Ord s] [Ord a] [BEq s] (cgs : Cgs s a) (f : Formula) :
         let sr ← sat cgs r
         pure (sl ∩ sr)
   | .or l r => do
-      -- `Set.union (go l) (go r)`: `Data.Set.union` forces its second
-      -- argument unconditionally (checked against GHC's `containers`), and
-      -- forcing its result (as every caller here eventually does, to
-      -- compare sets) forces the first argument too — no short-circuit to
-      -- replicate; both sides are always evaluated, as below.
-      let sl ← sat cgs l
+      -- `Set.union (go l) (go r)`: `Data.Set.union` forces both arguments,
+      -- its *second* first (`union t1 Tip = t1` is its first equation), so
+      -- there is no short-circuit, but when both sides error GHC reports
+      -- `r`'s error (GHCi, 2026-09-29: `sat c (Or (Box p) (Diamond p))` →
+      -- the Diamond error).
       let sr ← sat cgs r
+      let sl ← sat cgs l
       pure (sl ∪ sr)
   | .implies l r => do
       -- `Set.union (Set.difference states (go l)) (go r)`: `go r` (union's
-      -- second argument) is always forced, unconditionally — matching `r`
-      -- below, evaluated regardless of `l`/`states`. The antecedent
+      -- second argument) is forced first, unconditionally. The antecedent
       -- `Set.difference states (go l)` follows `Not`'s rule: `go l` is
-      -- skipped exactly when `states` is empty.
+      -- skipped exactly when `states` is empty. Both sides erroring: `r`'s
+      -- error (GHCi, 2026-09-29, on a nonempty and a zero-state CGS).
+      let sr ← sat cgs r
       let diffPart ← do
         if cgs.cgsStates.isEmpty then pure (∅ : Std.TreeSet s)
         else do
           let sl ← sat cgs l
           pure (cgs.cgsStates \ sl)
-      let sr ← sat cgs r
       pure (diffPart ∪ sr)
   | .iff l r => do
       -- `Set.union (Set.intersection sl sr) (Set.difference states (Set.union sl sr))`
       -- (`sl`/`sr` shared thunks for `go l`/`go r`). `sl` is always forced
-      -- first (it is `intersection`'s first argument, and that
+      -- (it is `intersection`'s first argument, and that
       -- `intersection` is itself always eventually forced — either directly,
       -- when the difference/`states` part is empty and `union` returns it
       -- unevaluated to a caller that then demands it, or as part of the
@@ -202,25 +225,29 @@ def sat {s a : Type} [Ord s] [Ord a] [BEq s] (cgs : Cgs s a) (f : Formula) :
       -- ever touched, matching `Not`/`Implies`'s antecedent above. All four
       -- shapes (`states` empty or not, crossed with which of `l`/`r` is the
       -- illegal operand) were checked against GHC's `containers` directly.
-      let sl ← sat cgs l
+      -- Order when both sides error (GHCi, 2026-09-29): with `states`
+      -- nonempty the outer `union` forces its second argument first, whose
+      -- `Set.union sl sr` forces `sr` before `sl`, so `r`'s error wins
+      -- (`sat c (Iff (Box p) (Diamond p))` → Diamond); with `states` empty
+      -- only `sl` is forced, so `l`'s error.
       if cgs.cgsStates.isEmpty then
+        let sl ← sat cgs l
         if sl.isEmpty then pure ∅
         else do
           let sr ← sat cgs r
           pure (sl ∩ sr)
       else do
         let sr ← sat cgs r
+        let sl ← sat cgs l
         pure ((sl ∩ sr) ∪ (cgs.cgsStates \ (sl ∪ sr)))
 
   -- [C]φ ≡ ⟨⟨C⟩⟩Xφ — one-step coalition preimage
-  | .coalition c f' => do
-      let sf ← sat cgs f'
-      pure (preC cgs (Std.TreeSet.ofList c) sf)
+  -- (`preCLazy`: `sat cgs f'` is forced only where the lazy `preC`
+  -- would force it; see the module docstring.)
+  | .coalition c f' => preCLazy cgs (Std.TreeSet.ofList c) (sat cgs f')
 
   -- ⟨⟨C⟩⟩Xφ — same preimage (AHK 2002, Def. 3(1))
-  | .canNext c f' => do
-      let sf ← sat cgs f'
-      pure (preC cgs (Std.TreeSet.ofList c) sf)
+  | .canNext c f' => preCLazy cgs (Std.TreeSet.ofList c) (sat cgs f')
 
   -- ⟨⟨C⟩⟩Gφ — greatest fixpoint (AHK 2002, Def. 3(2))
   | .canAlways c f' => do

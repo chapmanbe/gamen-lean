@@ -90,6 +90,12 @@ def isErr (e : Except String α) : Bool :=
   | .ok _ => false
   | .error _ => true
 
+/-- The computation errors with exactly `msg`. -/
+def errIs {α : Type} (e : Except String α) (msg : String) : Bool :=
+  match e with
+  | .error m => m == msg
+  | .ok _ => false
+
 /-- Countermodel for □p → p: build, take the first open branch, extract,
 and confirm the formula is false in the extracted model. -/
 def countermodelCase : Bool :=
@@ -4181,7 +4187,40 @@ def atlModelCheckCases : List Case :=
       against gamen-hs",
       match zeroCgs with
       | .ok cgs => isErr (sat cgs (.iff (.box p_) q_))
-      | .error _ => false⟩
+      | .error _ => false⟩,
+    -- Not in gamen-hs: error order when both operands error, and preC's
+    -- laziness. Expected values and error texts from gamen-hs's own `sat`
+    -- in GHCi (`cabal repl lib:gamen`, 2026-09-29), on `irCgs`, `zeroCgs`,
+    -- and `irCgs` with a moveless second agent `bob`.
+    ⟨"Not in gamen-hs: error order — sat(Or (Box p) (Diamond p)) raises the \
+      Diamond error (Set.union forces its second argument first; GHCi)",
+      errIs (sat irCgs (.or (.box p_) (.diamond p_))) "Diamond not supported in ATL"⟩,
+    ⟨"Not in gamen-hs: error order — sat(Implies (Box p) (Diamond p)) raises \
+      the Diamond error, on irCgs and on a zero-state CGS (GHCi)",
+      errIs (sat irCgs (.implies (.box p_) (.diamond p_))) "Diamond not supported in ATL"
+        && (match zeroCgs with
+            | .ok cgs =>
+                errIs (sat cgs (.implies (.box p_) (.diamond p_))) "Diamond not supported in ATL"
+            | .error _ => false)⟩,
+    ⟨"Not in gamen-hs: error order — sat(Iff (Box p) (Diamond p)) raises the \
+      Diamond error on irCgs, the Box error on a zero-state CGS (GHCi)",
+      errIs (sat irCgs (.iff (.box p_) (.diamond p_))) "Diamond not supported in ATL"
+        && (match zeroCgs with
+            | .ok cgs =>
+                errIs (sat cgs (.iff (.box p_) (.diamond p_)))
+                  "Box not supported in ATL; use ⟨⟨Ag⟩⟩G for grand-coalition invariance"
+            | .error _ => false)⟩,
+    ⟨"Not in gamen-hs: laziness — preC forces its target only at a membership \
+      test: sat(⟨⟨alice⟩⟩X Box p) = ∅ on a zero-state CGS and {0,1,2} with a \
+      moveless opponent; sat([bob] Box p) = ∅ (bob has no moves); GHCi",
+      (match zeroCgs with
+       | .ok cgs => okIs (sat cgs (.canNext al (.box p_))) ∅
+       | .error _ => false)
+        && okIs (sat { irCgs with cgsAgents := Std.TreeSet.ofList ["alice", "bob"] }
+              (.canNext al (.box p_))) (Std.TreeSet.ofList [0, 1, 2])
+        && okIs (sat irCgs (.coalition ["bob"] (.box p_))) ∅
+        && errIs (sat irCgs (.canNext al (.box p_)))
+              "Box not supported in ATL; use ⟨⟨Ag⟩⟩G for grand-coalition invariance"⟩
   ]
 
 /-! ## Atl (`Gamen.Atl`)
@@ -4486,6 +4525,30 @@ private def atelSurgModel : Except String (AtelModel Nat String) := do
   let cgs ← surgCgs
   mkAtelModel cgs surgEpistemic
 
+/-- Alice's epistemic relation for the ATLir section
+(`PaperCorrespondence.hs` ~1741–1745): `{0,1}` and `{2}`. -/
+private def irEpistemic : String → Nat → Std.TreeSet Nat
+  | "alice", 0 => Std.TreeSet.ofList [0, 1]
+  | "alice", 1 => Std.TreeSet.ofList [0, 1]
+  | "alice", _ => Std.TreeSet.ofList [2]
+  | _, s => Std.TreeSet.ofList [s]
+
+private def irModel : Except String (AtelModel Nat String) :=
+  mkAtelModel irCgs irEpistemic
+
+private def withIr (k : AtelModel Nat String → Bool) : Bool :=
+  match irModel with
+  | .ok m => k m
+  | .error _ => false
+
+/-- `irCgs` with a second agent `bob` who has no moves anywhere
+(`irMoves` gives non-`alice` agents `∅`). Built without `mkCgs`, which
+would reject it; `mkAtelModel` accepts it. With coalition `{alice}`, the
+opponents' joint-move list is empty at every state, so `preC` never tests
+membership. -/
+private def irBobModel : Except String (AtelModel Nat String) :=
+  mkAtelModel { irCgs with cgsAgents := Std.TreeSet.ofList ["alice", "bob"] } irEpistemic
+
 /-- A zero-state ATEL model (over `zeroCgs`, `Gamen.Atl.ModelCheck`'s row):
 the epistemic relation is trivially reflexive/symmetric/transitive/uniform
 when there are no states to check, so `mkAtelModel` accepts it. Used by
@@ -4633,7 +4696,46 @@ def atelCases : List Case :=
       zero-state model: Iff's left side is always forced, in every case",
       match zeroAtelModel with
       | .ok m => isErr (atelSat m (.iff (.box p_) q_))
-      | .error _ => false⟩
+      | .error _ => false⟩,
+    -- Not in gamen-hs: error order when both operands error, and the
+    -- Knowledge/preC laziness. Expected values and error texts from
+    -- gamen-hs's own `atelSat` in GHCi (`cabal repl lib:gamen`, 2026-09-29),
+    -- on `irModel`, `zeroAtelModel`, and `irBobModel`.
+    ⟨"Not in gamen-hs: error order — atelSat(Or (Box p) (Diamond p)) raises the \
+      Diamond error (GHCi)",
+      withIr fun m => errIs (atelSat m (.or (.box p_) (.diamond p_))) "Diamond not supported in ATEL"⟩,
+    ⟨"Not in gamen-hs: error order — atelSat(Implies (Box p) (Diamond p)) raises \
+      the Diamond error, on irModel and on a zero-state model (GHCi)",
+      withIr (fun m =>
+        errIs (atelSat m (.implies (.box p_) (.diamond p_))) "Diamond not supported in ATEL")
+        && (match zeroAtelModel with
+            | .ok m =>
+                errIs (atelSat m (.implies (.box p_) (.diamond p_))) "Diamond not supported in ATEL"
+            | .error _ => false)⟩,
+    ⟨"Not in gamen-hs: error order — atelSat(Iff (Box p) (Diamond p)) raises the \
+      Diamond error on irModel, the Box error on a zero-state model (GHCi)",
+      withIr (fun m =>
+        errIs (atelSat m (.iff (.box p_) (.diamond p_))) "Diamond not supported in ATEL")
+        && (match zeroAtelModel with
+            | .ok m =>
+                errIs (atelSat m (.iff (.box p_) (.diamond p_))) "Box not supported in ATEL; use ⟨⟨Ag⟩⟩G"
+            | .error _ => false)⟩,
+    ⟨"Not in gamen-hs: laziness — on a zero-state model, atelSat(K_alice Box p) \
+      and atelSat(⟨⟨alice⟩⟩X Box p) are ∅ (GHCi)",
+      match zeroAtelModel with
+      | .ok m =>
+          okIs (atelSat m (.knowledge "alice" (.box p_))) ∅
+            && okIs (atelSat m (.canNext al (.box p_))) ∅
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — atelSat(⟨⟨alice⟩⟩X Box p) = {0,1,2} with a \
+      moveless opponent, atelSat([bob] Box p) = ∅, but ⟨⟨alice⟩⟩X Box p errors \
+      on irModel (GHCi)",
+      (match irBobModel with
+       | .ok m => okIs (atelSat m (.canNext al (.box p_))) (Std.TreeSet.ofList [0, 1, 2])
+       | .error _ => false)
+        && withIr (fun m =>
+          okIs (atelSat m (.coalition ["bob"] (.box p_))) ∅
+            && errIs (atelSat m (.canNext al (.box p_))) "Box not supported in ATEL; use ⟨⟨Ag⟩⟩G")⟩
   ]
 
 /-! ## Atel (`test/RegressionIssue18.hs`)
@@ -4744,35 +4846,6 @@ The "Not in gamen-hs" cases pin the module docstring's "Laziness" notes.
 Each expected value, error text included, was checked against gamen-hs's
 own `atlirSat` in GHCi (`cabal repl lib:gamen`, 2026-09-29). -/
 
-/-- Alice's epistemic relation for the ATLir section
-(`PaperCorrespondence.hs` ~1741–1745): `{0,1}` and `{2}`. -/
-private def irEpistemic : String → Nat → Std.TreeSet Nat
-  | "alice", 0 => Std.TreeSet.ofList [0, 1]
-  | "alice", 1 => Std.TreeSet.ofList [0, 1]
-  | "alice", _ => Std.TreeSet.ofList [2]
-  | _, s => Std.TreeSet.ofList [s]
-
-private def irModel : Except String (AtelModel Nat String) :=
-  mkAtelModel irCgs irEpistemic
-
-private def withIr (k : AtelModel Nat String → Bool) : Bool :=
-  match irModel with
-  | .ok m => k m
-  | .error _ => false
-
-/-- `irCgs` with a second agent `bob` who has no moves anywhere
-(`irMoves` gives non-`alice` agents `∅`). Built without `mkCgs`, which
-would reject it; `mkAtelModel` accepts it. With coalition `{alice}`, the
-opponents' joint-move list is empty at every state, so `preC` never tests
-membership. -/
-private def irBobModel : Except String (AtelModel Nat String) :=
-  mkAtelModel { irCgs with cgsAgents := Std.TreeSet.ofList ["alice", "bob"] } irEpistemic
-
-private def errIs {α : Type} (e : Except String α) (msg : String) : Bool :=
-  match e with
-  | .error m => m == msg
-  | .ok _ => false
-
 def atlirCases : List Case :=
   let al : List String := ["alice"]
   let p_ : Formula := .atom "p"
@@ -4783,6 +4856,17 @@ def atlirCases : List Case :=
       withIr fun m => (epistemicClasses m "alice").map (·.toList) == [[0, 1], [2]]⟩,
     ⟨"uniformActions alice 0 = {left,right} (both moves available in class {0,1})",
       withIr fun m => uniformActions m "alice" 0 == Std.TreeSet.ofList ["left", "right"]⟩,
+    ⟨"Not in gamen-hs: uniformActions intersects move sets across the class: \
+      alice has {left,right} at 0 but only {left} at 1 (hand-built model, \
+      bypassing mkAtelModel's uniformity check) → {left} (GHCi)",
+      -- GHCi, 2026-09-29: `uniformActions (AtelModel (irCgs { cgsMoves =
+      -- mixMoves }) irEpi) "alice" 0` → `fromList ["left"]`.
+      let mixMoves : Nat → String → Std.TreeSet String
+        | 1, "alice" => Std.TreeSet.ofList ["left"]
+        | s, ag => irMoves s ag
+      let mixed : AtelModel Nat String :=
+        { atelCgs := { irCgs with cgsMoves := mixMoves }, atelEpistemic := irEpistemic }
+      uniformActions mixed "alice" 0 == Std.TreeSet.ofList ["left"]⟩,
     ⟨"subjectiveClass {alice} 0 = {0,1}",
       withIr fun m =>
         subjectiveClass m (Std.TreeSet.ofList ["alice"]) 0 == Std.TreeSet.ofList [0, 1]⟩,

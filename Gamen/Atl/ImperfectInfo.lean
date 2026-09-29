@@ -79,8 +79,8 @@ checked against GHCi on `atlirSat`; see `atlirCases`' laziness cases):
 
 * `Set.union a b` forces `b`, then `a`: `Or l r` evaluates `r` first;
   `Implies l r` evaluates `r`, then `l` (only when `states ≠ ∅`).
-  (`Gamen.Atl.ModelCheck.sat` and `Gamen.Atel.atelSat` evaluate `l` first,
-  which differs from GHC when *both* sides error.)
+  (`Gamen.Atl.ModelCheck.sat` and `Gamen.Atel.atelSat` now do the same;
+  they evaluated `l` first until 2026-09-29.)
 * `Set.intersection a b`/`Set.difference a b` force `a`, and `b` only if
   `a ≠ ∅`: `And l r` skips `r` when `l` is empty; `Not f` skips `f` when
   `states = ∅`.
@@ -93,7 +93,7 @@ checked against GHCi on `atlirSat`; see `atlirCases`' laziness cases):
   fail to cover a state's requirement set). With no uniform profile at
   all, `φ` is never forced. `⟨⟨C⟩⟩X φ`'s witness is `preC res ∅ (sat φ)`,
   which forces `sat φ` only on reaching a membership test, i.e. only if
-  some state has a nonempty joint move for the opponents (`preCLazy`).
+  some state has a nonempty joint move for the opponents (`Gamen.Cgs.preCLazy`).
   The fixpoint witnesses force `sat φ` (and then `sat ψ`, for `U`) on
   their first step. -/
 namespace Gamen
@@ -230,18 +230,6 @@ def residualCgs {s a : Type} [Ord s] [Ord a] (m : AtelModel s a)
 
 -- ── Satisfaction set ────────────────────────────────────────────────────
 
-/-- `preC res ∅ x` with `x` not yet evaluated: `x`'s error is raised only
-when a membership test is reached, as in the lazy Haskell `preC`. -/
-private def preCLazy {s a : Type} [Ord s] [Ord a] (res : Cgs s a)
-    (x : Except String (Std.TreeSet s)) : Except String (Std.TreeSet s) := do
-  let opponents := res.cgsAgents
-  let kept ← res.cgsStates.toList.filterM fun st =>
-    (jointMoves res ∅ st).anyM fun coMove =>
-      (jointMoves res opponents st).allM fun oppMove => do
-        let xs ← x
-        pure (xs.contains (res.cgsTransition st (oppMove.union coMove)))
-  pure (Std.TreeSet.ofList kept)
-
 /-- Shared ATLir satisfaction, parameterised by the requirement set
 (`subjectiveClass` for the subjective reading, `{s}` for the objective):
 
@@ -275,7 +263,7 @@ where
       pure (Std.TreeSet.ofList kept)
   canNextClause (c : List String) (satPhi : Except String (Std.TreeSet s)) :
       Except String (Std.TreeSet s) :=
-    objSat (Std.TreeSet.ofList c) fun res => preCLazy res satPhi
+    objSat (Std.TreeSet.ofList c) fun res => preCLazy res ∅ satPhi
   go : Formula → Except String (Std.TreeSet s)
   | .bot => pure ∅
   | .atomF atm =>

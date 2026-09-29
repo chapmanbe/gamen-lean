@@ -31,12 +31,13 @@ world guard is likewise `Except`, matching `Gamen.Atl.atlSatisfies`.
 **Laziness.** `atelSat`'s propositional connectives (`Not`/`And`/`Or`/
 `Implies`/`Iff`) follow `Gamen.Atl.ModelCheck.sat`'s laziness fix exactly
 (same `Data.Set` combinators, same clauses) — see that module's docstring
-for the full derivation and the GHC checks behind it. The `Knowledge`
-clause (`Set.isSubsetOf`) and the `CanAlways`/`CanEventually`/`CanUntil`
-fixpoint step functions were audited the same way and need no such
-handling (also documented there): `Data.Set.isSubsetOf`'s left argument
-being empty does not skip forcing the right, and `lfp`/`gfp` always force
-`satPhi`/`satPsi` on their first step regardless of `preC`. -/
+for the full derivation and the GHC checks behind it, including its
+"Error order" (both operands erroring: `Or`/`Implies`/`Iff` report the
+right one) and "One-step coalition operators" (`preCLazy`) notes, which
+apply here unchanged. `Knowledge` skips `φ` on a zero-state model (it is a
+`Set.filter` over `states`); corrected 2026-09-29 after a GHCi check. The
+`CanAlways`/`CanEventually`/`CanUntil` step functions need no handling:
+`lfp`/`gfp` always force `satPhi` (then `satPsi`) on their first step. -/
 namespace Gamen
 
 -- ── Model ────────────────────────────────────────────────────────────────
@@ -152,50 +153,53 @@ where
         let sr ← go r
         pure (sl ∩ sr)
   | .or l r => do
-      -- `union` forces both sides unconditionally under full demand — no
-      -- shortcut to replicate.
-      let sl ← go l
+      -- `union` forces both sides, its second argument first: when both
+      -- error, `r`'s error (GHCi, 2026-09-29).
       let sr ← go r
+      let sl ← go l
       pure (sl ∪ sr)
   | .implies l r => do
-      -- Antecedent follows `Not`'s rule (skip `go l` iff `states` empty);
-      -- consequent `go r` is `union`'s second argument, always forced.
+      -- Consequent `go r` is `union`'s second argument: forced first,
+      -- always. Antecedent follows `Not`'s rule (skip `go l` iff `states`
+      -- empty).
+      let sr ← go r
       let diffPart ← do
         if states.isEmpty then pure (∅ : Std.TreeSet s)
         else do
           let sl ← go l
           pure (states \ sl)
-      let sr ← go r
       pure (diffPart ∪ sr)
   | .iff l r => do
-      -- `go l` always forced; `go r` skipped only when `states` is *also*
-      -- empty and `go l`'s result is empty (when `states` is nonempty, the
-      -- antecedent's own `Set.union sl sr` unconditionally forces `sr`
-      -- regardless of `sl`, so there is no shortcut in that case).
-      let sl ← go l
+      -- `states` empty: only `go l` is forced (it is ∅, so `go r` is
+      -- skipped). `states` nonempty: `Set.union sl sr`, inside the outer
+      -- union's second argument, forces `sr` and then `sl`, so when both
+      -- error, `r`'s error (GHCi, 2026-09-29).
       if states.isEmpty then
+        let sl ← go l
         if sl.isEmpty then pure ∅
         else do
           let sr ← go r
           pure (sl ∩ sr)
       else do
         let sr ← go r
+        let sl ← go l
         pure ((sl ∩ sr) ∪ (states \ (sl ∪ sr)))
 
-  -- K_a φ — van der Hoek & Wooldridge (2003), Definition 3(i)
-  | .knowledge agent phi => do
-      let sphi ← go phi
-      pure (states.filter fun st => (m.atelEpistemic agent st).all fun t => sphi.contains t)
+  -- K_a φ — van der Hoek & Wooldridge (2003), Definition 3(i). A
+  -- `Set.filter` over `states`: `go phi` is never forced when `states` is
+  -- empty (GHCi, 2026-09-29).
+  | .knowledge agent phi =>
+      if states.isEmpty then pure ∅
+      else do
+        let sphi ← go phi
+        pure (states.filter fun st => (m.atelEpistemic agent st).all fun t => sphi.contains t)
 
-  -- [C]φ — Coalition Logic (one-step; Pauly 2002)
-  | .coalition c phi => do
-      let sphi ← go phi
-      pure (preC cgs (Std.TreeSet.ofList c) sphi)
+  -- [C]φ — Coalition Logic (one-step; Pauly 2002). `preCLazy`: `go phi`
+  -- is forced only where the lazy `preC` would force it.
+  | .coalition c phi => preCLazy cgs (Std.TreeSet.ofList c) (go phi)
 
   -- ⟨⟨C⟩⟩Xφ — next-step (AHK 2002, Def. 3(1))
-  | .canNext c phi => do
-      let sphi ← go phi
-      pure (preC cgs (Std.TreeSet.ofList c) sphi)
+  | .canNext c phi => preCLazy cgs (Std.TreeSet.ofList c) (go phi)
 
   -- ⟨⟨C⟩⟩Gφ — greatest fixpoint (AHK 2002, Def. 3(2))
   | .canAlways c phi => do

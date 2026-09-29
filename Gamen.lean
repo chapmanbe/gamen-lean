@@ -23,6 +23,7 @@ import Gamen.Laca
 import Gamen.Stit
 import Gamen.Xstit
 import Gamen.Epistemic
+import Gamen.Atl.Strategy
 
 /-!
 # gamen

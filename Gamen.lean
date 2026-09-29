@@ -26,6 +26,7 @@ import Gamen.Xstit
 import Gamen.Epistemic
 import Gamen.Atl.Strategy
 import Gamen.Atl
+import Gamen.Atel
 
 /-!
 # gamen

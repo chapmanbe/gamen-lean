@@ -14,6 +14,7 @@ import Gamen.DeonticStit.CounterModel
 import Gamen.Cgs
 import Gamen.Atl.ModelCheck
 import Gamen.Atl
+import Gamen.Atel
 import Gamen.Laca
 import Gamen.Stit
 import Gamen.Xstit
@@ -4227,6 +4228,223 @@ def lacaPaperCorrespondenceCases : List Case := [
       == Std.TreeSet.ofList ["h"]⟩
 ]
 
+/-! ## Atel (`Gamen.Atel`)
+
+There is no `test/AtelSpec.hs` in gamen-hs (`for f in AtelModel mkAtelModel
+atelSat atelSatisfies atelIsTrueIn; do grep -lw "$f" test/*.hs; done` hits
+only `PaperCorrespondence.hs` and `RegressionIssue18.hs`). Ported here:
+
+- the full "van der Hoek & Wooldridge (2003) — ATEL" section of
+  `test/PaperCorrespondence.hs` (19 `it`s: its "Definition 3(i)" block over
+  the loop+epistemic model — the same AHK loop CGS as `cgsCases`/`atlCases`'
+  `loopCgs`, reused here — its "Definition 3(ii)" block, and its
+  "Healthcare application: surgical-team coordination" block over the
+  surgical-safety model);
+- `test/RegressionIssue18.hs`'s "B2/B7: ATLir semantics and iCGS
+  validation" describe block's two `mkAtelModel`-only `it`s ("B7:
+  mkAtelModel rejects a non-symmetric epistemic relation", "B7: mkAtelModel
+  rejects differing move sets across indistinguishable states"). The same
+  block's other three `it`s (`atlirSat`, `atlirSatObjective`,
+  `subjectiveClass`) need `Gamen.Atl.ImperfectInfo`, not ported, and stay
+  unported.
+
+The "Jamroga & van der Hoek (2004) — ATLir" section's `epistemicClasses`
+`it` (`test/PaperCorrespondence.hs` ~1753–1758) likewise needs
+`Gamen.Atl.ImperfectInfo` and stays unported.
+
+van der Hoek & Wooldridge (2003), *Cooperation, Knowledge, and Time:
+Alternating-time Temporal Epistemic Logic*, Studia Logica 75(1): 125–157 —
+matches `Gamen.Atel`'s module docstring, unverified against a primary
+source (not among the PDFs in `gamen-hs/notes/`, same as AHK 2002). -/
+
+/-- The loop model's epistemic relation (`PaperCorrespondence.hs` ~1580–1582):
+alice's class at state 0 is `{0}`; at 1 and 2 it is `{1,2}`. -/
+private def loopEpistemic (_ : String) : Nat → Std.TreeSet Nat
+  | 0 => Std.TreeSet.ofList [0]
+  | _ => Std.TreeSet.ofList [1, 2]
+
+/-- Surgical-safety CGS (`PaperCorrespondence.hs` ~1630–1647). States:
+0 = allergy-unknown/pre-op, 1 = allergy-known/pre-op, 2 = safe-completion.
+Agents "anes" (anesthesiologist), "surg" (surgeon). -/
+private def surgMoves : Nat → String → Std.TreeSet String
+  | _, "anes" => Std.TreeSet.ofList ["alert", "proceed"]
+  | _, "surg" => Std.TreeSet.ofList ["operate", "wait"]
+  | _, _ => ∅
+
+private def surgTrans : Nat → Std.TreeMap String String → Nat
+  | 0, jm => if jm.get? "anes" == some "alert" then 1 else 0
+  | 1, jm => if jm.get? "surg" == some "operate" then 2 else 1
+  | _, _ => 2
+
+private def surgLabel : Nat → Std.TreeSet String
+  | 0 => ∅
+  | 1 => Std.TreeSet.ofList ["safe"]
+  | _ => Std.TreeSet.ofList ["safe", "complete"]
+
+private def surgCgs : Except String (Cgs Nat String) :=
+  mkCgs (Std.TreeSet.ofList [0, 1, 2]) (Std.TreeSet.ofList ["anes", "surg"])
+    surgMoves surgTrans surgLabel
+
+/-- Surgical model's epistemic relation (`PaperCorrespondence.hs` ~1648–1652):
+"anes" has complete information; "surg" can't distinguish 0 from 1. -/
+private def surgEpistemic : String → Nat → Std.TreeSet Nat
+  | "anes", s => Std.TreeSet.ofList [s]
+  | "surg", 2 => Std.TreeSet.ofList [2]
+  | "surg", _ => Std.TreeSet.ofList [0, 1]
+  | _, s => Std.TreeSet.ofList [s]
+
+private def atelLoopModel : Except String (AtelModel Nat String) := do
+  let cgs ← loopCgs
+  mkAtelModel cgs loopEpistemic
+
+private def atelSurgModel : Except String (AtelModel Nat String) := do
+  let cgs ← surgCgs
+  mkAtelModel cgs surgEpistemic
+
+def atelCases : List Case :=
+  let al : List String := ["alice"]
+  let p_ : Formula := .atom "p"
+  let q_ : Formula := .atom "q"
+  let team : List String := ["anes", "surg"]
+  let surgOnly : List String := ["surg"]
+  let safe_ : Formula := .atom "safe"
+  let complete_ : Formula := .atom "complete"
+  [ -- Definition 3(i) (p. 134): K_a φ = { s | class_a(s) ⊆ sat(φ) }.
+    ⟨"mkAtelModel accepts the loop+epistemic model (reflexivity satisfied)",
+      match loopCgs with
+      | .ok cgs => match mkAtelModel cgs loopEpistemic with
+        | .ok _ => true
+        | .error _ => false
+      | .error _ => false⟩,
+    ⟨"K_alice p at state 0 is TRUE: class({0}) = {0} ⊆ sat(p)={0}",
+      match atelLoopModel with
+      | .ok m => okIs (atelSatisfies m 0 (.knowledge "alice" p_)) true
+      | .error _ => false⟩,
+    ⟨"K_alice p at state 1 is FALSE: class({1}) = {1,2} ⊄ sat(p)={0}",
+      match atelLoopModel with
+      | .ok m => okIs (atelSatisfies m 1 (.knowledge "alice" p_)) false
+      | .error _ => false⟩,
+    ⟨"K_alice ¬p at state 1 is TRUE: {1,2} ⊆ sat(¬p)={1,2}",
+      match atelLoopModel with
+      | .ok m => okIs (atelSatisfies m 1 (.knowledge "alice" (.not p_))) true
+      | .error _ => false⟩,
+    ⟨"K_alice q at state 1 is FALSE: {1,2} ⊄ sat(q)={1}",
+      match atelLoopModel with
+      | .ok m => okIs (atelSatisfies m 1 (.knowledge "alice" q_)) false
+      | .error _ => false⟩,
+    ⟨"K_alice q at state 2 is FALSE: same class {1,2} ⊄ {1}",
+      match atelLoopModel with
+      | .ok m => okIs (atelSatisfies m 2 (.knowledge "alice" q_)) false
+      | .error _ => false⟩,
+    ⟨"K_alice ¬q at state 0 is TRUE: class {0} ⊆ sat(¬q)={0,2}",
+      match atelLoopModel with
+      | .ok m => okIs (atelSatisfies m 0 (.knowledge "alice" (.not q_))) true
+      | .error _ => false⟩,
+    -- Definition 3(ii) (p. 134): K_a(⟨⟨C⟩⟩φ) — knowing strategic ability.
+    ⟨"K_alice(⟨⟨alice⟩⟩Fq) holds everywhere: alice knows she can always reach q",
+      match atelLoopModel with
+      | .ok m => [0, 1, 2].all fun s =>
+          okIs (atelSatisfies m s (.knowledge "alice" (.canEventually al q_))) true
+      | .error _ => false⟩,
+    ⟨"K_alice(⟨⟨alice⟩⟩Gq) at state 1 is FALSE: {1,2} ⊄ sat(⟨⟨alice⟩⟩Gq)={1}",
+      match atelLoopModel with
+      | .ok m => okIs (atelSatisfies m 1 (.knowledge "alice" (.canAlways al q_))) false
+      | .error _ => false⟩,
+    ⟨"K_alice(⟨⟨alice⟩⟩Gq) at state 0 is FALSE: class {0} ⊄ {1}",
+      match atelLoopModel with
+      | .ok m => okIs (atelSatisfies m 0 (.knowledge "alice" (.canAlways al q_))) false
+      | .error _ => false⟩,
+    -- Healthcare application: surgical-team coordination.
+    ⟨"⟨⟨team⟩⟩F complete = {0,1,2}: team can ensure completion from any state",
+      match atelSurgModel with
+      | .ok m => okIs (atelSat m (.canEventually team complete_)) (Std.TreeSet.ofList [0, 1, 2])
+      | .error _ => false⟩,
+    ⟨"⟨⟨surg⟩⟩F complete = {1,2}: surgeon alone cannot force it from state 0",
+      match atelSurgModel with
+      | .ok m => okIs (atelSat m (.canEventually surgOnly complete_)) (Std.TreeSet.ofList [1, 2])
+      | .error _ => false⟩,
+    ⟨"K_surg(⟨⟨team⟩⟩F complete) at state 0: surgeon knows team can succeed",
+      match atelSurgModel with
+      | .ok m => okIs (atelSatisfies m 0 (.knowledge "surg" (.canEventually team complete_))) true
+      | .error _ => false⟩,
+    ⟨"K_surg(⟨⟨surg⟩⟩F complete) at state 0: FALSE — surg doesn't know if alone is enough",
+      match atelSurgModel with
+      | .ok m => okIs (atelSatisfies m 0 (.knowledge "surg" (.canEventually surgOnly complete_))) false
+      | .error _ => false⟩,
+    ⟨"K_anes safe at state 1: TRUE — anes has complete info, knows allergy is handled",
+      match atelSurgModel with
+      | .ok m => okIs (atelSatisfies m 1 (.knowledge "anes" safe_)) true
+      | .error _ => false⟩,
+    ⟨"K_anes safe at state 0: FALSE — anes knows allergy is NOT handled (complete info)",
+      match atelSurgModel with
+      | .ok m => okIs (atelSatisfies m 0 (.knowledge "anes" safe_)) false
+      | .error _ => false⟩,
+    ⟨"K_surg safe at state 1: FALSE — surg can't distinguish safe state 1 from unsafe 0",
+      match atelSurgModel with
+      | .ok m => okIs (atelSatisfies m 1 (.knowledge "surg" safe_)) false
+      | .error _ => false⟩,
+    ⟨"K_anes(⟨⟨team⟩⟩F complete) holds everywhere: anes with complete info knows team \
+      can always succeed",
+      match atelSurgModel with
+      | .ok m => [0, 1, 2].all fun s =>
+          okIs (atelSatisfies m s (.knowledge "anes" (.canEventually team complete_))) true
+      | .error _ => false⟩,
+    ⟨"atelSat of tautology (¬⊥) = all states",
+      match atelSurgModel, surgCgs with
+      | .ok m, .ok cgs => okIs (atelSat m (.not .bot)) cgs.cgsStates
+      | _, _ => false⟩
+  ]
+
+/-! ## Atel (`test/RegressionIssue18.hs`)
+
+The "B2/B7: ATLir semantics and iCGS validation" describe block's two
+`mkAtelModel`-only `it`s (lines ~271–286); see `atelCases`'s docstring for
+the block's other three `it`s, which stay unported. -/
+
+private def atelB7Moves : Nat → String → Std.TreeSet String
+  | _, "alice" => Std.TreeSet.ofList ["left", "right"]
+  | _, _ => ∅
+
+private def atelB7Trans : Nat → Std.TreeMap String String → Nat
+  | 0, jm => if jm.get? "alice" == some "left" then 2 else 0
+  | 1, jm => if jm.get? "alice" == some "right" then 2 else 1
+  | _, _ => 2
+
+private def atelB7Label : Nat → Std.TreeSet String
+  | 2 => Std.TreeSet.ofList ["p"]
+  | _ => ∅
+
+private def atelB7Cgs : Cgs Nat String :=
+  { cgsStates := Std.TreeSet.ofList [0, 1, 2]
+    cgsAgents := Std.TreeSet.ofList ["alice"]
+    cgsMoves := atelB7Moves
+    cgsTransition := atelB7Trans
+    cgsLabeling := atelB7Label }
+
+/-- The good epistemic relation (`epi` in the Haskell): alice can't tell 0
+from 1; state 2 is its own class. -/
+private def atelB7Epi : String → Nat → Std.TreeSet Nat
+  | "alice", 0 => Std.TreeSet.ofList [0, 1]
+  | "alice", 1 => Std.TreeSet.ofList [0, 1]
+  | _, s => Std.TreeSet.ofList [s]
+
+def atelRegressionCases : List Case :=
+  [ ⟨"RegressionIssue18 B7: mkAtelModel rejects a non-symmetric epistemic relation",
+      -- alice sees 1 from 0 but not 0 from 1: asymmetric.
+      let epiBad : String → Nat → Std.TreeSet Nat
+        | "alice", 0 => Std.TreeSet.ofList [0, 1]
+        | _, s => Std.TreeSet.ofList [s]
+      isErr (mkAtelModel atelB7Cgs epiBad)⟩,
+    ⟨"RegressionIssue18 B7: mkAtelModel rejects differing move sets across \
+      indistinguishable states",
+      -- alice's moves differ between the indistinguishable 0 and 1.
+      let movesBad : Nat → String → Std.TreeSet String
+        | 1, "alice" => Std.TreeSet.ofList ["left"]
+        | s, ag => atelB7Moves s ag
+      let cgsBad : Cgs Nat String := { atelB7Cgs with cgsMoves := movesBad }
+      isErr (mkAtelModel cgsBad atelB7Epi)⟩
+  ]
+
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
@@ -4237,7 +4455,8 @@ def main : IO UInt32 := do
       ++ semanticsCases ++ fragmentCases ++ temporalCases ++ doxasticCases ++ rankingTheoryCases
       ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
       ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases ++ cgsCases
-      ++ atlModelCheckCases ++ atlCases ++ lacaCases ++ lacaPaperCorrespondenceCases do
+      ++ atlModelCheckCases ++ atlCases ++ lacaCases ++ lacaPaperCorrespondenceCases
+      ++ atelCases ++ atelRegressionCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
@@ -4255,6 +4474,7 @@ def main : IO UInt32 := do
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
     + deonticStitCases.length + counterModelCases.length + closureCases.length
     + crossCheckCases.length + cgsCases.length + atlModelCheckCases.length + atlCases.length
-    + lacaCases.length + lacaPaperCorrespondenceCases.length + properties.length
+    + lacaCases.length + lacaPaperCorrespondenceCases.length
+    + atelCases.length + atelRegressionCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

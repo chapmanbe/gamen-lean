@@ -3833,13 +3833,20 @@ three modules are ported yet, so those `it`s stay unported, and so does
 the whole "van der Hoek & Wooldridge (2003) — ATEL" section and its
 "Healthcare application" sub-block (every `it` there needs `Gamen.Atel`).
 
-One title/value mismatch found while porting, kept as the Haskell has it:
+Two title/value mismatches found while porting, both kept as the Haskell
+has them:
+`test/PaperCorrespondence.hs`'s `it "sat(⟨⟨alice⟩⟩Xq) = {0}: …"` (line
+1425) actually asserts `sat loop (CanNext al q_) \`shouldBe\` Set.fromList
+[0, 1 :: Int]` — the title says `{0}`, the value checked is `{0,1}`; the
+Haskell's own inline comments work through the arithmetic and arrive at
+`{0,1}`, flagging the title as wrong themselves ("Hmm — so sat(⟨⟨alice⟩⟩Xq)
+= {0,1}, not {0}"), but the title was never fixed.
 `test/PaperCorrespondence.hs`'s `it "sat(⟨⟨alice⟩⟩Xp) = {1,2}: …"` (line
 1443) actually asserts `sat loop (CanNext al p_) \`shouldBe\` Set.fromList
-[0, 2 :: Int]` — the title says `{1,2}`, the value checked is `{0,2}`; the
-ported case below checks the value the Haskell test actually runs, per
-"port every `it`", and the comment on it here flags the mismatch instead of
-silently fixing the Haskell's title.
+[0, 2 :: Int]` — the title says `{1,2}`, the value checked is `{0,2}`.
+Both ported cases below check the value the Haskell test actually runs,
+per "port every `it`", and each one's own comment flags its mismatch
+instead of silently fixing the Haskell's title.
 
 AHK 2002 is not among the PDFs in `gamen-hs/notes/` (`Gamen.Cgs`'s
 docstring makes the same point about its own §2/§4 citations), so the page
@@ -3895,7 +3902,9 @@ def atlModelCheckCases : List Case :=
       | .ok cgs => okIs (sat cgs (.or p_ q_)) (Std.TreeSet.ofList [0, 1])
       | .error _ => false⟩,
     -- Definition 3(1) (p. 684): ⟨⟨C⟩⟩Xφ = preC(C, sat(φ)).
-    ⟨"sat(⟨⟨alice⟩⟩Xq) = {0,1}: alice plays 'next' from 0 → 1, which has q",
+    ⟨"sat(⟨⟨alice⟩⟩Xq) = {0,1}: title in PaperCorrespondence.hs says {0} (line 1425), but \
+      its own inline comments work out {0,1} and the value it actually checks is {0,1} — \
+      ported as run, not as titled",
       match loopCgs with
       | .ok cgs => okIs (sat cgs (.canNext al q_)) (Std.TreeSet.ofList [0, 1])
       | .error _ => false⟩,

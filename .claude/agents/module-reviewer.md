@@ -21,10 +21,17 @@ missed when it is not.
 
 ## Checks
 
-1. **Test coverage, by structure.** List the `it` names in the Haskell spec
-   and the case names in the new Lean list, and pair them by meaning. A
-   renamed case (for example `Diamond p` written as `◇p`) is present, not
-   missing. Report unpaired cases on either side.
+1. **Test coverage, by structure.** Find the Haskell tests yourself; don't
+   start from the porter's list or `PORTING.md`. Grep every file in
+   gamen-hs's `test/` for each of the module's exported functions and
+   constructors (`grep -lw`), not for the module's name: shared files such
+   as `RegressionIssue18.hs` test many modules under unrelated headings, and
+   a section missed this way slipped past the porter and two reviewers once.
+   Walk each hit to its `it`/`prop`. Then list those `it` names and the new
+   Lean case names and pair them by meaning. A renamed case (for example
+   `Diamond p` written as `◇p`) is present, not missing. Report unpaired
+   cases on either side, and include the grep command and its file list in
+   your report.
 2. **Error handling.** Grep the diff for `get!`, `getD`, `toOption`,
    `panic!`, `partial def`, `sorry`, `unsafe`. For each hit, say whether
    an error could become a definite answer.

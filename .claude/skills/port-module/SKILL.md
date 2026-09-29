@@ -33,6 +33,14 @@ not show up as deletions.
 Launch the `module-reviewer` agent (Opus) on the porter's branch. Give it
 the branch and module name, **not** the porter's report.
 
+Give each reviewer its own checkout, since reviewers plant bugs and run
+tests: `git worktree add --detach .claude/worktrees/review-<module>-<model>
+<branch>`, copy the porter worktree's `.lake` into it to skip a full
+rebuild, and tell the reviewer to work only there. (Two reviewers sharing
+the porter's worktree once saw each other's planted bugs.) Remove these
+checkouts after the merge; `--force` is needed because of the copied
+`.lake`.
+
 If the Porter column says `opus` or `fable`, also launch a second
 `module-reviewer` with `model: fable`, in parallel with the Opus one, with
 the same prompt. Neither reviewer sees the other's report. Findings both

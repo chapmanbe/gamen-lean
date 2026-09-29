@@ -44,6 +44,13 @@ behavior. Never port from scratch code that already exists.
   `Tests/Main.lean`, registered like the existing lists. Port every `it`.
 - Every `PaperCorrespondence.hs` section that exercises the module, when its
   other dependencies are ported. List the ones you skip, and why.
+- Every other `it` in gamen-hs's `test/` that calls the module. Section
+  names are no guide: `RegressionIssue18.hs`, `WorldGuardsSpec.hs` and
+  `Properties.hs` test many modules under unrelated headings (the Epistemic
+  port missed a whole `RegressionIssue18.hs` section this way). Search for
+  the module's exported functions and constructors, not its name:
+  `for f in <each export>; do grep -lw "$f" test/*.hs; done`, then walk
+  every hit to its `it`/`prop` and port it or list it as skipped, with why.
 - Missing pieces of already-ported modules that this one needs, matching
   the Haskell.
 - Update the module's rows in `PORTING.md`.
@@ -93,6 +100,8 @@ the same line, pasted, not retyped or summed in your head:
 Haskell its, spec:        <command> → <output>
 Haskell its, per PaperCorrespondence block ported:
                           <command> → <output>   (one line per block)
+Haskell its, other test files (export search):
+                          <command> → <files hit>; <its ported / skipped per file>
 Lean cases per list:      <command> → <output>   (every list you touched)
 lake test before changes: <last line of output>   (run right after the fast-forward)
 lake test after changes:  <last line of output>

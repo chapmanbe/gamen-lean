@@ -12,6 +12,7 @@ import Gamen.DeonticStit.Saturation
 import Gamen.DeonticStit.Prove
 import Gamen.DeonticStit.CounterModel
 import Gamen.Cgs
+import Gamen.Laca
 import Gamen.Stit
 import Gamen.Xstit
 import Gamen.Epistemic
@@ -3156,8 +3157,8 @@ def deonticStitCases : List Case :=
       && okIs (jointFulfillment dsModel' "j" [rj]) false⟩,
   -- WorldGuardsSpec.hs:36, "dsSatisfies errors on world not in DSModel"
   -- (gamen-hs#7). The Haskell's sibling `it`s in the same describe block
-  -- (`eSatisfies`/`sSatisfies`/`xSatisfies`/`lSatisfies`) need
-  -- `Gamen.Epistemic`/`.Stit`/`.Xstit`/`.Laca`, not yet ported.
+  -- live in `epistemicCases` (`eSatisfies`), `stitCases` (`sSatisfies`),
+  -- `xstitCases` (`xSatisfies`), and `lacaCases` (`lSatisfies`).
   ⟨"dsSatisfies errors on world not in DSModel",
     let dfr := mkDSFrame ["a", "b"] [("ag", [("a", "a"), ("b", "b")])] [("ag", ["a"])]
     let dm := mkDSModel dfr [("p", ["a", "b"]), ("q", ["b"]), ("r", ["a"])]
@@ -3318,6 +3319,21 @@ def properties : List (String × IO Bool) :=
          | .ok a, .ok b => a == b
          | .error x, .error y => x == y
          | _, _ => false) = true) 200),
+    -- Gamen.Laca: succState algebraic properties (test/Properties.hs's
+    -- "Gamen.Laca: succState algebraic properties" describe block, all
+    -- three `prop`s, 100 instances each as hspec's default — no
+    -- `modifyMaxSuccess` override near them in the Haskell).
+    ("succState with empty attempt is identity",
+      run (NamedBinder "s" <| ∀ s : LacaState, succState s ∅ == s) 100),
+    ("succState is self-inverse: applying the same attempt twice returns original",
+      run (NamedBinder "s" <| ∀ s : LacaState, NamedBinder "atts" <| ∀ atts : AttemptSet,
+        succState (succState s atts.getAttemptSet) atts.getAttemptSet == s) 100),
+    ("succState flips each attempted atom and leaves others unchanged",
+      run (NamedBinder "s" <| ∀ s : LacaState, NamedBinder "atts" <| ∀ atts : AttemptSet,
+        (let s' := succState s atts.getAttemptSet
+         atts.getAttemptSet.toList.all (fun a => stateValue s' a == !(stateValue s a))
+           && (["p", "q", "r"].filter (!atts.getAttemptSet.contains ·)).all
+                (fun a => stateValue s' a == stateValue s a)) = true) 100),
     ]
 where
   toNNF := Formula.toNNF
@@ -3586,8 +3602,8 @@ block (2 `it`s, lines 319–331), ported verbatim as `cgsCases`'s first two
 entries below (the same file's "B7: Kripke / FrameProperties dangling-edge
 and class fixes" block is `kripkeCases`, near `Tests/Main.lean:646`). Every
 other `Cgs`-exercising `PaperCorrespondence.hs` section reaches it only
-through `Coalition`, `Atl`/`Atl.ModelCheck`, `Atel`, or `Laca`'s
-`lacaToCgs`, none ported yet (`PORTING.md`):
+through `Coalition`, `Atl`/`Atl.ModelCheck`, or `Atel`, none ported yet
+(`PORTING.md`):
 
 - "Pauly (2002) — Coalition Logic" (`coalSatisfies`, `checkTopEffectivity`,
   `checkBotMonotonicity`, `checkMonotonicity`, `checkSuperadditivity`: all
@@ -3598,10 +3614,14 @@ through `Coalition`, `Atl`/`Atl.ModelCheck`, `Atel`, or `Laca`'s
 - "van der Hoek & Wooldridge (2003) — ATEL" (adds `AtelModel`,
   `mkAtelModel`, `atelSat`: `Gamen.Atel`);
 - the imperfect-information ATEL section right after it (adds
-  `Gamen.Atl.ImperfectInfo`);
-- the "Herzig, Lorini & Perrotin (2022) — LACA" section's `lacaToCgs`
-  coercion sub-block (needs `Gamen.Laca`, and then `Gamen.Atl` again for
-  `atlSatisfies`/`sat`/`CanNext`/`CanEventually`).
+  `Gamen.Atl.ImperfectInfo`).
+
+`Gamen.Laca` is now ported (`Gamen/Laca.lean`); its `lacaToCgs` coercion
+sub-block of the "Herzig, Lorini & Perrotin (2022) — LACA" section is split
+across two case lists: the four `it`s that only exercise `Cgs` primitives
+(`cgsStates`, `cgsAgents`, two `cgsLabeling`) are ported in
+`lacaPaperCorrespondenceCases`; its other three `it`s (`atlSatisfies` × 2,
+`sat`) still need `Gamen.Atl` and stay unported.
 
 So apart from the two `RegressionIssue18.hs` cases, every other case below
 is a not-in-spec sanity check on the raw `Cgs` primitives themselves
@@ -3792,6 +3812,128 @@ def cgsCases : List Case := [
     | .error _ => false⟩
 ]
 
+/-! ## Laca (`Gamen.Laca`)
+
+Port of `test/LacaSpec.hs` in full (11 `it`s across its three describe
+blocks: "LACA formula construction" — 2, on plain `Formula` behavior
+(`Next`'s `show`/`isModalFree`), already covered generically by
+`Gamen.Formula`'s own tests but ported here too since they live in
+`LacaSpec.hs`; "LACA state operations" — 2; "LACA satisfaction" — 7),
+plus `test/WorldGuardsSpec.hs`:55–65's two `lSatisfies` `it`s (the last
+of the "World-existence guards (gamen-hs#7)" describe block to be
+ported — see the comment on `proveCases`'s `dsSatisfies` case above for
+where its `eSatisfies`/`sSatisfies`/`xSatisfies` siblings live). -/
+
+/-- `test/LacaSpec.hs`/`herzig2022-correspondence.md`'s shared fixture:
+Example 1 (p. 2649) — agent "1" controls `h` (heating), "2" controls `w`
+(window); both false initially. -/
+private def lacaModelHW : LacaModel := mkLacaModel [("h", "1"), ("w", "2")]
+
+private def lacaS0 : LacaState := Std.TreeMap.ofList [("h", false), ("w", false)]
+
+def lacaCases : List Case := [
+  -- "LACA formula construction"
+  ⟨"displays Next", toString (Formula.next (.atom "p")) == "Xp"⟩,
+  ⟨"Next is not modal-free", (Formula.next (.atom "p")).isModalFree == false⟩,
+  -- "LACA state operations"
+  ⟨"computes successor state",
+    let s1 := succState lacaS0 (Std.TreeSet.ofList ["h"])
+    stateValue s1 "h" == true && stateValue s1 "w" == false⟩,
+  ⟨"generates trajectories",
+    -- With attempt {h}, trajectory: h=F -> h=T -> h=F (cycle detected).
+    let traj := trajectory lacaS0 (Std.TreeSet.ofList ["h"]) 10
+    traj.length == 3
+      && stateValue (traj.getD 0 ∅) "h" == false
+      && stateValue (traj.getD 1 ∅) "h" == true⟩,
+  -- "LACA satisfaction"
+  ⟨"evaluates atoms at current state",
+    okIs (lSatisfies lacaModelHW lacaS0 ∅ (.atom "h")) false
+      && okIs (lSatisfies lacaModelHW lacaS0 ∅ (.atom "w")) false⟩,
+  ⟨"evaluates Next (X operator)",
+    okIs (lSatisfies lacaModelHW lacaS0 (Std.TreeSet.ofList ["h"]) (.next (.atom "h"))) true
+      && okIs (lSatisfies lacaModelHW lacaS0 (Std.TreeSet.ofList ["h"]) (.next (.atom "w"))) false⟩,
+  ⟨"evaluates G (always future)",
+    okIs (lSatisfies lacaModelHW lacaS0 ∅ (.futureBox (.not (.atom "h")))) true
+      && okIs (lSatisfies lacaModelHW lacaS0 (Std.TreeSet.ofList ["h"]) (.futureBox (.atom "h"))) false⟩,
+  ⟨"evaluates F (eventually)",
+    okIs (lSatisfies lacaModelHW lacaS0 (Std.TreeSet.ofList ["h"]) (.futureDiamond (.atom "h"))) true
+      && okIs (lSatisfies lacaModelHW lacaS0 ∅ (.futureDiamond (.atom "h"))) false⟩,
+  ⟨"evaluates [i cstit] (Chellas stit)",
+    okIs (lSatisfies lacaModelHW lacaS0 (Std.TreeSet.ofList ["h"]) (.stit "1" (.next (.atom "h")))) true
+      && okIs (lSatisfies lacaModelHW lacaS0 ∅ (.stit "2" (.next (.atom "h")))) false⟩,
+  ⟨"evaluates □ (historical necessity, was Settled)",
+    okIs (lSatisfies lacaModelHW lacaS0 ∅ (.box (.next (.atom "h")))) false⟩,
+  ⟨"evaluates deliberative stit",
+    okIs (lSatisfies lacaModelHW lacaS0 (Std.TreeSet.ofList ["h"])
+      (Formula.dstit "1" (.next (.atom "h")))) true⟩,
+  -- test/WorldGuardsSpec.hs:55–65.
+  ⟨"lSatisfies errors on state with stray atom",
+    let lm := mkLacaModel [("p", "ag"), ("q", "ag")]
+    let stray : LacaState := Std.TreeMap.ofList [("p", true), ("q", false), ("zzz", true)]
+    isErr (lSatisfies lm stray ∅ (.atom "p"))⟩,
+  ⟨"lSatisfies errors on state missing an atom",
+    let lm := mkLacaModel [("p", "ag"), ("q", "ag")]
+    let partialState : LacaState := Std.TreeMap.ofList [("p", true)]
+    isErr (lSatisfies lm partialState ∅ (.atom "p"))⟩
+]
+
+/-! ## Laca (`test/PaperCorrespondence.hs`)
+
+The "Herzig, Lorini & Perrotin (2022) — LACA" section: "Section 2.2 (p.
+2649): succState" (4 `it`s) and "Section 3.2 (p. 2650): truth conditions"
+(8 `it`s) in full, plus the four `Cgs`-primitive `it`s of the
+"lacaToCgs coercion" sub-block (`cgsStates`, `cgsAgents`, two
+`cgsLabeling`). Page numbers checked against `notes/Lorini2022.pdf`
+(Herzig, Lorini & Perrotin, *IJCAI 2022*, pp. 2648–2654) and are correct.
+
+Skipped: the sub-block's other three `it`s (`atlSatisfies cgs' s0
+(CanNext ["1"] h_)`, `atlSatisfies cgs' s0 (CanNext ["2"] h_)`, and
+`sat cgs' (CanEventually ["1"] h_)`) need `Gamen.Atl`, not ported yet. -/
+
+def lacaPaperCorrespondenceCases : List Case := [
+  -- Section 2.2 (p. 2649): succState — attempt flips the controlled atom.
+  ⟨"succState s0 {h} = {h=True, w=False}: h flips, w unchanged",
+    succState lacaS0 (Std.TreeSet.ofList ["h"]) ==
+      Std.TreeMap.ofList [("h", true), ("w", false)]⟩,
+  ⟨"succState s0 {w} = {h=False, w=True}: w flips, h unchanged",
+    succState lacaS0 (Std.TreeSet.ofList ["w"]) ==
+      Std.TreeMap.ofList [("h", false), ("w", true)]⟩,
+  ⟨"succState s0 {h,w} = {h=True, w=True}: both atoms flip",
+    succState lacaS0 (Std.TreeSet.ofList ["h", "w"]) ==
+      Std.TreeMap.ofList [("h", true), ("w", true)]⟩,
+  ⟨"succState s0 ∅ = s0: empty attempt leaves state unchanged",
+    succState lacaS0 ∅ == lacaS0⟩,
+  -- Section 3.2 (p. 2650): truth conditions — X, G, □, ◇, [J cstit].
+  ⟨"¬h ∧ ¬w = True at (s0, ∅): both atoms false initially",
+    okIs (lSatisfies lacaModelHW lacaS0 ∅ (.and (.not (.atom "h")) (.not (.atom "w")))) true⟩,
+  ⟨"X h = True at (s0, {h}): next state has h=True",
+    okIs (lSatisfies lacaModelHW lacaS0 (Std.TreeSet.ofList ["h"]) (.next (.atom "h"))) true⟩,
+  ⟨"X(¬h) = True at (s0, ∅): h stays False with empty attempt",
+    okIs (lSatisfies lacaModelHW lacaS0 ∅ (.next (.not (.atom "h")))) true⟩,
+  ⟨"G(¬h) = True at (s0, ∅): h remains False throughout trajectory",
+    okIs (lSatisfies lacaModelHW lacaS0 ∅ (.futureBox (.not (.atom "h")))) true⟩,
+  ⟨"◇(X h) = True at (s0, ∅): attempt {h} achieves h at next step",
+    okIs (lSatisfies lacaModelHW lacaS0 ∅ (.diamond (.next (.atom "h")))) true⟩,
+  ⟨"□(X h) = False at (s0, ∅): empty attempt leaves h False",
+    okIs (lSatisfies lacaModelHW lacaS0 ∅ (.box (.next (.atom "h")))) false⟩,
+  ⟨"[1 cstit](X h) = True at (s0, {h}): agent 1 guarantees h flips regardless of agent 2",
+    okIs (lSatisfies lacaModelHW lacaS0 (Std.TreeSet.ofList ["h"])
+      (.stit "1" (.next (.atom "h")))) true⟩,
+  ⟨"[2 cstit](X h) = False at (s0, ∅): agent 2 controls w, cannot guarantee h flips",
+    okIs (lSatisfies lacaModelHW lacaS0 ∅ (.stit "2" (.next (.atom "h")))) false⟩,
+  -- lacaToCgs coercion: LACA model as a restricted CGS (Gamen.Laca §3.1) —
+  -- `Cgs`-only slice of the sub-block.
+  ⟨"cgsStates has 2^2 = 4 states (all valuations over {h,w})",
+    (lacaToCgs lacaModelHW).cgsStates.size == 4⟩,
+  ⟨"cgsAgents = {1, 2}",
+    (lacaToCgs lacaModelHW).cgsAgents == Std.TreeSet.ofList ["1", "2"]⟩,
+  ⟨"cgsLabeling s0 = ∅ (both atoms false)",
+    (lacaToCgs lacaModelHW).cgsLabeling lacaS0 == ∅⟩,
+  ⟨"cgsLabeling sH = {h} (only h is true)",
+    (lacaToCgs lacaModelHW).cgsLabeling (Std.TreeMap.ofList [("h", true), ("w", false)])
+      == Std.TreeSet.ofList ["h"]⟩
+]
+
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
@@ -3801,7 +3943,8 @@ def main : IO UInt32 := do
       ++ epistemicCases ++ epistemicPaperCorrespondenceCases ++ epistemicRegressionCases
       ++ semanticsCases ++ fragmentCases ++ temporalCases ++ doxasticCases ++ rankingTheoryCases
       ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
-      ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases ++ cgsCases do
+      ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases ++ cgsCases
+      ++ lacaCases ++ lacaPaperCorrespondenceCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
@@ -3818,6 +3961,7 @@ def main : IO UInt32 := do
     + fragmentCases.length + temporalCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
     + deonticStitCases.length + counterModelCases.length + closureCases.length
-    + crossCheckCases.length + cgsCases.length + properties.length
+    + crossCheckCases.length + cgsCases.length
+    + lacaCases.length + lacaPaperCorrespondenceCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

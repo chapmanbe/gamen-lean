@@ -6,6 +6,7 @@ import Gamen.DeonticStit.Prove
 import Gamen.DeonticStit.CounterModel
 import Gamen.Epistemic
 import Gamen.Laca
+import Gamen.Dcleg
 import Plausible
 
 /-!
@@ -1199,3 +1200,67 @@ def extractionShapes (xs : XSystem) (φ : Formula) : Option (List String) :=
         else "wrong frame class"
       | .error e => s!"error: {e}")
   | _ => none
+
+
+/-! ### DCLEG propositional formulas and the fixed 2-world game
+
+Mirrors `test/Properties.hs`'s `genDclegProp`/`ArbDclegFormula` and its
+`dclegPropGame`/`dclegPropPoints`/`dclegDecisionPoints` fixtures, used by the
+"Gamen.Dcleg: propositional invariants over a fixed 2-world FPIE game"
+properties (`Tests/Main.lean`'s `properties`). -/
+
+/-- Propositional DCLEG formulas over the atoms of the fixed game. Mirrors
+`genDclegProp`, same weights; recursion is on the size, `n - 1` under ¬ and
+`n / 2` under ∨, as in the Haskell. -/
+def genDclegProp : Nat → Gen DclegFormula
+  | 0 => genDclegAtom
+  | n + 1 =>
+    Gen.frequency genDclegAtom [
+      (3, genDclegAtom),
+      (3, .dfNeg <$> genDclegProp n),
+      (3, .dfOr <$> genDclegProp ((n + 1) / 2) <*> genDclegProp ((n + 1) / 2))]
+termination_by n => n
+decreasing_by all_goals omega
+where
+  genDclegAtom : Gen DclegFormula :=
+    Gen.elements ([.dfBot, .dfProp "alive", .dfTurn "p1", .dfMove "L", .dfMove "R",
+      .dfPayoff 1 "p1", .dfPayoff 0 "p1"] : List DclegFormula) (by decide)
+
+/-- Haskell's `ArbDclegFormula` newtype, drawn by `sized genDclegProp`.
+Kept as a wrapper (like `AttemptSet`) since the distribution is narrow. -/
+structure DclegPropFormula where
+  getFormula : DclegFormula
+  deriving Repr
+
+instance : Arbitrary DclegPropFormula := ⟨DclegPropFormula.mk <$> Gen.sized genDclegProp⟩
+
+/-- Haskell's `shrink`: ¬g shrinks to g, g ∨ h to g and h. -/
+instance : Shrinkable DclegPropFormula where
+  shrink f := match f.getFormula with
+    | .dfNeg g => [⟨g⟩]
+    | .dfOr g h => [⟨g⟩, ⟨h⟩]
+    | _ => []
+
+/-- The fixed 2-world FPIE game (the same game as the PaperCorrespondence
+fixture): v0 is p1's root with moves {L,R}; γL plays L (payoff 1), γR plays
+R (payoff 0). -/
+def dclegPropGame : DclegModel := withMovePremises <| mkDclegModel
+  (mkStrategicStructure
+    ["v0", "v1", "v2"] ["v1", "v2"]
+    [("v0", "p1")]
+    [("v0", ["L", "R"]), ("v1", []), ("v2", [])]
+    [("v0", "L", "v1"), ("v0", "R", "v2")])
+  ["γL", "γR"]
+  [("γL", mkHistory [("v0", "L")] "v1"), ("γR", mkHistory [("v0", "R")] "v2")]
+  [("alive", [("γL", "v0")])]
+  [("p1", [("v0", [("γL", ["γL"]), ("γR", ["γR"])])])]
+  [("p1", [("v1", 1), ("v2", 0)])]
+
+/-- All (world, vertex) pairs in `dclegPropGame`. -/
+def dclegPropPoints : List (String × String) :=
+  dclegPropGame.dmWorlds.toList.flatMap fun gamma =>
+    (worldVertices dclegPropGame gamma).toList.map fun w => (gamma, w)
+
+/-- Decision-node pairs only (outcome nodes have empty premises). -/
+def dclegDecisionPoints : List (String × String) :=
+  dclegPropPoints.filter fun (_, w) => !dclegPropGame.dmStructure.ssEndNodes.contains w

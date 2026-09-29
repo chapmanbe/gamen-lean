@@ -14,6 +14,7 @@ import Gamen.DeonticStit.CounterModel
 import Gamen.Cgs
 import Gamen.Stit
 import Gamen.Xstit
+import Gamen.Epistemic
 import Plausible
 import Notebooks.Ch1HealthObligations
 import Notebooks.Ch1SyntaxSemantics
@@ -45,7 +46,13 @@ truth" and "B7: isValidStitFrame enforces Lorini Def. 1 typing" blocks
 (`stitCases`/`stitPaperCorrespondenceCases`/`stitRegressionCases`;
 `dstit`/`commitment` themselves live in `Gamen.Formula`, already exercised
 by `formulaCases`, so this is `Gamen.Stit`'s own model/semantics/
-frame-condition coverage). -/
+frame-condition coverage), and `test/EpistemicSpec.hs` in full plus the
+"B&D Chapter 15 — Epistemic Logics (Zach 2025)" section of
+`test/PaperCorrespondence.hs`, its two Doxastic `eSatisfies` blocks, one
+`test/WorldGuardsSpec.hs` `it`, the Epistemic-side `it`s of
+`test/RegressionIssue18.hs`'s "B1" block, and the two `Gamen.Epistemic`
+properties (`epistemicCases`/`epistemicPaperCorrespondenceCases`/
+`epistemicRegressionCases`/`doxasticCases`/`properties`). -/
 open Gamen Plausible
 
 /-! ## A tiny hspec-like harness -/
@@ -1217,6 +1224,325 @@ def xstitRegressionCases : List Case := [
     | .error _ => false⟩
 ]
 
+/-! ## Epistemic (`Gamen.Epistemic`)
+
+Port of `test/EpistemicSpec.hs` in full (all 23 `it`s) plus
+`test/WorldGuardsSpec.hs`'s "eSatisfies errors on world not in
+EpistemicModel" `it` (`epistemicCases`); the "B&D Chapter 15 — Epistemic
+Logics (Zach 2025)" section of `test/PaperCorrespondence.hs` (all 15 `it`s,
+`epistemicPaperCorrespondenceCases`); and the two `Epistemic: …` `it`s of
+`test/RegressionIssue18.hs`'s "B1: unknown agent errors, never vacuous
+truth" block (`epistemicRegressionCases`). The two Doxastic
+PaperCorrespondence blocks that exercise `eSatisfies` live in
+`doxasticCases`, next to their sibling tableau block. The two
+`Gamen.Epistemic` properties of `test/Properties.hs` are in `properties`.
+
+Every B&D number in the Haskell test titles (Definitions 15.2–15.7,
+Theorem 15.8, Definition 15.11, Table 15.1, Figures 15.2–15.3, and their
+pages) was checked against `notes/bd-screen.pdf` and is correct.
+
+`eSatisfies`, `eAccessible`, `restrictModel`, and the bisimulation
+functions return `Except`; every case compares against `.ok v` (`okIs`),
+so an error fails the case whichever answer was expected. -/
+
+/-- `Set.member v (eAccessible fr a w)`, through the `Except`. -/
+def accHas (fr : EpistemicFrame) (a : String) (w v : World) : Except String Bool :=
+  (eAccessible fr a w).map (·.contains v)
+
+-- EpistemicSpec.hs "EpistemicFrame construction and accessible (Definition 15.4)"
+def eSpecFr1 : EpistemicFrame := mkEpistemicFrame ["w1", "w2", "w3"]
+  [ ("a", [("w1", "w2"), ("w2", "w2")])
+  , ("b", [("w1", "w1"), ("w1", "w3"), ("w3", "w3")]) ]
+
+-- "Epistemic truth conditions (Definition 15.5)"
+def eSpecM2 : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrame ["w1", "w2", "w3"]
+      [ ("a", [("w1", "w2"), ("w2", "w2"), ("w3", "w3")])
+      , ("b", [("w1", "w3"), ("w2", "w2"), ("w3", "w3")]) ])
+    [("p", ["w1", "w2"]), ("q", ["w2"])]
+
+-- "Group and common knowledge (Definition 15.3, 15.6)"
+def eSpecM3 : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrame ["w1", "w2", "w3"]
+      [ ("a", [("w1", "w2"), ("w2", "w2"), ("w3", "w3")])
+      , ("b", [("w1", "w2"), ("w2", "w2"), ("w3", "w3")]) ])
+    [("p", ["w1", "w2"])]
+
+-- "Veridicality: K[a]p → p (reflexive R_a)"
+def eSpecMV : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrame ["w1", "w2"] [("a", [("w1", "w1"), ("w2", "w2")])])
+    [("p", ["w1"])]
+
+-- "Doxastic logic: Belief operator (Gamen.Doxastic, KD45)": knowledge
+-- reflexive at w1 (T axiom holds); belief sees w2 from w1 but not w1
+-- (non-factive, D axiom only).
+def eSpecMB : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrameWithBelief ["w1", "w2"]
+      [("a", [("w1", "w1"), ("w2", "w2")])]   -- knowledge: reflexive
+      [("a", [("w1", "w2"), ("w2", "w2")])])  -- belief: serial, not reflexive
+    [("p", ["w1"])]                           -- p is true only at w1
+
+-- Two clinicians can disagree without contradicting the model.
+def eSpecMD : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrameWithBelief ["w1", "w2", "w3"] []
+      [ ("radA", [("w1", "w2")])    -- radA's belief world: w2 (PE holds)
+      , ("radB", [("w1", "w3")]) ]) -- radB's belief world: w3 (PE absent)
+    [("PE", ["w2"])]
+
+/-- "Doxastic D-axiom rule (consistency tableau)": the same combined
+system `gamen-validate`'s `check_consistency` uses. -/
+def consistencySys : System :=
+  { systemKDt with
+    name := "KDt+doxasticD"
+    usedPrefixRules := systemKDt.usedPrefixRules ++ doxasticRules }
+
+-- "Public announcement (Definition 15.11)"
+def eSpecMPA : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrame ["w1", "w2", "w3"]
+      [ ("a", [("w1", "w2"), ("w2", "w2"), ("w3", "w3")])
+      , ("b", [("w1", "w1"), ("w1", "w3"), ("w3", "w3")]) ])
+    [("p", ["w1", "w2"]), ("q", ["w2"])]
+
+def eSpecMPA2 : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrame ["w1", "w2", "w3"]
+      [("a", [("w1", "w1"), ("w1", "w2"), ("w2", "w2"), ("w3", "w3")])])
+    [("p", ["w1", "w2"])]
+
+-- "Bisimulation (Definition 15.7)"
+def eSpecBisM1 : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrame ["w1", "w2", "w3"]
+      [("a", [("w1", "w2"), ("w1", "w3"), ("w2", "w2"), ("w3", "w3")])])
+    [("p", ["w2", "w3"])]
+
+def eSpecBisM2 : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrame ["v1", "v2"] [("a", [("v1", "v2"), ("v2", "v2")])])
+    [("p", ["v2"])]
+
+def eSpecBis : List (World × World) := [("w1", "v1"), ("w2", "v2"), ("w3", "v2")]
+
+-- "EpistemicModel from KripkeModel": `mkFrame` is an `Except`, so the
+-- fixture is too, and the case fails if it errors.
+def eSpecFromKripke : Except String EpistemicModel :=
+  (mkFrame ["w1", "w2"] [("w1", "w2")]).map fun fr =>
+    fromKripkeModel (mkModel fr [("p", ["w2"])]) "a"
+
+-- WorldGuardsSpec.hs:22, "eSatisfies errors on world not in EpistemicModel"
+-- (gamen-hs#7).
+def eGuardModel : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrame ["a", "b"] [("ag", [("a", "a"), ("a", "b"), ("b", "b")])])
+    [("p", ["a", "b"]), ("q", ["b"]), ("r", ["a"])]
+
+def eGuardProbe : Formula :=
+  .implies (.or (.atom "p") (.atom "q")) (.and (.not (.atom "q")) (.atom "r"))
+
+def epistemicCases : List Case := [
+  -- "Epistemic formula construction (Definition 15.2)"
+  ⟨"displays Knowledge and Announce",
+    toString (Formula.knowledge "a" p) == "K[a]p" && toString (Formula.announce p q) == "[p]q"⟩,
+  ⟨"Knowledge equality",
+    Formula.knowledge "a" p == .knowledge "a" p && Formula.knowledge "a" p != .knowledge "b" p⟩,
+  ⟨"epistemic formulas are not modal-free",
+    (Formula.knowledge "a" p).isModalFree == false && (Formula.announce p q).isModalFree == false⟩,
+  -- "EpistemicFrame construction and accessible (Definition 15.4)"
+  ⟨"constructs frames with agent relations",
+    eSpecFr1.eWorlds.contains "w1"
+      && okIs (accHas eSpecFr1 "a" "w1" "w2") true
+      && okIs (accHas eSpecFr1 "a" "w1" "w3") false
+      && okIs (accHas eSpecFr1 "b" "w1" "w1") true
+      && okIs (accHas eSpecFr1 "b" "w1" "w3") true⟩,
+  ⟨"tracks agents", (agents eSpecFr1).contains "a" && (agents eSpecFr1).contains "b"⟩,
+  -- "Epistemic truth conditions (Definition 15.5)"
+  ⟨"evaluates Knowledge",
+    okIs (eSatisfies eSpecM2 "w1" (.knowledge "a" p)) true    -- w2 has p
+      && okIs (eSatisfies eSpecM2 "w1" (.knowledge "b" p)) false  -- w3 has no p
+      && okIs (eSatisfies eSpecM2 "w1" (.knowledge "a" q)) true   -- w2 has q
+      && okIs (eSatisfies eSpecM2 "w1" (.knowledge "b" q)) false⟩, -- w3 has no q
+  -- "Group and common knowledge (Definition 15.3, 15.6)"
+  ⟨"evaluates group knowledge",
+    okIs (groupKnows eSpecM3 "w1" ["a", "b"] p) true
+      && okIs (groupKnows eSpecM3 "w3" ["a", "b"] p) false⟩,
+  ⟨"evaluates common knowledge", okIs (commonKnowledge eSpecM3 "w1" ["a", "b"] p) true⟩,
+  -- "Veridicality: K[a]p → p (reflexive R_a)"
+  ⟨"K[a]p → p holds on reflexive frames",
+    okIs (eSatisfies eSpecMV "w1" (.implies (.knowledge "a" p) p)) true
+      && okIs (eSatisfies eSpecMV "w2" (.implies (.knowledge "a" p) p)) true⟩,
+  -- "Doxastic logic: Belief operator (Gamen.Doxastic, KD45)"
+  ⟨"displays Belief", toString (Formula.belief "a" p) == "B[a]p"⟩,
+  ⟨"Belief equality and modal status",
+    Formula.belief "a" p == .belief "a" p
+      && Formula.belief "a" p != .belief "b" p
+      && Formula.belief "a" p != .knowledge "a" p
+      && (Formula.belief "a" p).isModalFree == false⟩,
+  ⟨"atoms recurses into Belief",
+    (Formula.belief "a" (.and p q)).atoms.toList == [⟨"p"⟩, ⟨"q"⟩]⟩,
+  ⟨"Belief is non-factive: B_a p can be true while p is false",
+    -- At w1: p holds, but agent's belief reaches only w2 (where p is false)
+    okIs (eSatisfies eSpecMB "w1" (.atom "p")) true
+      && okIs (eSatisfies eSpecMB "w1" (.belief "a" p)) false
+      -- At w1: agent believes ¬p (since the only doxastic successor w2 has ¬p)
+      && okIs (eSatisfies eSpecMB "w1" (.belief "a" (.not p))) true
+      -- Knowledge of p coincides with p at w1 (reflexive)
+      && okIs (eSatisfies eSpecMB "w1" (.knowledge "a" p)) true⟩,
+  ⟨"Knowledge and Belief use independent relations",
+    okIs (eSatisfies eSpecMD "w1" (.belief "radA" (.atom "PE"))) true
+      && okIs (eSatisfies eSpecMD "w1" (.belief "radB" (.not (.atom "PE")))) true⟩,
+  -- "Doxastic D-axiom rule (consistency tableau)"
+  ⟨"two clinicians disagreeing is consistent (cwyde core case)",
+    tableauConsistent consistencySys defaultMaxSteps
+      [.belief "radA" (.atom "PE"), .belief "radB" (.not (.atom "PE"))] == .definitely true⟩,
+  ⟨"single agent's contradictory beliefs is inconsistent (D axiom)",
+    tableauConsistent consistencySys defaultMaxSteps
+      [.belief "radA" (.atom "PE"), .belief "radA" (.not (.atom "PE"))] == .definitely false⟩,
+  ⟨"B_a p ∧ ¬p is consistent (belief is non-factive)",
+    tableauConsistent consistencySys defaultMaxSteps
+      [.belief "radA" (.atom "PE"), .not (.atom "PE")] == .definitely true⟩,
+  ⟨"B_a p ∧ ¬B_a p is propositionally inconsistent",
+    tableauConsistent consistencySys defaultMaxSteps
+      [.belief "radA" (.atom "PE"), .not (.belief "radA" (.atom "PE"))] == .definitely false⟩,
+  -- "Public announcement (Definition 15.11)"
+  ⟨"restricts model correctly",
+    match restrictModel eSpecMPA p with
+    | .ok mP =>
+        mP.eFrame.eWorlds.contains "w1"
+          && mP.eFrame.eWorlds.contains "w2"
+          && !mP.eFrame.eWorlds.contains "w3"
+          && okIs (accHas mP.eFrame "b" "w1" "w3") false
+    | .error _ => false⟩,
+  ⟨"[p]K[a]p: after announcing p, a knows p",
+    okIs (eSatisfies eSpecMPA2 "w1" (.announce p (.knowledge "a" p))) true
+      && okIs (eSatisfies eSpecMPA2 "w3" (.announce p (.knowledge "a" p))) true⟩,
+  -- "Bisimulation (Definition 15.7)"
+  ⟨"validates bisimulation",
+    okIs (isBisimulation eSpecBisM1 eSpecBisM2 eSpecBis) true
+      && okIs (bisimilarWorlds eSpecBisM1 eSpecBisM2 "w1" "v1" eSpecBis) true⟩,
+  ⟨"bisimilar worlds satisfy same formulas (Theorem 15.8)",
+    okIs (eSatisfies eSpecBisM1 "w1" (.knowledge "a" p)) true
+      && okIs (eSatisfies eSpecBisM2 "v1" (.knowledge "a" p)) true⟩,
+  -- "EpistemicModel from KripkeModel"
+  ⟨"wraps KripkeModel as single-agent epistemic model",
+    okIs (eSpecFromKripke >>= fun em => accHas em.eFrame "a" "w1" "w2") true
+      && okIs (eSpecFromKripke >>= fun em => eSatisfies em "w1" (.knowledge "a" p)) true⟩,
+  -- WorldGuardsSpec.hs:22 (gamen-hs#7)
+  ⟨"eSatisfies errors on world not in EpistemicModel",
+    okIs (eSatisfies eGuardModel "a" eGuardProbe) true
+      && isErr (eSatisfies eGuardModel "c" eGuardProbe)⟩,
+  -- Not in gamen-hs: the two halves of the laziness contract (CLAUDE.md,
+  -- "Laziness"; `Epistemic.hs` ~148–158). Haskell's per-announcement table
+  -- of restricted models is lazy, so `⊥ ∧ [□p]p` is simply false: `[□p]p`
+  -- is never reached and `□p` (an error in epistemic models) is never
+  -- evaluated. A port that built the table up front would error here.
+  ⟨"Not in gamen-hs: ⊥ ∧ [□p]p is false — an unreached announcement body is never evaluated",
+    okIs (eSatisfies eSpecMPA "w1" (.and .bot (.announce (.box p) p))) false⟩,
+  -- …and once `[B]C` *is* reached with `B` true at `w`, the restriction
+  -- evaluates `B` at every world: `p ∨ □q` is true at w1 by short-circuit
+  -- but reaches `□q` at w3 (where p is false), so the whole thing errors,
+  -- as Haskell's `restrictModel` would.
+  ⟨"Not in gamen-hs: [p ∨ □q]p at w1 errors — the restriction evaluates the body at every world",
+    isErr (eSatisfies eSpecMPA "w1" (.announce (.or p (.box q)) p))⟩,
+  -- Not in gamen-hs (which has the same gap: every `commonKnowledge` case
+  -- there is settled by one step). R_G⁺ must reach w3 from w1 in two steps
+  -- (a: w1→w2, b: w2→w3), where p fails; a one-step "closure" sees only
+  -- w2 and answers true.
+  ⟨"Not in gamen-hs: common knowledge follows the transitive closure past one step",
+    let m := mkEpistemicModel
+      (mkEpistemicFrame ["w1", "w2", "w3"] [("a", [("w1", "w2")]), ("b", [("w2", "w3")])])
+      [("p", ["w1", "w2"])]
+    okIs (commonKnowledge m "w1" ["a", "b"] p) false⟩
+]
+
+/-! ### PaperCorrespondence.hs: "B&D Chapter 15 — Epistemic Logics (Zach 2025)" -/
+
+-- Figure 15.2 (B&D p. 199): two bisimilar models.
+-- M1: w1→{w2,w3}, self-loops at w2/w3. V(p)={w2,w3}.
+-- M2: v1→v2, self-loop at v2. V(p)={v2}.
+-- Bisimulation: Z={(w1,v1),(w2,v2),(w3,v2)}.
+def fig132m1 : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrame ["w1", "w2", "w3"]
+      [("a", [("w1", "w2"), ("w1", "w3"), ("w2", "w2"), ("w3", "w3")])])
+    [("p", ["w2", "w3"])]
+
+def fig132m2 : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrame ["v1", "v2"] [("a", [("v1", "v2"), ("v2", "v2")])])
+    [("p", ["v2"])]
+
+-- Figure 15.3 (B&D p. 202): before and after public announcement of p.
+-- W={w1,w2,w3}; V(p)={w1,w3}, V(q)={w3}.
+-- Agent a: w1↔w3 plus self-loops; agent b: full clique.
+def fig133model : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrame ["w1", "w2", "w3"]
+      [ ("a", [("w1", "w1"), ("w1", "w3"), ("w3", "w1"), ("w3", "w3"), ("w2", "w2")])
+      , ("b", [ ("w1", "w1"), ("w1", "w2"), ("w1", "w3")
+              , ("w2", "w1"), ("w2", "w2"), ("w2", "w3")
+              , ("w3", "w1"), ("w3", "w2"), ("w3", "w3")]) ])
+    [("p", ["w1", "w3"]), ("q", ["w3"])]
+
+def epistemicPaperCorrespondenceCases : List Case := [
+  -- "Definition 15.4 (p. 193): multi-agent epistemic model M = ⟨W,{R_a},V⟩"
+  ⟨"Figure 15.2 (p. 199): |W_M1| = 3", fig132m1.eFrame.eWorlds.size == 3⟩,
+  ⟨"Figure 15.2 (p. 199): |W_M2| = 2", fig132m2.eFrame.eWorlds.size == 2⟩,
+  ⟨"Figure 15.2 (p. 199): M1 has exactly one agent {a}",
+    (agents fig132m1.eFrame).toList == ["a"]⟩,
+  -- "Definition 15.5 (p. 194): K_a B true at w iff B holds at all R_a-successors"
+  ⟨"K_a p at w1 in fig132m1: R_a(w1)={w2,w3}, both have p → K_a p True",
+    okIs (eSatisfies fig132m1 "w1" (.knowledge "a" p)) true⟩,
+  ⟨"K_a p at v1 in fig132m2: R_a(v1)={v2}, v2 has p → K_a p True",
+    okIs (eSatisfies fig132m2 "v1" (.knowledge "a" p)) true⟩,
+  ⟨"K_b p at w1 in fig133model: R_b(w1) includes w2 which lacks p → K_b p False",
+    okIs (eSatisfies fig133model "w1" (.knowledge "b" p)) false⟩,
+  -- "Table 15.1 (p. 196): Veridicality — reflexive R_a implies K_a B → B"
+  ⟨"K_a p = True at w2 in fig132m1 (self-loop at w2, w2 ∈ V(p))",
+    okIs (eSatisfies fig132m1 "w2" (.knowledge "a" p)) true⟩,
+  ⟨"p = True at w2 in fig132m1 — veridicality: K_a p → p holds here",
+    okIs (eSatisfies fig132m1 "w2" p) true⟩,
+  -- "Definition 15.6 (p. 196): common knowledge — A at every R_G*-reachable world"
+  ⟨"p is NOT common knowledge from w3 in fig133model: b can reach w2 which lacks p",
+    okIs (commonKnowledge fig133model "w3" ["a", "b"] p) false⟩,
+  ⟨"p is common knowledge in a model where p holds everywhere",
+    let m := mkEpistemicModel
+      (mkEpistemicFrame ["u", "v"] [("a", [("u", "v"), ("v", "u"), ("u", "u"), ("v", "v")])])
+      [("p", ["u", "v"])]
+    okIs (commonKnowledge m "u" ["a"] p) true⟩,
+  -- "Definition 15.7 + Theorem 15.8 (p. 198): bisimulation preserves modal truth"
+  ⟨"Figure 15.2 (p. 199): Z={(w1,v1),(w2,v2),(w3,v2)} is a bisimulation",
+    okIs (isBisimulation fig132m1 fig132m2 [("w1", "v1"), ("w2", "v2"), ("w3", "v2")]) true⟩,
+  ⟨"Theorem 15.8: bisimilar worlds w1/v1 agree on K_a p",
+    match eSatisfies fig132m1 "w1" (.knowledge "a" p), eSatisfies fig132m2 "v1" (.knowledge "a" p) with
+    | .ok b1, .ok b2 => b1 == b2
+    | _, _ => false⟩,
+  ⟨"worlds with different valuations are not bisimilar: {(w1,w2)} fails clause 1",
+    -- w1 lacks p, w2 has p — propositional agreement fails
+    okIs (isBisimulation fig132m1 fig132m1 [("w1", "w2")]) false⟩,
+  -- "Definition 15.11 (p. 201): PAL semantics — [B]C restricts model to B-worlds"
+  ⟨"Figure 15.3 (p. 202): before announcement, K_b p is false at w1",
+    okIs (eSatisfies fig133model "w1" (.knowledge "b" p)) false⟩,
+  ⟨"Figure 15.3 (p. 202): M, w1 ⊩ [p]K_b p — after announcing p, b knows p",
+    okIs (eSatisfies fig133model "w1" (.announce p (.knowledge "b" p))) true⟩
+]
+
+/-! ### RegressionIssue18.hs: "B1: unknown agent errors, never vacuous truth" (Epistemic `it`s) -/
+
+def epistemicRegressionCases : List Case :=
+  let eModel := mkEpistemicModel
+    (mkEpistemicFrame ["w"] [("a", [("w", "w")])])
+    [("p", ["w"])]
+  [ ⟨"Epistemic: a known agent evaluates normally",
+      okIs (eSatisfies eModel "w" (.knowledge "a" p)) true⟩,
+    ⟨"Epistemic: K_typo ⊥ errors (not vacuously true)",
+      isErr (eSatisfies eModel "w" (.knowledge "typo" .bot))⟩ ]
+
 /-! ## Semantics (`Gamen.Semantics`)
 
 Port of `test/KripkeSemanticsSpec.hs` (all 9 `it`s), the rest of
@@ -1673,8 +1999,19 @@ contradictory beliefs" describe block under "Gamen.Doxastic — KD45 belief
 The sibling describe blocks in that section, "Non-factiveness: B_a φ at w
 does not entail φ at w" and "D axiom: B_a φ → ¬B_a(¬φ) (doxastic
 seriality)" (3 `it`s each), exercise `eSatisfies`/`mkEpistemicModel`/
-`mkEpistemicFrameWithBelief`/`Knowledge`, all from `Gamen.Epistemic`, which
-is not ported (see `PORTING.md`) — skipped until that module lands. -/
+`mkEpistemicFrameWithBelief`/`Knowledge` from `Gamen.Epistemic`; they are
+ported here too, after the tableau block, over the `doxM` fixture. -/
+
+-- KD45 doxastic fixture (PaperCorrespondence.hs `doxFr`/`doxM`): non-factive
+-- belief. Agent "a" epistemically sees only w0 (self-loop), so K_a p is
+-- false at w0 (p is not in w0). Doxastically, a sees only w1 (where p is
+-- true), so B_a p is true at w0 — even though p is false there.
+def doxM : EpistemicModel :=
+  mkEpistemicModel
+    (mkEpistemicFrameWithBelief ["w0", "w1"]
+      [("a", [("w0", "w0"), ("w1", "w1")])]   -- epistemic: reflexive (self-loops)
+      [("a", [("w0", "w1"), ("w1", "w1")])])  -- doxastic: serial (w0→w1, w1→w1)
+    [("p", ["w1"])]                           -- p true only at w1
 
 /-- `KD-belief` system used by the PaperCorrespondence tableau block:
 `doxasticRules` as used-prefix rules, no witness rules. -/
@@ -1689,7 +2026,21 @@ def doxasticCases : List Case := [
       [.belief "a" p, .belief "a" (.not p)] == .definitely false⟩,
   ⟨"B_a p ∧ B_b(¬p) is satisfiable — D rule is per-agent; agents may disagree",
     tableauConsistent doxBeliefSystem defaultMaxSteps
-      [.belief "a" p, .belief "b" (.not p)] == .definitely true⟩
+      [.belief "a" p, .belief "b" (.not p)] == .definitely true⟩,
+  -- "Non-factiveness: B_a φ at w does not entail φ at w"
+  ⟨"B_a p true at w0 — all doxastic successors (w1) satisfy p",
+    okIs (eSatisfies doxM "w0" (.belief "a" p)) true⟩,
+  ⟨"p false at w0 — demonstrating non-factiveness of belief",
+    okIs (eSatisfies doxM "w0" p) false⟩,
+  ⟨"K_a p false at w0 — epistemic self-loop at w0 fails p; knowledge is factive",
+    okIs (eSatisfies doxM "w0" (.knowledge "a" p)) false⟩,
+  -- "D axiom: B_a φ → ¬B_a(¬φ)  (doxastic seriality)"
+  ⟨"B_a p holds at w0", okIs (eSatisfies doxM "w0" (.belief "a" p)) true⟩,
+  ⟨"B_a(¬p) false at w0 — D axiom holds: agent does not believe contradiction",
+    okIs (eSatisfies doxM "w0" (.belief "a" (.not p))) false⟩,
+  ⟨"D axiom formula B_a p → ¬B_a(¬p) satisfied at every world in doxM",
+    okIs (["w0", "w1"].allM fun w =>
+      eSatisfies doxM w (.implies (.belief "a" p) (.not (.belief "a" (.not p))))) true⟩
 ]
 
 /-! ## Ranking theory (`Gamen.RankingTheory`)
@@ -2893,6 +3244,21 @@ def properties : List (String × IO Bool) :=
         isOkTrue (allSatisfies m
           (.implies (.box (.implies (.atomF ⟨"p"⟩) (.atomF ⟨"q"⟩)))
                     (.implies (.box (.atomF ⟨"p"⟩)) (.box (.atomF ⟨"q"⟩))))) = true) 100),
+    -- Gamen.Epistemic: public announcement semantics (the "Gamen.Epistemic:
+    -- public announcement semantics" describe block of `test/Properties.hs`,
+    -- both `prop`s, 100 instances each as hspec's default). The Haskell
+    -- title says "Def. 13.11"; in `notes/bd-screen.pdf` the restricted
+    -- model M|B is Definition 15.11 (p. 201). An error from `restrictModel`
+    -- or `eSatisfies` is a failure, never a pass.
+    ("restrictModel (Def. 15.11): every world in M|B satisfies B",
+      run (NamedBinder "m" <| ∀ m : EpistemicModel, NamedBinder "f" <| ∀ f : PropFormula,
+        isOkTrue (restrictModel m f.getFormula >>= (eIsTrueIn · f.getFormula)) = true) 100),
+    ("K_a distribution axiom: K_a(φ→ψ) → (K_a φ → K_a ψ) at every world",
+      run (NamedBinder "m" <| ∀ m : EpistemicModel, NamedBinder "f" <| ∀ f : PropFormula,
+        NamedBinder "g" <| ∀ g : PropFormula,
+        isOkTrue (eIsTrueIn m
+          (.implies (.knowledge "a" (.implies f.getFormula g.getFormula))
+                    (.implies (.knowledge "a" f.getFormula) (.knowledge "a" g.getFormula)))) = true) 100),
     -- Gamen.RankingTheory: structural invariants — the two `isContingent
     -- ⇒ …` properties now live in `Tests/SlowMain.lean` alongside the
     -- other five `==>`-shaped properties (see the comment above).
@@ -2907,6 +3273,18 @@ def properties : List (String × IO Bool) :=
         (let mom := Std.TreeSet.ofList inst.worlds
          checkIndependence inst.choiceCell inst.agents mom
            == legacyCheckIndependence inst.choiceCell inst.agents mom) = true) 300),
+    -- Gamen.Epistemic: not in gamen-hs. `commonKnowledge`'s closure was
+    -- rewritten from Haskell's BFS to `iterateToFixpoint`; this checks the
+    -- two agree (value or error alike) on random one-agent models, whose
+    -- random edge sets include multi-step chains, from the world "w1"
+    -- every generated model has.
+    ("commonKnowledge agrees with the breadth-first search it replaced",
+      run (NamedBinder "m" <| ∀ m : EpistemicModel, NamedBinder "f" <| ∀ f : PropFormula,
+        (match commonKnowledge m "w1" ["a"] f.getFormula,
+               bfsCommonKnowledge m "w1" ["a"] f.getFormula with
+         | .ok a, .ok b => a == b
+         | .error x, .error y => x == y
+         | _, _ => false) = true) 200),
     ]
 where
   toNNF := Formula.toNNF
@@ -3387,6 +3765,7 @@ def main : IO UInt32 := do
   for c in unitCases ++ tableauCases ++ formulaCases ++ widgetCases ++ answerKeyCases ++ framePropertiesCases
       ++ kripkeCases ++ stitCases ++ stitPaperCorrespondenceCases ++ stitRegressionCases
       ++ xstitCases ++ xstitPaperCorrespondenceCases ++ xstitRegressionCases
+      ++ epistemicCases ++ epistemicPaperCorrespondenceCases ++ epistemicRegressionCases
       ++ semanticsCases ++ fragmentCases ++ temporalCases ++ doxasticCases ++ rankingTheoryCases
       ++ plausibilityCases ++ sequentCases ++ rulesCases ++ saturationCases ++ proveCases
       ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases ++ cgsCases do
@@ -3400,7 +3779,9 @@ def main : IO UInt32 := do
   let total := unitCases.length + tableauCases.length + formulaCases.length + widgetCases.length + answerKeyCases.length
     + framePropertiesCases.length + kripkeCases.length
     + stitCases.length + stitPaperCorrespondenceCases.length + stitRegressionCases.length
-    + xstitCases.length + xstitPaperCorrespondenceCases.length + xstitRegressionCases.length + semanticsCases.length
+    + xstitCases.length + xstitPaperCorrespondenceCases.length + xstitRegressionCases.length
+    + epistemicCases.length + epistemicPaperCorrespondenceCases.length + epistemicRegressionCases.length
+    + semanticsCases.length
     + fragmentCases.length + temporalCases.length + doxasticCases.length + rankingTheoryCases.length + plausibilityCases.length
     + sequentCases.length + rulesCases.length + saturationCases.length + proveCases.length
     + deonticStitCases.length + counterModelCases.length + closureCases.length

@@ -4,6 +4,7 @@ import Gamen.FrameProperties
 import Gamen.DeonticStit
 import Gamen.DeonticStit.Prove
 import Gamen.DeonticStit.CounterModel
+import Gamen.Epistemic
 import Plausible
 
 /-!
@@ -72,9 +73,8 @@ def truthsIn (m : Option Model) (f : Formula) : Option (List Bool) :=
 Mirrors `test/Properties.hs`'s `ArbModel`/`ArbKappaModel` newtypes. The
 Haskell wrappers exist only to dodge orphan-`Arbitrary`-instance
 restrictions; Lean's typeclass resolution has no such restriction, so the
-instances below attach directly to `Model` and `KappaModel`.
-(`ArbEpistemicModel` is out of scope here: `Gamen.Epistemic` is not
-ported.) -/
+instances below attach directly to `Model`, `KappaModel`, and
+`EpistemicModel` (`ArbEpistemicModel`). -/
 
 private def propAtomNames : List String := ["p", "q", "r"]
 
@@ -129,6 +129,56 @@ instance : Arbitrary KappaModel := ⟨genKappaModel⟩
 
 instance : Shrinkable KappaModel where
   shrink _ := []
+
+/-- Single-agent epistemic model: 1–3 worlds, random R_a, random valuation
+over {p,q,r}. Mirrors `genEpistemicModel`/`ArbEpistemicModel`.
+`mkEpistemicFrame` does not check edge endpoints (nor does the Haskell),
+and every edge here is drawn from `ws ×ˢ ws` anyway, so there is nothing
+to throw. -/
+def genEpistemicModel : Gen EpistemicModel := do
+  let ⟨n, _⟩ ← Gen.choose Nat 1 3 (by omega)
+  let ws := (List.range n).map fun i => s!"w{i + 1}"
+  let allPairs := ws.flatMap fun w1 => ws.map fun w2 => (w1, w2)
+  let edges ← genSublist allPairs
+  let val ← propAtomNames.mapM fun a => do
+    let vs ← genSublist ws
+    return (a, vs)
+  return mkEpistemicModel (mkEpistemicFrame ws [("a", edges)]) val
+
+instance : Arbitrary EpistemicModel := ⟨genEpistemicModel⟩
+
+/-- Haskell's `ArbEpistemicModel` defines no custom `shrink`, so
+QuickCheck's default (no shrinking) applies; same here. -/
+instance : Shrinkable EpistemicModel where
+  shrink _ := []
+
+/-- Haskell `commonKnowledge`'s breadth-first `go` (`Epistemic.hs` ~300–307),
+with fuel: dequeues are bounded by the seed plus every visited world's
+out-degree, so `(n + 1)² + n + 1` for `n = |W| + Σ|targets|` suffices. -/
+private def bfsReach (step : World → List World) :
+    Nat → Std.TreeSet World → List World → Except String (Std.TreeSet World)
+  | _, visited, [] => pure visited
+  | 0, _, _ => throw "bfsCommonKnowledge: out of fuel"
+  | fuel + 1, visited, curr :: queue =>
+      if visited.contains curr then bfsReach step fuel visited queue
+      else bfsReach step fuel (visited.insert curr) (queue ++ step curr)
+
+/-- Reference for `Gamen.Epistemic.commonKnowledge`, whose closure was
+rewritten from Haskell's BFS to `iterateToFixpoint` (a termination-forced
+rewrite; CLAUDE.md asks for a property that the results agree). This is
+the Haskell's BFS, with the same up-front agent check; the "commonKnowledge
+agrees with the breadth-first search it replaced" property in
+`Tests/Main.lean` compares the two on random epistemic models. -/
+def bfsCommonKnowledge (m : EpistemicModel) (w : World) (agentList : List String)
+    (f : Formula) : Except String Bool := do
+  agentList.forM fun a => discard <| eAccessible m.eFrame a w
+  let rels := agentList.map fun a => m.eFrame.eRelations.getD a ∅
+  let step (u : World) : List World :=
+    (rels.foldl (fun acc rel => acc.insertMany (rel.getD u ∅)) (∅ : Std.TreeSet World)).toList
+  let n := m.eFrame.eWorlds.size
+    + rels.foldl (fun n rel => rel.foldl (fun n _ succs => n + succs.size) n) 0
+  let reachable ← bfsReach step ((n + 1) * (n + 1) + n + 1) ∅ (step w)
+  reachable.toList.allM (eSatisfies m · f)
 
 /-- `∃ w, M,w ⊩ f`, staying in `Except`: an error (unreachable for the
 Bot/Atom/Not/And/Or/Implies/Iff/Box/Diamond fragment these generators
@@ -326,6 +376,16 @@ where
   genAtom : Gen Formula := do
     let ⟨i, _⟩ ← Gen.choose Nat 0 2 (by omega)
     return .atom (propAtomNames.getD i "p")
+
+/-- Haskell's `ArbPropFormula` newtype: a propositional-fragment formula
+drawn by `sized genPropFormula`, uncapped, for properties that quantify
+over it directly (`Tests/Main.lean`'s `Gamen.Epistemic` properties). -/
+structure PropFormula where
+  getFormula : Formula
+  deriving Repr
+
+instance : Arbitrary PropFormula := ⟨PropFormula.mk <$> Gen.sized genPropFormula⟩
+instance : Shrinkable PropFormula where shrink _ := []
 
 /-- True when φ is neither a tautology nor a contradiction in `m`.
 Mirrors `isContingent`, but stays in `Except`: for the propositional

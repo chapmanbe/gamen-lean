@@ -102,7 +102,7 @@ reachable state set.
 
 Note: the bare `Cgs` constructor remains available for internal builders
 that produce a CGS by transformation (e.g.
-`Gamen.Atl.ImperfectInfo.residualCgs`, not ported yet) rather than from
+`Gamen.Atl.ImperfectInfo.residualCgs`) rather than from
 raw data; prefer `mkCgs` for models built from user input, as in the
 Haskell. -/
 def mkCgs {s a : Type} [Ord s] [Ord a]

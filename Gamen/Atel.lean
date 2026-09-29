@@ -63,7 +63,7 @@ a standard iCGS the actions available to an agent must be identical across
 states it cannot distinguish, otherwise a "uniform" choice could be
 unavailable at some state in the class (adversarial review B7; Schobbens
 2004; Bulling & Jamroga 2014). The checks are needed for correct
-`Gamen.Atl.ImperfectInfo` semantics (not ported yet), which quantify over
+`Gamen.Atl.ImperfectInfo` semantics, which quantify over
 `~_a` classes and assume they partition the state space.
 
 Returns the first violation found, in the Haskell's order (reflexivity,

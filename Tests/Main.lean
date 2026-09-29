@@ -16,6 +16,7 @@ import Gamen.Coalition
 import Gamen.Atl.ModelCheck
 import Gamen.Atl
 import Gamen.Atel
+import Gamen.Atl.ImperfectInfo
 import Gamen.Laca
 import Gamen.Stit
 import Gamen.Xstit
@@ -3621,7 +3622,7 @@ the ATEL one is not; `Gamen.Coalition` is now ported too (see
 - "van der Hoek & Wooldridge (2003) — ATEL" (adds `AtelModel`,
   `mkAtelModel`, `atelSat`: `Gamen.Atel`, ported as `atelCases`);
 - the imperfect-information ATEL section right after it (adds
-  `Gamen.Atl.ImperfectInfo`, not ported).
+  `Gamen.Atl.ImperfectInfo`, ported as `atlirCases`).
 
 `Gamen.Laca` is now ported (`Gamen/Laca.lean`); its `lacaToCgs` coercion
 sub-block of the "Herzig, Lorini & Perrotin (2022) — LACA" section is split
@@ -3949,8 +3950,8 @@ calls `atlSatisfies` (`Gamen.Atl`), and the ATLir section's other `it`s
 also call `atlirSat`/`atlirSatObjective`/`epistemicClasses`/
 `uniformActions`/`subjectiveClass`/`allUniformStrategies`
 (`Gamen.Atl.ImperfectInfo`) or `mkAtelModel` (`Gamen.Atel`); none of those
-three modules are ported yet, so those `it`s stay unported, and so does
-the whole "van der Hoek & Wooldridge (2003) — ATEL" section and its
+three modules was ported at the time (all three now are: `atlCases`,
+`atelCases`, `atlirCases`), nor was the whole "van der Hoek & Wooldridge (2003) — ATEL" section and its
 "Healthcare application" sub-block (every `it` there needs `Gamen.Atel`).
 
 Two title/value mismatches found while porting, both kept as the Haskell
@@ -4090,7 +4091,7 @@ def atlModelCheckCases : List Case :=
       | .error _ => false⟩,
     -- Jamroga & van der Hoek (2004) — ATLir, §4 Theorem: sat_ATL ≥ sat_ATLir
     -- (the perfect-info `sat` half of each strict-containment pair; the
-    -- `atlirSat` half needs `Gamen.Atl.ImperfectInfo`, not ported).
+    -- `atlirSat` half is in `atlirCases`).
     ⟨"sat_ATL (⟨⟨alice⟩⟩ X p) = {0,1,2} — perfect info: each state picks the right action",
       okIs (sat irCgs (.canNext al p_)) (Std.TreeSet.ofList [0, 1, 2])⟩,
     ⟨"sat_ATL (⟨⟨alice⟩⟩ F p) = {0,1,2} — perfect info: alice picks optimally at each visit",
@@ -4429,12 +4430,12 @@ only `PaperCorrespondence.hs` and `RegressionIssue18.hs`). Ported here:
   mkAtelModel rejects a non-symmetric epistemic relation", "B7: mkAtelModel
   rejects differing move sets across indistinguishable states"). The same
   block's other three `it`s (`atlirSat`, `atlirSatObjective`,
-  `subjectiveClass`) need `Gamen.Atl.ImperfectInfo`, not ported, and stay
-  unported.
+  `subjectiveClass`) are in `atlirRegressionCases`
+  (`Gamen.Atl.ImperfectInfo`).
 
 The "Jamroga & van der Hoek (2004) — ATLir" section's `epistemicClasses`
-`it` (`test/PaperCorrespondence.hs` ~1753–1758) likewise needs
-`Gamen.Atl.ImperfectInfo` and stays unported.
+`it` (`test/PaperCorrespondence.hs` ~1753–1758) is ported in `atlirCases`
+(`Gamen.Atl.ImperfectInfo`).
 
 van der Hoek & Wooldridge (2003), *Cooperation, Knowledge, and Time:
 Alternating-time Temporal Epistemic Logic*, Studia Logica 75(1): 125–157 —
@@ -4728,6 +4729,218 @@ def atelRegressionCases : List Case :=
       | .error _ => false⟩
   ]
 
+/-! ## Atl.ImperfectInfo (`Gamen.Atl.ImperfectInfo`)
+
+No `test/*ImperfectInfo*Spec.hs` in gamen-hs. The export search (`grep -lw`
+over `test/*.hs` for every export) hits only `PaperCorrespondence.hs` and
+`RegressionIssue18.hs`. Ported: every `it` of `PaperCorrespondence.hs`'s
+"Jamroga & van der Hoek (2004) — ATLir" section except the two `sat`-only
+ones already in `atlModelCheckCases` (15 of 17, `atlirCases`), and the
+three `atlirSat`/`atlirSatObjective`/`subjectiveClass` `it`s of
+`RegressionIssue18.hs`'s "B2/B7: ATLir semantics and iCGS validation"
+block (`atlirRegressionCases`; its other two are in `atelRegressionCases`).
+
+The "Not in gamen-hs" cases pin the module docstring's "Laziness" notes.
+Each expected value, error text included, was checked against gamen-hs's
+own `atlirSat` in GHCi (`cabal repl lib:gamen`, 2026-09-29). -/
+
+/-- Alice's epistemic relation for the ATLir section
+(`PaperCorrespondence.hs` ~1741–1745): `{0,1}` and `{2}`. -/
+private def irEpistemic : String → Nat → Std.TreeSet Nat
+  | "alice", 0 => Std.TreeSet.ofList [0, 1]
+  | "alice", 1 => Std.TreeSet.ofList [0, 1]
+  | "alice", _ => Std.TreeSet.ofList [2]
+  | _, s => Std.TreeSet.ofList [s]
+
+private def irModel : Except String (AtelModel Nat String) :=
+  mkAtelModel irCgs irEpistemic
+
+private def withIr (k : AtelModel Nat String → Bool) : Bool :=
+  match irModel with
+  | .ok m => k m
+  | .error _ => false
+
+/-- `irCgs` with a second agent `bob` who has no moves anywhere
+(`irMoves` gives non-`alice` agents `∅`). Built without `mkCgs`, which
+would reject it; `mkAtelModel` accepts it. With coalition `{alice}`, the
+opponents' joint-move list is empty at every state, so `preC` never tests
+membership. -/
+private def irBobModel : Except String (AtelModel Nat String) :=
+  mkAtelModel { irCgs with cgsAgents := Std.TreeSet.ofList ["alice", "bob"] } irEpistemic
+
+private def errIs {α : Type} (e : Except String α) (msg : String) : Bool :=
+  match e with
+  | .error m => m == msg
+  | .ok _ => false
+
+def atlirCases : List Case :=
+  let al : List String := ["alice"]
+  let p_ : Formula := .atom "p"
+  let boxErr := "Box not supported in ATLir; use ⟨⟨Ag⟩⟩G"
+  let diaErr := "Diamond not supported in ATLir"
+  [ -- §3 utility functions: epistemic classes and uniform actions
+    ⟨"epistemicClasses alice = [{0,1},{2}]",
+      withIr fun m => (epistemicClasses m "alice").map (·.toList) == [[0, 1], [2]]⟩,
+    ⟨"uniformActions alice 0 = {left,right} (both moves available in class {0,1})",
+      withIr fun m => uniformActions m "alice" 0 == Std.TreeSet.ofList ["left", "right"]⟩,
+    ⟨"subjectiveClass {alice} 0 = {0,1}",
+      withIr fun m =>
+        subjectiveClass m (Std.TreeSet.ofList ["alice"]) 0 == Std.TreeSet.ofList [0, 1]⟩,
+    ⟨"allUniformStrategies alice has 4 strategies (2 classes × 2 moves)",
+      withIr fun m => okIs ((allUniformStrategies m "alice").map List.length) 4⟩,
+    -- §4 Theorem: sat_ATL ≥ sat_ATLir (strict containment for X p)
+    ⟨"sat_ATLir(⟨⟨alice⟩⟩ir X p) = {2} — no uniform strategy works for class {0,1}",
+      withIr fun m => okIs (atlirSat m (.canNext al p_)) (Std.TreeSet.ofList [2])⟩,
+    ⟨"sat_ATLir strictly ⊊ sat_ATL for CanNext p",
+      withIr fun m =>
+        match atlirSat m (.canNext al p_), sat irCgs (.canNext al p_) with
+        | .ok a, .ok b => a.all fun w => b.contains w
+        | _, _ => false⟩,
+    -- §4 Theorem: sat_ATL ≥ sat_ATLir (strict containment for F p)
+    ⟨"sat_ATLir(⟨⟨alice⟩⟩ir F p) = {2} — uniform strategies cannot escape class {0,1}",
+      withIr fun m => okIs (atlirSat m (.canEventually al p_)) (Std.TreeSet.ofList [2])⟩,
+    ⟨"sat_ATLir strictly ⊊ sat_ATL for CanEventually p",
+      withIr fun m =>
+        match atlirSat m (.canEventually al p_), sat irCgs (.canEventually al p_) with
+        | .ok a, .ok b => a.all fun w => b.contains w
+        | _, _ => false⟩,
+    -- §4 ATLir semantics: always (G) and until
+    ⟨"sat_ATLir(⟨⟨alice⟩⟩ir G p) = {2} — only absorbing p-state can maintain p forever",
+      withIr fun m => okIs (atlirSat m (.canAlways al p_)) (Std.TreeSet.ofList [2])⟩,
+    ⟨"sat_ATLir(⟨⟨alice⟩⟩ir (p U p)) = {2} — trivial until (p until p = p)",
+      withIr fun m => okIs (atlirSat m (.canUntil al p_ p_)) (Std.TreeSet.ofList [2])⟩,
+    ⟨"sat_ATLir(⟨⟨alice⟩⟩ir F ¬p) = {0,1} — uniform 'right' loops 0 in ¬p; state 2 \
+      absorbs under p",
+      withIr fun m => okIs (atlirSat m (.canEventually al (.not p_))) (Std.TreeSet.ofList [0, 1])⟩,
+    -- B2: objective semantics (actual state only) vs subjective
+    ⟨"sat_ATLir^obj(⟨⟨alice⟩⟩ir X p) = {0,1,2} — success required at s only",
+      withIr fun m => okIs (atlirSatObjective m (.canNext al p_)) (Std.TreeSet.ofList [0, 1, 2])⟩,
+    ⟨"objective X p coincides with perfect-info sat_ATL here",
+      withIr fun m =>
+        match atlirSatObjective m (.canNext al p_), sat irCgs (.canNext al p_) with
+        | .ok a, .ok b => a == b
+        | _, _ => false⟩,
+    ⟨"subjective ⊊ objective for X p (uniformity bites across the class)",
+      withIr fun m =>
+        match atlirSat m (.canNext al p_), atlirSatObjective m (.canNext al p_) with
+        | .ok subj, .ok obj => subj.all (fun w => obj.contains w) && !(subj == obj)
+        | _, _ => false⟩,
+    ⟨"sat_ATLir^obj(⟨⟨alice⟩⟩ir F p) = {0,1,2}",
+      withIr fun m =>
+        okIs (atlirSatObjective m (.canEventually al p_)) (Std.TreeSet.ofList [0, 1, 2])⟩,
+    -- Not in gamen-hs: the wrappers (no gamen-hs test calls them).
+    ⟨"Not in gamen-hs: atlirSatisfies 2 / 0 (⟨⟨alice⟩⟩ir X p) = true / false; \
+      objective at 0 = true",
+      withIr fun m =>
+        okIs (atlirSatisfies m 2 (.canNext al p_)) true
+          && okIs (atlirSatisfies m 0 (.canNext al p_)) false
+          && okIs (atlirSatisfiesObjective m 0 (.canNext al p_)) true⟩,
+    ⟨"Not in gamen-hs: atlirIsTrueIn (⟨⟨alice⟩⟩ir X p) = false; objective = true",
+      withIr fun m =>
+        okIs (atlirIsTrueIn m (.canNext al p_)) false
+          && okIs (atlirIsTrueInObjective m (.canNext al p_)) true⟩,
+    ⟨"Not in gamen-hs: atlirSatisfies / atlirSatisfiesObjective error on a state \
+      not in cgsStates",
+      withIr fun m =>
+        errIs (atlirSatisfies m 7 p_) "atlirSatisfies: state not in cgsStates"
+          && errIs (atlirSatisfiesObjective m 7 p_)
+            "atlirSatisfiesObjective: state not in cgsStates"⟩,
+    ⟨"Not in gamen-hs: [alice]p is treated as ⟨⟨alice⟩⟩ir X p = {2}; \
+      ⟨⟨∅⟩⟩ir X p = {2}",
+      withIr fun m =>
+        okIs (atlirSat m (.coalition al p_)) (Std.TreeSet.ofList [2])
+          && okIs (atlirSat m (.canNext [] p_)) (Std.TreeSet.ofList [2])⟩,
+    ⟨"Not in gamen-hs: sat_ATLir^obj(⟨⟨alice⟩⟩ir G ¬p) = {0,1} (uniform 'right' \
+      keeps 0 at 0; uniform 'left' keeps 1 at 1)",
+      withIr fun m =>
+        okIs (atlirSatObjective m (.canAlways al (.not p_))) (Std.TreeSet.ofList [0, 1])⟩,
+    -- Not in gamen-hs: laziness (GHCi-checked, see the list's docstring).
+    ⟨"Not in gamen-hs: laziness — Or (Box p) (Diamond p) raises the Diamond error \
+      (Set.union forces its second argument first)",
+      withIr fun m => errIs (atlirSat m (.or (.box p_) (.diamond p_))) diaErr⟩,
+    ⟨"Not in gamen-hs: laziness — Implies (Box p) (Diamond p) raises the Diamond error",
+      withIr fun m => errIs (atlirSat m (.implies (.box p_) (.diamond p_))) diaErr⟩,
+    ⟨"Not in gamen-hs: laziness — Iff (Box p) (Diamond p) raises the Diamond error \
+      on a nonempty-state model",
+      withIr fun m => errIs (atlirSat m (.iff (.box p_) (.diamond p_))) diaErr⟩,
+    ⟨"Not in gamen-hs: laziness — And Bot (Box p) = ∅; And (Box p) (Diamond p) \
+      raises the Box error",
+      withIr fun m =>
+        okIs (atlirSat m (.and .bot (.box p_))) ∅
+          && errIs (atlirSat m (.and (.box p_) (.diamond p_))) boxErr⟩,
+    ⟨"Not in gamen-hs: laziness — ⟨⟨alice⟩⟩ir (Box p U Diamond p) raises the Box \
+      error (φ before ψ)",
+      withIr fun m => errIs (atlirSat m (.canUntil al (.box p_) (.diamond p_))) boxErr⟩,
+    ⟨"Not in gamen-hs: laziness — K_alice (Box p) and Not (Box p) raise the Box \
+      error on a nonempty-state model",
+      withIr fun m =>
+        errIs (atlirSat m (.knowledge "alice" (.box p_))) boxErr
+          && errIs (atlirSat m (.not (.box p_))) boxErr⟩,
+    ⟨"Not in gamen-hs: laziness — on a zero-state model, K_alice (Box p), \
+      ⟨⟨alice⟩⟩ir X (Box p) and Not (Box p) are ∅",
+      match zeroAtelModel with
+      | .ok m =>
+          okIs (atlirSat m (.knowledge "alice" (.box p_))) ∅
+            && okIs (atlirSat m (.canNext al (.box p_))) ∅
+            && okIs (atlirSat m (.not (.box p_))) ∅
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — on a zero-state model, Iff (Box p) (Diamond p) \
+      raises Box, Implies (Box p) (Diamond p) raises Diamond",
+      match zeroAtelModel with
+      | .ok m =>
+          errIs (atlirSat m (.iff (.box p_) (.diamond p_))) boxErr
+            && errIs (atlirSat m (.implies (.box p_) (.diamond p_))) diaErr
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: laziness — ⟨⟨bob⟩⟩ir X (Box p) and [bob](Box p) = ∅: bob \
+      has no moves, so no uniform profile, so Box p is never evaluated",
+      withIr fun m =>
+        okIs (atlirSat m (.canNext ["bob"] (.box p_))) ∅
+          && okIs (atlirSat m (.coalition ["bob"] (.box p_))) ∅⟩,
+    ⟨"Not in gamen-hs: laziness — with a moveless opponent bob, ⟨⟨alice⟩⟩ir X (Box p) \
+      = {0,1,2} (preC never tests membership), but F and G raise the Box error",
+      match irBobModel with
+      | .ok m =>
+          okIs (atlirSat m (.canNext al (.box p_))) (Std.TreeSet.ofList [0, 1, 2])
+            && errIs (atlirSat m (.canEventually al (.box p_))) boxErr
+            && errIs (atlirSat m (.canAlways al (.box p_))) boxErr
+      | .error _ => false⟩,
+    ⟨"Not in gamen-hs: an empty epistemic class (model built without mkAtelModel, \
+      epistemic function strict in the state) raises Set.findMin's error",
+      -- GHCi, epistemic `\_ s -> if s == 99 then {s} else ∅`: both calls
+      -- give `Left Set.findMin: empty set has no minimal element`. (For an
+      -- epistemic function that ignores its state, GHC never forces
+      -- `findMin` and returns `[]`/∅; Lean cannot see that strictness and
+      -- always throws. See the module docstring.)
+      let bad : AtelModel Nat String :=
+        { atelCgs := irCgs, atelEpistemic := fun _ s => if s == 99 then {s} else ∅ }
+      let findMinErr := "Set.findMin: empty set has no minimal element"
+      errIs (atlirSat bad (.canNext al p_)) findMinErr
+        && errIs (allUniformStrategies bad "alice") findMinErr⟩
+  ]
+
+/-! ## Atl.ImperfectInfo (`test/RegressionIssue18.hs`)
+
+"B2/B7: ATLir semantics and iCGS validation"'s three ATLir `it`s, over the
+block's own model (`atelB7Cgs`/`atelB7Epi`). -/
+
+def atlirRegressionCases : List Case :=
+  let al : List String := ["alice"]
+  let withB7 (k : AtelModel Nat String → Bool) : Bool :=
+    match mkAtelModel atelB7Cgs atelB7Epi with
+    | .ok m => k m
+    | .error _ => false
+  [ ⟨"RegressionIssue18 B2: subjective ⟨⟨alice⟩⟩ir X p = {2} (union-of-classes, \
+      not intersection)",
+      withB7 fun m => okIs (atlirSat m (.canNext al (.atom "p"))) (Std.TreeSet.ofList [2])⟩,
+    ⟨"RegressionIssue18 B2: objective ⟨⟨alice⟩⟩ir X p = {0,1,2} (actual state only)",
+      withB7 fun m =>
+        okIs (atlirSatObjective m (.canNext al (.atom "p"))) (Std.TreeSet.ofList [0, 1, 2])⟩,
+    ⟨"RegressionIssue18 B2: subjectiveClass is the union of ~_a classes (= {0,1} for \
+      alice at 0)",
+      withB7 fun m =>
+        subjectiveClass m (Std.TreeSet.ofList ["alice"]) 0 == Std.TreeSet.ofList [0, 1]⟩
+  ]
+
 def main : IO UInt32 := do
   let mut failures := 0
   IO.println "Unit cases"
@@ -4740,7 +4953,7 @@ def main : IO UInt32 := do
       ++ deonticStitCases ++ counterModelCases ++ closureCases ++ crossCheckCases ++ cgsCases
       ++ coalitionCases
       ++ atlModelCheckCases ++ atlCases ++ lacaCases ++ lacaPaperCorrespondenceCases
-      ++ atelCases ++ atelRegressionCases do
+      ++ atelCases ++ atelRegressionCases ++ atlirCases ++ atlirRegressionCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
   IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
@@ -4760,6 +4973,7 @@ def main : IO UInt32 := do
     + crossCheckCases.length + cgsCases.length + coalitionCases.length
     + atlModelCheckCases.length + atlCases.length
     + lacaCases.length + lacaPaperCorrespondenceCases.length
-    + atelCases.length + atelRegressionCases.length + properties.length
+    + atelCases.length + atelRegressionCases.length
+    + atlirCases.length + atlirRegressionCases.length + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

@@ -28,6 +28,7 @@ import Gamen.Epistemic
 import Gamen.Atl.Strategy
 import Gamen.Atl
 import Gamen.Atel
+import Gamen.Atl.ImperfectInfo
 
 /-!
 # gamen

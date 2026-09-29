@@ -32,15 +32,17 @@ namespace Gamen.Atl.Strategy
 
 Phase 2 (gamen-hs ATL) implements `memorylessPI` only. The other three
 constructors are present so that function signatures and data types can
-accommodate them from day one; gamen-hs's model-checking functions throw
-`error "not yet supported"` when called with any other constructor — ported
-as `Except` at each such call site, not here, since this module is just the
-data type. -/
+accommodate them from day one; gamen-hs's own comment says model-checking
+functions would throw `error "not yet supported"` for any other
+constructor, but that is a planned check, not an existing one — no
+function in gamen-hs's `src/` currently takes a `StrategyClass` at all
+(`Atl.hs` re-exports the type but calls no function on it), so there is no
+call site to port as `Except` yet. -/
 inductive StrategyClass
-  | memorylessPI    -- ^ Positional + perfect info — standard ATL (AHK 2002)
-  | perfectRecallPI -- ^ History + perfect info — ATL with memory
-  | memorylessIR    -- ^ Positional + imperfect info — ATLir
-  | perfectRecallIR -- ^ History + imperfect info — ATLiR
+  | memorylessPI    -- Positional + perfect info — standard ATL (AHK 2002)
+  | perfectRecallPI -- History + perfect info — ATL with memory
+  | memorylessIR    -- Positional + imperfect info — ATLir
+  | perfectRecallIR -- History + imperfect info — ATLiR
   deriving BEq, Ord, Repr, DecidableEq
 
 end Gamen.Atl.Strategy

@@ -1541,7 +1541,40 @@ def epistemicRegressionCases : List Case :=
   [ ⟨"Epistemic: a known agent evaluates normally",
       okIs (eSatisfies eModel "w" (.knowledge "a" p)) true⟩,
     ⟨"Epistemic: K_typo ⊥ errors (not vacuously true)",
-      isErr (eSatisfies eModel "w" (.knowledge "typo" .bot))⟩ ]
+      isErr (eSatisfies eModel "w" (.knowledge "typo" .bot))⟩ ] ++
+  -- `RegressionIssue18.hs` "B8: Epistemic common knowledge and
+  -- bisimulation" (all 4 `it`s; missed by the original port, added after
+  -- merge).
+  let ckM := mkEpistemicModel
+    (mkEpistemicFrame ["cw", "cu"] [("a", [("cw", "cu")])])
+    [("p", ["cu"])]
+  let bm1 := mkEpistemicModel
+    (mkEpistemicFrameWithBelief ["x"] [("a", [("x", "x")])] [("a", [("x", "x")])]) []
+  let bm2 := mkEpistemicModel
+    (mkEpistemicFrameWithBelief ["y"] [("a", [("y", "y")])] [("a", [])]) []
+  let lm := mkEpistemicModel
+    (mkEpistemicFrame ["s1", "s2"] [("a", [("s1", "s1"), ("s2", "s2")])])
+    [("p", ["s1"])]
+  [ ⟨"B8: commonKnowledge uses the transitive closure R⁺, not R∗",
+      okIs (commonKnowledge ckM "cw" ["a"] (.atomF ⟨"p"⟩)) true⟩,
+    ⟨"B8: isBisimulation now also requires doxastic-relation agreement",
+      okIs (isBisimulation bm1 bm2 [("x", "y")]) false⟩,
+    ⟨"B8: isBisimulation accepts a doxastic-respecting relation",
+      okIs (isBisimulation bm1 bm1 [("x", "x")]) true⟩,
+    ⟨"B8: largestBisimulation contains the identity and separates non-equivalent worlds",
+      match largestBisimulation lm lm with
+      | .ok lb => ["s1", "s2"].all (fun w => lb.contains (w, w)) && !lb.contains ("s1", "s2")
+      | .error _ => false⟩,
+    -- The B8 fixture's worlds already differ on `p`, so the seed alone
+    -- separates them; here `u` and `v` agree on every atom and only a
+    -- refinement round (u's successor has p, v's does not) splits them.
+    ⟨"Not in gamen-hs: largestBisimulation refines atom-agreeing pairs by their successors",
+      let rm := mkEpistemicModel
+        (mkEpistemicFrame ["t", "u", "v"] [("a", [("u", "t"), ("v", "v"), ("t", "t")])])
+        [("p", ["t"])]
+      match largestBisimulation rm rm with
+      | .ok lb => lb.contains ("u", "u") && !lb.contains ("u", "v") && !lb.contains ("v", "u")
+      | .error _ => false⟩ ]
 
 /-! ## Semantics (`Gamen.Semantics`)
 

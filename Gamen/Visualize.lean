@@ -14,7 +14,11 @@ source. Any I/O (writing the file, calling `dot`) is the caller's job.
 
 Conventions:
 
-* Worlds are circular nodes labelled with the world name.
+* Worlds are circular nodes labeled with the world name.
+* Names are written unquoted and unescaped, as in gamen-hs. A world or atom
+  name that isn't a bare DOT identifier gives invalid DOT, and a tableau
+  prefix such as `1.2.1` is silently misread by Graphviz as `1.2`. This is
+  filed as gamen-hs#55 and copied until it is fixed there.
 * For `Model`, each node label also lists the atoms holding at that world,
   on a second line.
 * Edges are directed (the accessibility relation is binary, not necessarily

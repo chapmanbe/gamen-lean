@@ -3909,7 +3909,7 @@ def coalitionCases : List Case :=
       [C]φ clause that quantifies the ∀ over the coalition's own moves instead of the \
       opponents' (that bug still gets every ported PaperCorrespondence.hs case above \
       right, by the same accident: none of their target propositions is controlled \
-      solely by the opponent)",
+      solely by the opponent; filed as gamen-hs#52)",
       okIs (coalSatisfies cgs 0 (.coalition cAlice (.not q_))) false⟩,
     ⟨"Not in gamen-hs (no WorldGuardsSpec.hs coverage for Coalition, and \
       `grep -n coalSatisfies test/WorldGuardsSpec.hs test/RegressionIssue18.hs` finds \

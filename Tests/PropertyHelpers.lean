@@ -5,6 +5,7 @@ import Gamen.DeonticStit
 import Gamen.DeonticStit.Prove
 import Gamen.DeonticStit.CounterModel
 import Gamen.Epistemic
+import Gamen.Laca
 import Plausible
 
 /-!
@@ -150,6 +151,44 @@ instance : Arbitrary EpistemicModel := ⟨genEpistemicModel⟩
 /-- Haskell's `ArbEpistemicModel` defines no custom `shrink`, so
 QuickCheck's default (no shrinking) applies; same here. -/
 instance : Shrinkable EpistemicModel where
+  shrink _ := []
+
+/-! ### `LacaState`/attempt-set generators (Plausible)
+
+Mirrors `test/Properties.hs`'s `ArbLacaState`/`ArbAttemptSet` newtypes,
+used by the "Gamen.Laca: succState algebraic properties" describe block
+(`Tests/Main.lean`'s `properties`). -/
+
+/-- Random `LacaState` with atoms {p,q,r} and random truth values. Mirrors
+`genLacaState`. Attaches directly to `Gamen.Laca.LacaState`, as with
+`Model`/`EpistemicModel` above — Lean has no orphan-instance restriction, so
+there is no need for Haskell's `ArbLacaState` wrapper. -/
+def genLacaState : Gen LacaState := do
+  let vals ← propAtomNames.mapM fun a => do
+    let b ← (Arbitrary.arbitrary : Gen Bool)
+    return (a, b)
+  return Std.TreeMap.ofList vals
+
+instance : Arbitrary LacaState := ⟨genLacaState⟩
+
+instance : Shrinkable LacaState where
+  shrink _ := []
+
+/-- Haskell's `ArbAttemptSet` newtype: a random subset of {p,q,r}. Kept as
+its own wrapper (unlike `LacaState`) so this narrow, domain-specific
+distribution over `Std.TreeSet String` doesn't become the *only* generator
+anyone could attach to that type later. -/
+structure AttemptSet where
+  getAttemptSet : Std.TreeSet String
+  deriving Repr
+
+def genAttemptSet : Gen AttemptSet := do
+  let xs ← genSublist propAtomNames
+  return ⟨Std.TreeSet.ofList xs⟩
+
+instance : Arbitrary AttemptSet := ⟨genAttemptSet⟩
+
+instance : Shrinkable AttemptSet where
   shrink _ := []
 
 /-- Haskell `commonKnowledge`'s breadth-first `go` (`Epistemic.hs` ~300–307),

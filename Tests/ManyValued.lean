@@ -52,6 +52,7 @@ elab "#assert_kernel_only " ids:ident* : command => do
   strongKleene_tables_classical strongKleene_agrees_classical eval_core_ok
   eval_allU strongKleene_allU strongKleene_no_tautologies weakKleene_no_tautologies
   lukasiewicz3_agrees_strongKleene lukasiewicz3_impl_differs
+  conjKw_grid disjKw_grid implKw_grid negG3_grid conjG3_grid disjG3_grid implG3_grid
 
 /-! ## Kernel-checked examples (`decide`) -/
 
@@ -258,6 +259,30 @@ def lpTautologiesClassical (f : Formula) : Bool :=
   match isTautology logicOfParadox f, isTautology classical f with
   | .ok a, .ok b => a == b
   | _, _ => false
+
+/-- Brute-force entailment oracle, independent of `assignments`, `lookup`
+and `atomsOf`: every valuation of the fixed atoms p, q, r (as a plain
+function) that designates all premises designates the conclusion. `none`
+on an evaluation error. Sound for `CoreFormula`s, whose atoms are p, q, r. -/
+def oracleEntails {V : Type} (m : Matrix V) (prems : List Formula) (c : Formula) : Option Bool :=
+  let vals := m.values
+  let vs : List (Atom → V) := vals.flatMap fun x => vals.flatMap fun y => vals.map fun z =>
+    fun a => if a.name == "p" then x else if a.name == "q" then y else z
+  vs.foldlM (init := true) fun acc v => do
+    let ps ← prems.mapM fun g => (eval m v g).toOption
+    let cv ← (eval m v c).toOption
+    return acc && (!(ps.all m.designated) || m.designated cv)
+
+/-- `entails` agrees with `oracleEntails` for one premise, two premises
+and none, in all six matrices. -/
+def entailsMatchesOracle (g h c : Formula) : Bool :=
+  [[], [g], [g, h]].all fun prems =>
+    let chk {V : Type} [Inhabited V] (m : Matrix V) : Bool :=
+      match entails m prems c, oracleEntails m prems c with
+      | .ok a, some b => a == b
+      | _, _ => false
+    chk classical && chk strongKleene && chk weakKleene && chk lukasiewicz3
+      && chk goedel3 && chk logicOfParadox
 
 /-- Enumeration-based classical tautology agrees with
 `Gamen.Semantics.isTautology`. -/

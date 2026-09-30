@@ -358,6 +358,52 @@ valuation, i.e. `∅ ⊨ A` (`[syn:sem:prop:semanticalfacts]`, item 1). -/
 def isTautology {V : Type} [Inhabited V] (m : Matrix V) (f : Formula) : Except String Bool :=
   entails m [] f
 
+/-! ## The OLT grids, cell by cell
+
+Each theorem lists every cell of a table, row by row (rows are the left
+operand, in the OLT's order t, u, f), as printed in the OLT at `0a18d37`,
+so changing any one cell of a `def` above breaks the build. Strong
+Kleene's tables are pinned by the CQL/FHIRPath spec tests and
+`strongKleene_tables_classical`; Łukasiewicz's by
+`lukasiewicz3_agrees_strongKleene` and `lukasiewicz3_impl_differs`. -/
+
+/-- Weak Kleene ∧, the grid in `[thr:skl, defn 2]`. -/
+theorem conjKw_grid :
+    [conjKw .t .t, conjKw .t .u, conjKw .t .f, conjKw .u .t, conjKw .u .u, conjKw .u .f, conjKw .f .t, conjKw .f .u, conjKw .f .f] =
+      [.t, .u, .f, .u, .u, .u, .f, .u, .f] := by decide
+
+/-- Weak Kleene ∨, the grid in `[thr:skl, defn 2]`. -/
+theorem disjKw_grid :
+    [disjKw .t .t, disjKw .t .u, disjKw .t .f, disjKw .u .t, disjKw .u .u, disjKw .u .f, disjKw .f .t, disjKw .f .u, disjKw .f .f] =
+      [.t, .u, .t, .u, .u, .u, .t, .u, .f] := by decide
+
+/-- Weak Kleene →, the grid in `[thr:skl, defn 2]`. -/
+theorem implKw_grid :
+    [implKw .t .t, implKw .t .u, implKw .t .f, implKw .u .t, implKw .u .u, implKw .u .f, implKw .f .t, implKw .f .u, implKw .f .f] =
+      [.t, .u, .f, .u, .u, .u, .t, .u, .t] := by decide
+
+/-- Gödel ¬, the grid in `[thr:god:defn:goedel]`. -/
+theorem negG3_grid : [negG3 .t, negG3 .u, negG3 .f] = [.f, .f, .t] := by decide
+
+/-- Gödel ∧, the grid in `[thr:god:defn:goedel]`; it equals strong
+Kleene's. -/
+theorem conjG3_grid :
+    [conjG3 .t .t, conjG3 .t .u, conjG3 .t .f, conjG3 .u .t, conjG3 .u .u, conjG3 .u .f, conjG3 .f .t, conjG3 .f .u, conjG3 .f .f] =
+      [.t, .u, .f, .u, .u, .f, .f, .f, .f] ∧
+    ∀ a b, conjG3 a b = conjK3 a b := by decide
+
+/-- Gödel ∨, the grid in `[thr:god:defn:goedel]`; it equals strong
+Kleene's. -/
+theorem disjG3_grid :
+    [disjG3 .t .t, disjG3 .t .u, disjG3 .t .f, disjG3 .u .t, disjG3 .u .u, disjG3 .u .f, disjG3 .f .t, disjG3 .f .u, disjG3 .f .f] =
+      [.t, .t, .t, .t, .u, .u, .t, .u, .f] ∧
+    ∀ a b, disjG3 a b = disjK3 a b := by decide
+
+/-- Gödel →, the grid in `[thr:god:defn:goedel]`. -/
+theorem implG3_grid :
+    [implG3 .t .t, implG3 .t .u, implG3 .t .f, implG3 .u .t, implG3 .u .u, implG3 .u .f, implG3 .f .t, implG3 .f .u, implG3 .f .f] =
+      [.t, .u, .f, .t, .t, .f, .t, .t, .t] := by decide
+
 /-! ## Theorems (kernel-checked)
 
 Axiom audit: `Tests/ManyValued.lean` (`#assert_kernel_only`) fails the
@@ -481,22 +527,19 @@ theorem strongKleene_allU : ∀ f, isCore f = true →
     eval strongKleene (fun _ => .u) f = .ok .u :=
   eval_allU (by decide) (by decide) (by decide) (by decide)
 
-/-- **No K3 tautologies** `[thr:skl, prop 1]`: every `isCore` formula is
-undesignated under some valuation (the all-`u` one). -/
+/-- **No K3 tautologies** `[thr:skl, prop 1]`: under the all-`u`
+valuation every `isCore` formula evaluates, without error, to `u`, and `u`
+is not designated. -/
 theorem strongKleene_no_tautologies :
-    ∀ f, isCore f = true → ∃ v, sat strongKleene v f = false := by
-  intro f hf
-  refine ⟨fun _ => .u, ?_⟩
-  simp [sat, strongKleene_allU f hf]
-  rfl
+    ∀ f, isCore f = true →
+      eval strongKleene (fun _ => .u) f = .ok .u ∧ strongKleene.designated .u = false :=
+  fun f hf => ⟨strongKleene_allU f hf, rfl⟩
 
 /-- The same for weak Kleene, which `[thr:skl, prop 1]` also states. -/
 theorem weakKleene_no_tautologies :
-    ∀ f, isCore f = true → ∃ v, sat weakKleene v f = false := by
-  intro f hf
-  refine ⟨fun _ => .u, ?_⟩
-  simp [sat, eval_allU (m := weakKleene) (by decide) (by decide) (by decide) (by decide) f hf]
-  rfl
+    ∀ f, isCore f = true →
+      eval weakKleene (fun _ => .u) f = .ok .u ∧ weakKleene.designated .u = false :=
+  fun f hf => ⟨eval_allU (by decide) (by decide) (by decide) (by decide) f hf, rfl⟩
 
 /-- **Theorem (iii), first half.** Ł3 and K3 have the same ¬, ∧ and ∨
 (`decide` over the tables). -/

@@ -71,5 +71,26 @@ V(p) = {1.1}) matches the computed countermodel.
 
 ## What happened next
 
-These findings, and the Opus code review, go back to the author in one
-revision round. Record the revised notebook's commit here when it lands.
+These findings, together with the Opus code review, went back to the author
+in one revision round, which landed as commit `7acde4b`.
+
+**Second walkthrough, on `7acde4b`.** A fresh Fable agent played the same
+student role, under the same rules.
+- **Example 6.22:** it could follow the tableau from start to finish, and it
+  read W = {1, 1.1, 1.2}, R and V off the branch itself. Its reading matched
+  the notebook's summary and B&D Figure 6.1.
+- **Exercises:** it predicted all three correctly before reading the hints.
+  Filling in the answers gave "✓ Correct" on all three. A deliberately wrong
+  copy gave "✗ Not quite" plus the numbered hint, so the student can tell
+  success from failure.
+- **What remained** (sent back as a second, small round):
+  - say that the panel shows only the open side of each ∨T split;
+  - include the fact-button row in the description of the panel;
+  - an opaque error when `#eval`-ing the verdict directly;
+  - "open branch 1" is numbered but never explained;
+  - an unlabeled K-axiom example in the Solutions.
+
+**What this suggests.** The first version assumed more than a novice knows.
+Two things fixed most of it: showing the actual tableau branch, and defining
+the vocabulary before using it. These are a stand-in's findings, not
+students'.

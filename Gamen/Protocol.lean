@@ -26,6 +26,13 @@ open Lean (Json ToJson FromJson toJson fromJson?)
 
 namespace Protocol
 
+/-- The wire-protocol version that the Lean-only `{"action":"version"}`
+request reports (plans/downstream-migration-2026-09-29.md, Phase 0a).
+Protocol 1 is gamen-hs's five actions, byte-compatible except for
+`tools/compare/intentional-divergences.md`, plus `version` itself. Bump it
+whenever a Lean-only extension changes what a caller can send or receive. -/
+def protocolVersion : Nat := 1
+
 /-- Optional field: missing or `null` both mean `none` (aeson's `.:?`). -/
 def optField (o : Json) (k : String) : Except String (Option Json) :=
   match o.getObjVal? k with

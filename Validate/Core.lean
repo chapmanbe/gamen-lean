@@ -19,6 +19,7 @@ open Gamen Gamen.Protocol
 
 inductive Request where
   | ping
+  | version
   | checkConsistency (formulas : List Formula)
   | validateFormula (raw : Json)
   | validateAgent (raw : Json) (agent : String)
@@ -28,6 +29,7 @@ def parseRequest (j : Json) : Except String Request := do
   let .obj _ := j | throw "expected Object"
   match ← (← field j "action").getStr? with
   | "ping" => return .ping
+  | "version" => return .version
   | "check_consistency" => return .checkConsistency (← formulas)
   | "validate_formula" => return .validateFormula (← field j "formula")
   | "validate_agent" => return .validateAgent (← field j "formula") (← strField j "agent")
@@ -131,8 +133,19 @@ def patientAtoms : List String :=
    "healthy_weight_maintained", "tobacco_avoided", "followup_attended",
    "statin_taken_daily", "ezetimibe_taken_daily", "injection_administered", "fill_rx"]
 
-def handleRequest : Request → Json
+/-- The Lean-only `version` reply: `implementation` tells callers which
+binary answered (gamen-hs has no `version` action; it answers
+`{"error":"Error in $: Unknown action: version","ok":false}`), `commit` which build, `protocol` which
+protocol. -/
+def versionResult (commit : String) : Json :=
+  okResult (Json.mkObj [("implementation", "gamen-lean"), ("commit", toJson commit),
+    ("protocol", toJson protocolVersion)])
+
+/-- Answer one request. `commit` is the build's git commit, used only by
+`version`. -/
+def handleRequest (commit : String) : Request → Json
   | .ping => okResult "pong"
+  | .version => versionResult commit
   | .checkConsistency fs =>
     match classifyConsistency fs with
     | .unsupported op prover =>
@@ -183,10 +196,10 @@ def handleRequest : Request → Json
         ("indeterminate", Json.arr indeterminate.toArray),
         ("indeterminate_count", toJson indeterminate.length)])
 
-def processLine (line : String) : Json :=
+def processLine (line : String) (commit : String := "unknown") : Json :=
   match Json.parse line with
   | .error e => errResult e
   | .ok j =>
     match parseRequest j with
     | .error e => errResult e
-    | .ok req => handleRequest req
+    | .ok req => handleRequest commit req

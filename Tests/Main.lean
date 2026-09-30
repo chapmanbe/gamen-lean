@@ -32,6 +32,7 @@ import Tests.PropertyHelpers
 import Tests.ManyValued
 import Tests.Completion
 import Tests.ManyValuedNotebooks
+import Tests.ValidateVersion
 
 /-!
 # Tests
@@ -6119,7 +6120,7 @@ def main : IO UInt32 := do
   -- tables in `data/specs/` checked against strong Kleene.
   let specCases ← ManyValuedTests.specTableCases
   for (name, ok) in ManyValuedTests.cases ++ specCases ++ CompletionTests.cases
-      ++ ManyValuedNotebookTests.cases do
+      ++ ManyValuedNotebookTests.cases ++ ValidateVersionTests.cases do
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
   IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
@@ -6145,7 +6146,7 @@ def main : IO UInt32 := do
     + dclegCases.length + dclegPaperCorrespondenceCases.length + dclegRegressionCases.length
     + visualizeCases.length
     + ManyValuedTests.cases.length + specCases.length + CompletionTests.cases.length
-    + ManyValuedNotebookTests.cases.length
+    + ManyValuedNotebookTests.cases.length + ValidateVersionTests.cases.length
     + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

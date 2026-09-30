@@ -2,6 +2,11 @@ name = "gamen"
 version = "0.1.0"
 defaultTargets = ["Gamen", "Widgets", "Notebooks", "gamen-validate"]
 testDriver = "tests"
+# Never reuse artifacts from Lake's shared cache: `gamen-validate` stamps its
+# git commit in at compile time (`Validate/BuildInfo.lean`), and the cache is
+# keyed on source hashes only, so a cached build could report another
+# commit. This package setting overrides `LAKE_ARTIFACT_CACHE`.
+enableArtifactCache = false
 
 # ── Dependencies ────────────────────────────────────────────────────
 # Pinned to releases built for the toolchain in `lean-toolchain`.

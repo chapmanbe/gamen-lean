@@ -61,7 +61,12 @@ end Protocol
 
 open Protocol in
 /-- Decode a formula. A `"type"` key selects tree format; an `"op"` key
-selects flat format. -/
+selects flat format.
+
+`partial` because the recursion goes through field lookups (`sub`
+fetches a child by key from the object's field map), which Lean can't see
+as structural descent into `Json`. It terminates: every recursive call
+decodes a value nested strictly inside `j`, and parsed JSON is finite. -/
 partial def decodeFormula (j : Json) : Except String Formula := do
   let .obj _ := j | throw "Formula JSON must be an object"
   match ← optStr j "type", ← optStr j "op" with
@@ -106,25 +111,33 @@ where
     | "can_until" => return .canUntil (← strListField j "agents") (← sub "left") (← sub "right")
     | other => throw s!"Unknown formula type: {other}"
   /-- Flat format: `box`/`diamond`/`box_not`, with an agent becoming
-  Ought/Permitted; an optional temporal wrapper and conditional antecedent. -/
+  Ought/Permitted; an optional temporal wrapper and conditional antecedent.
+
+  Any other `op`, or a `temporal_op` other than the three below (or an
+  absent/null one), is an error, as in gamen-hs since gamen-hs#60 (commit
+  `2fba336`); gamen-lean#1. The flat format is fed by LLM extraction
+  output, and the old fallbacks (an unknown `op` became □, an unknown
+  `temporal_op` was dropped) silently turned a misspelled prohibition into
+  its opposite. `temporal_op` is checked before `op`, as in gamen-hs. -/
   flat (op : String) : Except String Formula := do
     let core : Formula := .atom (← strField j "atom")
     let cond ← optStr j "conditional"
     let temp ← optStr j "temporal_op"
     let agent ← optStr j "agent"
-    let temporalCore : Formula := match temp with
-      | some "future_box" => .futureBox core
-      | some "future_diamond" => .futureDiamond core
-      | some "periodic" => .futureBox (.futureDiamond core)
-      | _ => core
-    let deontic : Formula := match op, agent with
-      | "box", some ag => .ought ag temporalCore
-      | "box", none => .box temporalCore
-      | "diamond", some ag => .permitted ag temporalCore
-      | "diamond", none => .diamond temporalCore
-      | "box_not", some ag => .ought ag (.not temporalCore)
-      | "box_not", none => .box (.not temporalCore)
-      | _, _ => .box temporalCore  -- fallback, as in Haskell
+    let temporalCore : Formula ← match temp with
+      | none => pure core
+      | some "future_box" => pure (.futureBox core)
+      | some "future_diamond" => pure (.futureDiamond core)
+      | some "periodic" => pure (.futureBox (.futureDiamond core))
+      | some t => throw s!"unknown flat temporal_op: {t}"
+    let deontic : Formula ← match op, agent with
+      | "box", some ag => pure (.ought ag temporalCore)
+      | "box", none => pure (.box temporalCore)
+      | "diamond", some ag => pure (.permitted ag temporalCore)
+      | "diamond", none => pure (.diamond temporalCore)
+      | "box_not", some ag => pure (.ought ag (.not temporalCore))
+      | "box_not", none => pure (.box (.not temporalCore))
+      | _, _ => throw s!"unknown flat op: {op}"
     return match cond with
       | some c => .implies (.atom c) deontic
       | none => deontic

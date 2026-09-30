@@ -245,8 +245,11 @@ theorem tableauProves_sound (h : tableauProves systemK n Γ A = .definitely true
     premise-free case).
   - Add a test that fails if `#print axioms tableauProves_sound` mentions
     anything beyond `propext`, `Classical.choice` and `Quot.sound`. In
-    particular it must not mention `sorryAx` or `Lean.ofReduceBool`, the
-    axiom `native_decide` uses.
+    particular this rejects `sorryAx` and `native_decide`. (At Lean 4.34,
+    `native_decide` adds a per-theorem axiom named
+    `<thm>._native.native_decide.ax_…`, not `Lean.ofReduceBool`, so the
+    check must be an allowlist; a blocklist on `ofReduceBool` misses it.
+    Checked 2026-09-29.)
 - **B7. Later, not part of this plan's "done":**
   - Extend to KT, KD, KB, K4, S4 and S5 by frame class: B&D Props.
     6.10–6.14 (pp. 103–105) and Cor. 6.15 (p. 106). S5 in the code adds B□

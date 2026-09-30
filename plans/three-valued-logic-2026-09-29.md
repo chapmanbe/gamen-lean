@@ -159,8 +159,10 @@ criterion can evaluate to null, and what their query engine does with that.
 4. **Optional:** LP's tautologies are exactly the classical ones.
    Property-test it first; prove it only if cheap.
 
-`#print axioms` for each must be free of `Lean.ofReduceBool` (the Part B
-audit, reused).
+`#print axioms` for each must list only `propext`, `Classical.choice` and
+`Quot.sound`: an allowlist, the Part B audit reused. At Lean 4.34,
+`native_decide` appears as `<thm>._native.native_decide.ax_…`, not
+`Lean.ofReduceBool`, so a blocklist would miss it.
 
 ## Verification (automated; nothing waits on students)
 

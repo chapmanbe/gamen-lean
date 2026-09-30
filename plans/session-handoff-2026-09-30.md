@@ -103,7 +103,7 @@ pushed, with Phase 1 (honest timing reporting) merged. Its untracked
 
 | Thread | Plan (read only if you pick it) | State | Next step |
 |---|---|---|---|
-| Guideline-validation logic | `plans/logic-for-guideline-validation-2026-09-29.md` | Phase 1 merged (Lean GV port). `Gamen.ManyValued` merged. **Phase 2 was paused by Brian ("put the three-valued logic aside for a moment")** | Phase 2: missing data via strong Kleene. First version uses hand-written patient-fact fixtures (proposed; not yet confirmed by Brian) |
+| Guideline-validation logic | `plans/logic-for-guideline-validation-2026-09-29.md`; Phase 2 spec/plan in `docs/superpowers/` (2026-09-30) | Phase 1 merged. **Phase 2 merged 2026-09-30**: `Gamen.ManyValued.Completion` (theorems 1–6, gamen-lean `3f1127d`) and the port's `validate-guidelines applicability` (port `c6c0a54`); 7 hand-written patients × 20 conflicts: 36 definite, 64 possible, 40 absent, 0 over-warnings | **Brian approves the 4 draft definitions**: read the port's `docs/applicability-definitions-review.md` (R18 and Rec 3.3.1.1 add "adults"; potassium limited to CKD, RASi part from PP 3.6.3; phosphate limited to G3a–G5; G5D counted as G5). Then a clinician sample before any paper claim |
 | Three-valued teaching | `plans/three-valued-logic-2026-09-29.md` | Library done | The two notebooks (primer, three-valued), then a novice walkthrough |
 | K tableau soundness | `plans/countermodel-explorer-and-k-soundness-2026-09-29.md` Part B | Part A (countermodel explorer) merged | B0 spike on derived `Ord` lawfulness |
 | Edition-proof citations | same plan, Part C | not started | `tools/bd/citations.py` index/check/migrate. Now also covers DCLEG citations |
@@ -176,8 +176,8 @@ pushed, with Phase 1 (honest timing reporting) merged. Its untracked
    on him and Jeremiah; everything else is unblocked.
 2. If he doesn't say: **migration Phase 0a/0b.** It's small, unblocks the
    downstream work, and ends the "which binary answered" ambiguity.
-3. **Guideline-validation Phase 2,** once Brian confirms the fixtures
-   approach.
+3. **Guideline-validation Phase 2: done 2026-09-30.** Waiting on Brian's
+   approval of the draft definitions (see the table above).
 4. **The three-valued notebooks.**
 5. **Part C, citation tooling:** it catches wrong B&D and DCLEG citations
    at test time.

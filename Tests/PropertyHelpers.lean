@@ -1261,6 +1261,105 @@ def dclegPropPoints : List (String × String) :=
   dclegPropGame.dmWorlds.toList.flatMap fun gamma =>
     (worldVertices dclegPropGame gamma).toList.map fun w => (gamma, w)
 
-/-- Decision-node pairs only (outcome nodes have empty premises). -/
+/-- Decision-node pairs only, as gamen-hs's property (whose outcome nodes had
+empty premises; gamen-lean's default gives them admissible ones). -/
 def dclegDecisionPoints : List (String × String) :=
   dclegPropPoints.filter fun (_, w) => !dclegPropGame.dmStructure.ssEndNodes.contains w
+
+/-! ### Random admissible DCLEG premise systems (not in gamen-hs)
+
+The thesis leaves the premise function F unspecified, subject only to
+Centering and Contemporary Universality (§3.2.2, p. 19), so a validity must
+hold for *every* admissible F, not only `withMovePremises`'s default
+(`docs/dcleg-outcome-node-premises-2026-09-30.md`, "Proposed fix" 3). These
+generators draw a random admissible F for a fixed game model. -/
+
+section DclegAdmissible
+
+attribute [local instance] lexOrd
+
+/-- Not in gamen-hs: a 4-world game where several worlds share nodes. p1
+chooses L or R at v0; after L, p2 chooses C or D at v1. gA and gB both play
+L then C, so they share the decision node v1's move and the outcome v3; gC
+plays L then D (outcome v4); gD plays R (outcome v2). Uses the atoms of
+`genDclegProp` (alive, turn_p1, L, R, payoffs 1/0 for p1). -/
+def dclegSharedGame : DclegModel := withMovePremises <| mkDclegModel
+  (mkStrategicStructure
+    ["v0", "v1", "v2", "v3", "v4"] ["v2", "v3", "v4"]
+    [("v0", "p1"), ("v1", "p2")]
+    [("v0", ["L", "R"]), ("v1", ["C", "D"])]
+    [("v0", "L", "v1"), ("v0", "R", "v2"), ("v1", "C", "v3"), ("v1", "D", "v4")])
+  ["gA", "gB", "gC", "gD"]
+  [("gA", mkHistory [("v0", "L"), ("v1", "C")] "v3"),
+   ("gB", mkHistory [("v0", "L"), ("v1", "C")] "v3"),
+   ("gC", mkHistory [("v0", "L"), ("v1", "D")] "v4"),
+   ("gD", mkHistory [("v0", "R")] "v2")]
+  [("alive", [("gA", "v0"), ("gB", "v1"), ("gB", "v3"), ("gC", "v1"), ("gD", "v2")])]
+  []
+  [("p1", [("v2", 0), ("v3", 1), ("v4", 0)])]
+
+/-- The models the admissible-F generator draws from. -/
+def dclegGenModels : List DclegModel := [dclegPropGame, dclegSharedGame]
+
+/-- Every reached pair (γ,w), w ∈ V_γ, of a model. -/
+def dclegPointsOf (m : DclegModel) : List (String × String) :=
+  m.dmWorlds.toList.flatMap fun g => (worldVertices m g).toList.map (g, ·)
+
+/-- A random permutation (random keys, stable sort). -/
+private def genShuffle (xs : List α) : Gen (List α) := do
+  let keyed ← xs.mapM fun x => do
+    let ⟨k, _⟩ ← Gen.choose Nat 0 1000 (by omega)
+    return (k, x)
+  return (keyed.mergeSort (fun a b => a.1 ≤ b.1)).map (·.2)
+
+/-- A random admissible F(γ,w), as world lists (each premise is the listed
+worlds paired with w). `reach` is R^w, the worlds with w ∈ V_β. Either
+*nested* (spheres: prefixes of a random order of the other worlds, the last
+one all of R^w) or *non-nested* (1–3 random subsets of R^w, each with γ
+added, then every uncovered world added to a random one of them). Either
+way the singleton {γ} is included, so ⋂F = {γ} (Centering: every premise
+contains γ), and every world of R^w is in some premise (Contemporary
+Universality). -/
+def genPremisesAt (gamma : String) (reach : List String) : Gen (List (List String)) := do
+  let others := reach.filter (· != gamma)
+  let n := others.length
+  let nested ← (Arbitrary.arbitrary : Gen Bool)
+  let rest ← if nested then do
+      let perm ← genShuffle others
+      let cuts ← (List.range' 1 (n - 1)).filterM fun _ => (Arbitrary.arbitrary : Gen Bool)
+      let lens := if n == 0 then [] else cuts ++ [n]
+      pure (lens.map fun k => gamma :: perm.take k)
+    else do
+      let ⟨k, _⟩ ← Gen.choose Nat 1 3 (by omega)
+      let subs ← (List.range k).mapM fun _ => genSublist others
+      let covered ← others.foldlM (init := subs) fun acc beta => do
+        if acc.any (·.contains beta) then return acc
+        let ⟨j, _⟩ ← Gen.choose Nat 0 (k - 1) (by omega)
+        return acc.set j (beta :: acc.getD j [])
+      pure (covered.map (gamma :: ·))
+  return [gamma] :: rest
+
+/-- A model from `dclegGenModels` with a random admissible premise function
+at every reached pair. Stored as lists so counterexamples print. -/
+structure AdmissibleDcleg where
+  modelIdx : Nat
+  premises : List ((String × String) × List (List String))
+  deriving Repr
+
+/-- The model with its premise function replaced by the generated one. -/
+def AdmissibleDcleg.model (a : AdmissibleDcleg) : DclegModel :=
+  let base := dclegGenModels.getD a.modelIdx dclegPropGame
+  { base with dmPremises := Std.TreeMap.ofList <| a.premises.map fun ((g, w), ps) =>
+      ((g, w), Std.TreeSet.ofList (ps.map fun ws => Std.TreeSet.ofList (ws.map (·, w)))) }
+
+def genAdmissibleDcleg : Gen AdmissibleDcleg := do
+  let ⟨i, _⟩ ← Gen.choose Nat 0 (dclegGenModels.length - 1) (by omega)
+  let m := dclegGenModels.getD i dclegPropGame
+  let premises ← (dclegPointsOf m).mapM fun (g, w) => do
+    return ((g, w), ← genPremisesAt g (settledAccessible m w))
+  return ⟨i, premises⟩
+
+instance : Arbitrary AdmissibleDcleg := ⟨genAdmissibleDcleg⟩
+instance : Shrinkable AdmissibleDcleg where shrink _ := []
+
+end DclegAdmissible

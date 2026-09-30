@@ -3694,6 +3694,28 @@ def properties : List (String × IO Bool) :=
           let c ← dclegSatisfies dclegPropGame γ w (.dfConditional f.getFormula g.getFormula)
           let d ← dclegSatisfies dclegPropGame γ w g.getFormula
           return c == d) = true) 100),
+    -- Not in gamen-hs: validities checked over random *admissible* premise
+    -- systems, not only the default (F is a model parameter subject to
+    -- Centering and Contemporary Universality, §3.2.2, p. 19;
+    -- docs/dcleg-outcome-node-premises-2026-09-30.md, "Proposed fix" 3).
+    ("Dcleg random admissible F passes validateDclegModel (Centering and Contemporary \
+      Universality at every reached pair, §3.2.2, p. 19)",
+      run (NamedBinder "a" <| ∀ a : AdmissibleDcleg,
+        (validateDclegModel a.model).isEmpty = true) 100),
+    ("Dcleg counterfactual modus ponens φ ∧ (φ □→ ψ) → ψ at every reached pair, random \
+      admissible F (Centering, §3.2.2, p. 19)",
+      run (NamedBinder "a" <| ∀ a : AdmissibleDcleg, NamedBinder "f" <| ∀ f : DclegPropFormula,
+        NamedBinder "g" <| ∀ g : DclegPropFormula,
+        (let m := a.model
+         isOkTrue ((dclegPointsOf m).allM fun (γ, w) =>
+          dclegSatisfies m γ w (dfImplies (dfAnd f.getFormula
+            (.dfConditional f.getFormula g.getFormula)) g.getFormula))) = true) 100),
+    ("Dcleg ¬(⊤ □→ ⊥) at every reached pair, outcome nodes included, random admissible F \
+      (Centering, §3.2.2, p. 19)",
+      run (NamedBinder "a" <| ∀ a : AdmissibleDcleg,
+        (let m := a.model
+         isOkTrue ((dclegPointsOf m).allM fun (γ, w) =>
+          dclegSatisfies m γ w (.dfNeg (.dfConditional dfTop .dfBot)))) = true) 100),
     ]
 where
   toNNF := Formula.toNNF
@@ -5516,9 +5538,18 @@ def dclegCases : List Case :=
       svcModel.dmStructure.ssNodes.size == 3⟩,
     ⟨"DclegServiceSpec: withMovePremises populates dmPremises at decision vertex",
       svcModel.dmPremises.contains ("gL", "v0")⟩,
-    ⟨"DclegServiceSpec: withMovePremises leaves end nodes out of dmPremises",
-      (svcModel.dmPremises.contains ("gL", "v1") || svcModel.dmPremises.contains ("gL", "v2"))
-        == false⟩,
+    -- Deliberate divergence from gamen-hs: fixed in gamen-lean (outcome-node
+    -- premises; docs/dcleg-outcome-node-premises-2026-09-30.md). gamen-hs's
+    -- `it` is "withMovePremises leaves end nodes out of dmPremises"; an
+    -- outcome node with no premises violates Centering and Contemporary
+    -- Universality (§3.2.2, p. 19) and makes every φ □→ ψ vacuously true
+    -- there. Now every reached outcome pair gets an entry; (gL,v2) is not
+    -- reached, so it still has none.
+    ⟨"DclegServiceSpec: withMovePremises gives reached end nodes premises, and unreached ones \
+      none (deliberate divergence from gamen-hs: fixed in gamen-lean (outcome-node premises; \
+      docs/dcleg-outcome-node-premises-2026-09-30.md))",
+      svcModel.dmPremises.contains ("gL", "v1") && svcModel.dmPremises.contains ("gR", "v2")
+        && !svcModel.dmPremises.contains ("gL", "v2")⟩,
     -- "sat — atomic formulas (§2.3 Chapman 2026)"; final §3.2.3, p. 21
     ⟨"DclegServiceSpec: ⊥ is never satisfied (§3.2.3, p. 21, DFBot)", okIs (svcSat "gL" "v0" .dfBot) false⟩,
     ⟨"DclegServiceSpec: prop 'alive' true at (gL,v0) — in valuation extension (§3.2.3, p. 21, DFProp)",
@@ -5683,7 +5714,7 @@ def dclegCases : List Case :=
         "doxasticSuccessors: agent \"p9\" is not in model"⟩,
     ⟨"Not in gamen-hs: ⊤ ∨ B_p9 ⊤ is true: ∨ never reaches the erroring right side",
       okIs (svcSat "gL" "v0" (.dfOr dfTop (.dfBelief "p9" dfTop))) true⟩,
-    ⟨"Not in gamen-hs: (B_p9 ⊤) □→ ⊥ at outcome v1 errors: [[φ]] is computed even with no premises",
+    ⟨"Not in gamen-hs: (B_p9 ⊤) □→ ⊥ at outcome v1 errors: [[φ]] is computed before the premises are used",
       errIs (svcSat "gL" "v1" (.dfConditional (.dfBelief "p9" dfTop) .dfBot))
         "doxasticSuccessors: agent \"p9\" is not in model"⟩,
     ⟨"Not in gamen-hs: ⊥ □→ B_p9 ⊤ is vacuously true: ψ is never evaluated without witnesses",
@@ -5738,8 +5769,12 @@ def dclegCases : List Case :=
         .dfMove "L", .dfNext (.dfProp "p"), .dfYesterday (.dfProp "p")]
       [dclegOneMove, dclegOneMoveDeep, svcModel, dclegThreeMove].all fun m =>
         dclegBoxCollapseAtDecisionPoints m chis psis⟩,
+    -- Input now passed through withMovePremises (fixed in gamen-lean: outcome-
+    -- node premises; docs/dcleg-outcome-node-premises-2026-09-30.md): the
+    -- validator now also checks F, and without premises it would add Centering
+    -- and Contemporary Universality messages to the two this test is about.
     ⟨"Not in gamen-hs: validateDclegModel reports a stray vertex and a stray doxastic world",
-      validateDclegModel (mkDclegModel
+      validateDclegModel (withMovePremises <| mkDclegModel
           (mkStrategicStructure ["v0", "v1", "v2"] ["v1", "v2"] [("v0", "p1")]
             [("v0", ["L", "R"])] [("v0", "L", "v1"), ("v0", "R", "v2")])
           ["gL"] [("gL", mkHistory [("v0", "L")] "v9")] []
@@ -5747,7 +5782,62 @@ def dclegCases : List Case :=
         == ["validateDclegModel: world \"gL\" visits vertex \"v9\" which is not a node of the \
             strategic structure",
             "validateDclegModel: agent \"p1\" doxastic map references world \"gZ\" not in the \
-            model"]⟩
+            model"]⟩,
+    -- Not in gamen-hs: admissible premises at every reached pair, outcome
+    -- nodes included (fixed in gamen-lean; outcome-node premises;
+    -- docs/dcleg-outcome-node-premises-2026-09-30.md). Centering and
+    -- Contemporary Universality are §3.2.2's conditions on F (p. 19).
+    ⟨"Not in gamen-hs: validateDclegModel returns [] for every test model under withMovePremises \
+      (Centering and Contemporary Universality at every reached pair, outcome nodes included; \
+      §3.2.2, p. 19)",
+      [svcModel, dclegThreeMove, dclegOneMove, dclegOneMoveDeep, dclegPropGame,
+        dclegSharedGame].all (validateDclegModel · == [])⟩,
+    ⟨"Not in gamen-hs: ⊤ □→ ⊥ is false at every reached pair of dclegPropGame, outcome nodes \
+      v1 and v2 included (Centering, §3.2.2, p. 19; vacuously true at v1, v2 before the fix)",
+      dclegPropPoints == [("γL", "v0"), ("γL", "v1"), ("γR", "v0"), ("γR", "v2")]
+        && dclegPropPoints.all fun (g, w) =>
+          okIs (dclegSatisfies dclegPropGame g w (.dfConditional dfTop .dfBot)) false⟩,
+    ⟨"Not in gamen-hs: default F at the shared outcome (gA,v1) of dclegOneMove is \
+      {{(gA,v1)}, {(gA,v1),(gB,v1)}}",
+      (dclegOneMove.dmPremises.getD ("gA", "v1") ∅).toList.map (·.toList)
+        == [[("gA", "v1")], [("gA", "v1"), ("gB", "v1")]]⟩,
+    ⟨"Not in gamen-hs: at the shared outcome (gA,v1) of dclegOneMove, max^⊤ = [gA] \
+      (Centering, §3.2.2, p. 19) and max^{Y p} = [gB]: the outer premise selects the other \
+      world reaching the outcome, so Y p □→ ⊥ is false there",
+      okIs (maxPhiConsistent dclegOneMove "gA" "v1" dfTop) ["gA"]
+        && okIs (maxPhiConsistent dclegOneMove "gA" "v1" (.dfYesterday (.dfProp "p"))) ["gB"]
+        && okIs (dclegSatisfies dclegOneMove "gA" "v1"
+          (.dfConditional (.dfYesterday (.dfProp "p")) .dfBot)) false⟩,
+    ⟨"Not in gamen-hs: counterfactual modus ponens φ ∧ (φ □→ ψ) → ψ at every outcome pair of \
+      every test model under withMovePremises (Centering, §3.2.2, p. 19)",
+      let fs : List DclegFormula := [dfTop, .dfBot, .dfProp "p", .dfProp "alive",
+        .dfYesterday (.dfProp "p"), .dfYesterday (.dfMove "L"), .dfPayoff 1 "p1", .dfPayoff 0 "p1"]
+      [svcModel, dclegThreeMove, dclegOneMove, dclegOneMoveDeep, dclegPropGame,
+        dclegSharedGame].all fun m =>
+        isOkTrue <| ((dclegPointsOf m).filter (m.dmStructure.ssEndNodes.contains ·.2)).allM
+          fun (g, w) => fs.allM fun f => fs.allM fun h =>
+            dclegSatisfies m g w (dfImplies (dfAnd f (.dfConditional f h)) h)⟩,
+    ⟨"Not in gamen-hs: validateDclegModel rejects F = ∅ at outcome node (γL,v1)",
+      validateDclegModel { dclegPropGame with
+          dmPremises := dclegPropGame.dmPremises.erase ("γL", "v1") }
+        == ["validateDclegModel: F(\"γL\",\"v1\") is empty (violates Centering: ⋂F(γ,w) must \
+            be {(γ,w)}, §3.2.2, p. 19)",
+            "validateDclegModel: world \"γL\" reaches vertex \"v1\" but (\"γL\",\"v1\") ∉ \
+            ⋃F(\"γL\",\"v1\") (violates Contemporary Universality, §3.2.2, p. 19)"]⟩,
+    ⟨"Not in gamen-hs: validateDclegModel rejects a Centering violation at decision node \
+      (γL,v0): F = {{(γL,v0),(γR,v0)}}",
+      validateDclegModel { dclegPropGame with
+          dmPremises := dclegPropGame.dmPremises.insert ("γL", "v0")
+            (Std.TreeSet.ofList [Std.TreeSet.ofList [("γL", "v0"), ("γR", "v0")]]) }
+        == ["validateDclegModel: ⋂F(\"γL\",\"v0\") = [(\"γL\", \"v0\"), (\"γR\", \"v0\")], \
+            not {(\"γL\",\"v0\")} (violates Centering, §3.2.2, p. 19)"]⟩,
+    ⟨"Not in gamen-hs: validateDclegModel rejects a Contemporary Universality violation at \
+      decision node (γL,v0): F = {{(γL,v0)}} misses γR",
+      validateDclegModel { dclegPropGame with
+          dmPremises := dclegPropGame.dmPremises.insert ("γL", "v0")
+            (Std.TreeSet.ofList [Std.TreeSet.ofList [("γL", "v0")]]) }
+        == ["validateDclegModel: world \"γR\" reaches vertex \"v0\" but (\"γR\",\"v0\") ∉ \
+            ⋃F(\"γL\",\"v0\") (violates Contemporary Universality, §3.2.2, p. 19)"]⟩
   ]
 
 /-- `PaperCorrespondence.hs`'s `dclegM` (the same game as `dclegPropGame`). -/
@@ -5863,11 +5953,19 @@ referential/seriality faults" (all 3 `it`s). -/
 def dclegRegressionCases : List Case :=
   let ss := mkStrategicStructure ["v0", "v1", "v2"] ["v1", "v2"] [("v0", "p1")]
     [("v0", ["L", "R"]), ("v1", []), ("v2", [])] [("v0", "L", "v1"), ("v0", "R", "v2")]
+  -- Deliberate divergence from gamen-hs: fixed in gamen-lean (outcome-node
+  -- premises; docs/dcleg-outcome-node-premises-2026-09-30.md). The model is
+  -- passed through withMovePremises: validateDclegModel now also checks
+  -- Centering and Contemporary Universality (§3.2.2, p. 19), which a model
+  -- with no premises fails, so without F the first `it` would report
+  -- violations and the other two would pass for the wrong reason.
   let mkModelDox (dox : List (String × List (String × List (String × List String)))) :=
-    mkDclegModel ss ["wL", "wR"]
+    withMovePremises <| mkDclegModel ss ["wL", "wR"]
       [("wL", mkHistory [("v0", "L")] "v1"), ("wR", mkHistory [("v0", "R")] "v2")]
       [] dox [("p1", [("v1", 1), ("v2", 0)])]
-  [ ⟨"RegressionIssue18 B7: a well-formed model passes (no violations)",
+  [ ⟨"RegressionIssue18 B7: a well-formed model passes (no violations) (deliberate divergence \
+      from gamen-hs: fixed in gamen-lean (outcome-node premises; \
+      docs/dcleg-outcome-node-premises-2026-09-30.md))",
       validateDclegModel (mkModelDox [("p1", [("v0", [("wL", ["wL"]), ("wR", ["wR"])])])]) == []⟩,
     ⟨"RegressionIssue18 B7: flags N^w_i ⊄ R^w (successor does not visit the vertex)",
       validateDclegModel (mkModelDox [("p1", [("v1", [("wL", ["wR"])])])]) != []⟩,

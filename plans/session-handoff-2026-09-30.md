@@ -177,7 +177,8 @@ pushed, with Phase 1 (honest timing reporting) merged. Its untracked
 2. If he doesn't say: **migration Phase 0a/0b.** It's small, unblocks the
    downstream work, and ends the "which binary answered" ambiguity.
 3. **Guideline-validation Phase 2: done 2026-09-30.** Waiting on Brian's
-   approval of the draft definitions (see the table above).
+   approval of the draft definitions (see the table above). Follow-ups:
+   `plans/gv-phase2-followups-2026-09-30.md`.
 4. **The three-valued notebooks.**
 5. **Part C, citation tooling:** it catches wrong B&D and DCLEG citations
    at test time.

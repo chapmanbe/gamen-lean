@@ -1,16 +1,29 @@
-# Pinned version of the DCLEG draft
+# Pinned versions of DCLEG
 
 `Gamen.Dcleg` ports gamen-hs's `src/Gamen/Dcleg.hs`, which implements
 Jeremiah Chapman, *Doxastic Conditional Logic of Extensive Games* (v5.0),
-University of Gothenburg, April 2026, supervised by Martin Kaså.
+University of Gothenburg, April 2026, supervised by Martin Kaså. DCLEG is
+Chapter 3 of his final thesis (June 2026), which the citations now follow.
 
-**Two versions are pinned.** Until the citation migration is done, every
-unqualified "Chapman (2026)" or "DCLEG" citation in gamen-lean still means
-the **v5.0 draft**, because that is what `Gamen.Dcleg` was ported against.
-The **final thesis** (below) supersedes it. A consistency check (2026-09-30)
-compares the two and the implementation. Once it maps the citations,
-unqualified citations will mean the final thesis, and v5.0 citations will
-be named explicitly ("DCLEG v5.0, §2.7").
+**Two versions are pinned.** Unqualified "Chapman (2026)" or "DCLEG"
+citations in gamen-lean mean the **final thesis** (below), with its
+**printed** page numbers. Citations to the April 2026 draft name it
+explicitly: "DCLEG v5.0, §2.7". `Gamen.Dcleg` was ported against v5.0;
+its citations were migrated on 2026-09-30, following the map in
+`docs/assessment/dcleg-final-vs-implementation-2026-09-30.md` §3:
+
+* v5.0 §1.x → final §3.1.x; v5.0 §2.1–2.6 → final §3.2.1–3.2.6. Conditions
+  keep their numbers and names.
+* v5.0's `beg`, `fin`, `Mv` are the final thesis's `start`, `end`,
+  `Move` (same definitions). Lean identifiers keep their names, except the
+  test-local `dclegEnd`/`dclegStart`.
+* v5.0's §2.7 (Table 1, "Some Validities") and §2.7.1 have no counterpart
+  in the final thesis. The tests that check Table 1 are kept, labeled
+  "DCLEG v5.0 Table 1 (not in the final thesis)".
+* Counterfactual K′ (final §3.2.4, p. 22) is
+  (B_i(φ □→ ψ) ∧ B_i φ) □→ B_i ψ. v5.0 had ψ as the consequent, which is
+  not valid (the 2026-09-30 report gives a countermodel). The semantics are
+  otherwise unchanged.
 
 ## Final thesis (2026-06-04)
 

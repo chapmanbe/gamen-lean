@@ -30,6 +30,7 @@ import Notebooks.Ch6Countermodels
 import Validate.Core
 import Tests.PropertyHelpers
 import Tests.ManyValued
+import Tests.Completion
 
 /-!
 # Tests
@@ -3523,6 +3524,13 @@ def properties : List (String × IO Bool) :=
         NamedBinder "h" <| ∀ h : ManyValuedTests.CoreFormula,
         NamedBinder "c" <| ∀ c : ManyValuedTests.CoreFormula,
         ManyValuedTests.entailsMatchesOracle g.getFormula h.getFormula c.getFormula = true) 200),
+    ("Completion: K3 status never contradicts the exact check (theorems 2–4)",
+      run (NamedBinder "f" <| ∀ f : ManyValuedTests.CoreFormula,
+        NamedBinder "kp" <| ∀ kp : Bool, NamedBinder "bp" <| ∀ bp : Bool,
+        NamedBinder "kq" <| ∀ kq : Bool, NamedBinder "bq" <| ∀ bq : Bool,
+        NamedBinder "kr" <| ∀ kr : Bool, NamedBinder "br" <| ∀ br : Bool,
+        NamedBinder "c" <| ∀ c : Bool,
+        CompletionTests.k3ExactConsistent f.getFormula kp bp kq bq kr br c = true) 200),
     ("toNNF idempotent",
       run (NamedBinder "f" <| ∀ f : Formula, toNNF (toNNF f) = toNNF f)),
     ("toNNF output is in NNF",
@@ -6109,7 +6117,7 @@ def main : IO UInt32 := do
   -- Gamen.ManyValued (Lean-only): unit cases, then the CQL/FHIRPath spec
   -- tables in `data/specs/` checked against strong Kleene.
   let specCases ← ManyValuedTests.specTableCases
-  for (name, ok) in ManyValuedTests.cases ++ specCases do
+  for (name, ok) in ManyValuedTests.cases ++ specCases ++ CompletionTests.cases do
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
   IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
@@ -6134,7 +6142,7 @@ def main : IO UInt32 := do
     + atlirCases.length + atlirRegressionCases.length
     + dclegCases.length + dclegPaperCorrespondenceCases.length + dclegRegressionCases.length
     + visualizeCases.length
-    + ManyValuedTests.cases.length + specCases.length
+    + ManyValuedTests.cases.length + specCases.length + CompletionTests.cases.length
     + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

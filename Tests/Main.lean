@@ -29,6 +29,7 @@ import Notebooks.Ch1SyntaxSemantics
 import Notebooks.Ch6Countermodels
 import Validate.Core
 import Tests.PropertyHelpers
+import Tests.ManyValued
 
 /-!
 # Tests
@@ -3499,7 +3500,25 @@ def properties : List (String × IO Bool) :=
   -- Plausible's `Testable` instances match `NamedBinder name (∀ x, …)`; the
   -- `plausible` tactic inserts the binder names itself, but `checkIO` from
   -- plain `IO` needs them spelled out.
-  [ ("toNNF idempotent",
+  [ -- Gamen.ManyValued (Lean-only; plans/three-valued-logic-2026-09-29.md).
+    ("ManyValued: K3 on {t,f}-valuations equals Semantics.satisfies (one-world model)",
+      run (NamedBinder "f" <| ∀ f : ManyValuedTests.CoreFormula,
+        NamedBinder "bp" <| ∀ bp : Bool, NamedBinder "bq" <| ∀ bq : Bool,
+        NamedBinder "br" <| ∀ br : Bool,
+        ManyValuedTests.k3MatchesSemantics f.getFormula bp bq br = true)),
+    ("ManyValued: eval never errors on ¬ ∧ ∨ → formulas (all six matrices)",
+      run (NamedBinder "f" <| ∀ f : ManyValuedTests.CoreFormula,
+        ManyValuedTests.evalNeverErrorsCore f.getFormula = true)),
+    ("ManyValued: eval never errors on formulas with ⊥ (classical, Gödel)",
+      run (NamedBinder "f" <| ∀ f : PropFormula,
+        ManyValuedTests.evalNeverErrorsWithBot f.getFormula = true)),
+    ("ManyValued: LP tautologies are the classical ones [thr:mul:prop:LP-taut-CL]",
+      run (NamedBinder "f" <| ∀ f : ManyValuedTests.CoreFormula,
+        ManyValuedTests.lpTautologiesClassical f.getFormula = true) 200),
+    ("ManyValued: classical isTautology by enumeration equals Semantics.isTautology",
+      run (NamedBinder "f" <| ∀ f : PropFormula,
+        ManyValuedTests.classicalTautologyMatchesSemantics f.getFormula = true) 200),
+    ("toNNF idempotent",
       run (NamedBinder "f" <| ∀ f : Formula, toNNF (toNNF f) = toNNF f)),
     ("toNNF output is in NNF",
       run (NamedBinder "f" <| ∀ f : Formula, isNNF (toNNF f) = true)),
@@ -5896,6 +5915,12 @@ def main : IO UInt32 := do
       ++ visualizeCases do
     IO.println s!"  {if c.ok then "✓" else "✗"} {c.name}"
     unless c.ok do failures := failures + 1
+  -- Gamen.ManyValued (Lean-only): unit cases, then the CQL/FHIRPath spec
+  -- tables in `data/specs/` checked against strong Kleene.
+  let specCases ← ManyValuedTests.specTableCases
+  for (name, ok) in ManyValuedTests.cases ++ specCases do
+    IO.println s!"  {if ok then "✓" else "✗"} {name}"
+    unless ok do failures := failures + 1
   IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
   for (name, prop) in properties do
     let ok ← prop
@@ -5918,6 +5943,7 @@ def main : IO UInt32 := do
     + atlirCases.length + atlirRegressionCases.length
     + dclegCases.length + dclegPaperCorrespondenceCases.length + dclegRegressionCases.length
     + visualizeCases.length
+    + ManyValuedTests.cases.length + specCases.length
     + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

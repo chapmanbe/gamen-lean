@@ -31,6 +31,7 @@ import Gamen.Atel
 import Gamen.Atl.ImperfectInfo
 import Gamen.Dcleg
 import Gamen.Visualize
+import Gamen.ManyValued
 
 /-!
 # gamen

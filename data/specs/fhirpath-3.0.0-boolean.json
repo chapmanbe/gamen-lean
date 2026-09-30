@@ -1,0 +1,246 @@
+{
+  "spec": "FHIRPath",
+  "version": "3.0.0",
+  "url": "https://hl7.org/fhirpath/en/",
+  "section": "Operators, Boolean logic",
+  "sectionAnchor": "#boolean-logic",
+  "note": "The spec gives these tables no ids; each is identified by its heading anchor.",
+  "layout": "binary rows are [left, right, result]; unary rows are [argument, result]",
+  "valueMap": {
+    "true": "t",
+    "false": "f",
+    "empty": "u",
+    "empty ({ })": "u"
+  },
+  "pageSha256": "a5ec28e13cb9a7dbd90c24a0f9c3689f07e9b37097199e4df5bd7c3839c19cc2",
+  "retrieved": "2026-09-29",
+  "operators": [
+    {
+      "name": "and",
+      "anchor": "#and",
+      "arity": 2,
+      "table": [
+        [
+          "true",
+          "true",
+          "true"
+        ],
+        [
+          "true",
+          "false",
+          "false"
+        ],
+        [
+          "true",
+          "empty",
+          "empty ({ })"
+        ],
+        [
+          "false",
+          "true",
+          "false"
+        ],
+        [
+          "false",
+          "false",
+          "false"
+        ],
+        [
+          "false",
+          "empty",
+          "false"
+        ],
+        [
+          "empty",
+          "true",
+          "empty ({ })"
+        ],
+        [
+          "empty",
+          "false",
+          "false"
+        ],
+        [
+          "empty",
+          "empty",
+          "empty ({ })"
+        ]
+      ]
+    },
+    {
+      "name": "or",
+      "anchor": "#or",
+      "arity": 2,
+      "table": [
+        [
+          "true",
+          "true",
+          "true"
+        ],
+        [
+          "true",
+          "false",
+          "true"
+        ],
+        [
+          "true",
+          "empty",
+          "true"
+        ],
+        [
+          "false",
+          "true",
+          "true"
+        ],
+        [
+          "false",
+          "false",
+          "false"
+        ],
+        [
+          "false",
+          "empty",
+          "empty ({ })"
+        ],
+        [
+          "empty",
+          "true",
+          "true"
+        ],
+        [
+          "empty",
+          "false",
+          "empty ({ })"
+        ],
+        [
+          "empty",
+          "empty",
+          "empty ({ })"
+        ]
+      ]
+    },
+    {
+      "name": "not",
+      "anchor": "#not--boolean",
+      "arity": 1,
+      "table": [
+        [
+          "true",
+          "false"
+        ],
+        [
+          "false",
+          "true"
+        ],
+        [
+          "empty",
+          "empty ({ })"
+        ]
+      ]
+    },
+    {
+      "name": "xor",
+      "anchor": "#xor",
+      "arity": 2,
+      "table": [
+        [
+          "true",
+          "true",
+          "false"
+        ],
+        [
+          "true",
+          "false",
+          "true"
+        ],
+        [
+          "true",
+          "empty",
+          "empty ({ })"
+        ],
+        [
+          "false",
+          "true",
+          "true"
+        ],
+        [
+          "false",
+          "false",
+          "false"
+        ],
+        [
+          "false",
+          "empty",
+          "empty ({ })"
+        ],
+        [
+          "empty",
+          "true",
+          "empty ({ })"
+        ],
+        [
+          "empty",
+          "false",
+          "empty ({ })"
+        ],
+        [
+          "empty",
+          "empty",
+          "empty ({ })"
+        ]
+      ]
+    },
+    {
+      "name": "implies",
+      "anchor": "#implies",
+      "arity": 2,
+      "table": [
+        [
+          "true",
+          "true",
+          "true"
+        ],
+        [
+          "true",
+          "false",
+          "false"
+        ],
+        [
+          "true",
+          "empty",
+          "empty ({ })"
+        ],
+        [
+          "false",
+          "true",
+          "true"
+        ],
+        [
+          "false",
+          "false",
+          "true"
+        ],
+        [
+          "false",
+          "empty",
+          "true"
+        ],
+        [
+          "empty",
+          "true",
+          "true"
+        ],
+        [
+          "empty",
+          "false",
+          "empty ({ })"
+        ],
+        [
+          "empty",
+          "empty",
+          "empty ({ })"
+        ]
+      ]
+    }
+  ]
+}

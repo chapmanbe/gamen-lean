@@ -379,12 +379,16 @@ over pairs at *every* node. Premises are arbitrary subsets of I, so a
 premise may contain pairs at other nodes. Then a G whose intersection
 contains an m′-world at w can have a superset whose intersection contains
 an m′-pair at some other node v, and no G is maximal. Concretely, with
-Y₁ = {(γ,w),(β,w),(δ,v)}, Y₂ = {(γ,w),(δ,v)}, Y₃ = {(γ,w)} as F(γ,w),
-where β plays m′ at w and δ plays m′ at v: centering and contemporary
-universality hold, the only G with (β,w) ∈ ⋂G is {Y₁}, and {Y₁,Y₂} ⊋ {Y₁}
-has (δ,v) ∈ ⋂{Y₁,Y₂} ∩ ⟦m′⟧. So max^{m′}_{F(γ,w)}(Γ) = ∅ although ◇m′
-holds, and m′ □→ ⊥ is true at (γ,w). The p. 22 claim therefore fails under
-the literal reading. It holds if premises are *node-local*, i.e. every
+Y₁ = {(γ,w),(β,w),(δ,w),(δ,v)}, Y₂ = {(γ,w),(δ,v)}, Y₃ = {(γ,w)} as
+F(γ,w), where β and δ play m′ at w and δ plays m′ again at v: centering
+and contemporary universality hold, the only G with an m′-world at w in
+⋂G is {Y₁}, and {Y₁,Y₂} ⊋ {Y₁} has (δ,v) ∈ ⋂{Y₁,Y₂} ∩ ⟦m′⟧. So
+max^{m′}_{F(γ,w)}(Γ) = ∅ although ◇m′ holds, and m′ □→ ⊥ is true at
+(γ,w). This is not only argued in prose: `Q12Example.lean` builds this
+model (five nodes, three worlds), has Lean check every `GameModel`
+condition on it, and proves `dia_move'`, `no_maxConsistent` and `cf_bot`
+about it. The p. 22 claim therefore fails under the literal reading. It
+holds if premises are *node-local*, i.e. every
 premise in F(γ,w) contains only pairs at w (`LocalPremises` below), or
 equivalently if 2(b) reads (⋂G′) ∩ ⟦φ⟧ ∩ (Γ × {w}) = ∅. Which is intended?
 The proof of Theorem 4.2 uses the p. 22 claim (p. 32, "Then clearly

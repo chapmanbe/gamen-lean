@@ -1,5 +1,6 @@
 import Tests.ManyValued
 import DclegProofs.Lemma5_2
+import DclegProofs.Q12Example
 
 /-!
 # Axiom audit for `DclegProofs`
@@ -51,5 +52,9 @@ open DclegProofs
   sat_next_iff bel_next_of_bel_AX
   -- Lemma 5.2
   mem_others lemma5_2_actual_move
+  -- Q12 example: the concrete model and the facts about it
+  Q12Example.exH_wf Q12Example.reach_step Q12Example.exF_self Q12Example.maxConsistent_self
+  Q12Example.dia_move' Q12Example.Y1_ne_Y2 Q12Example.no_maxConsistent Q12Example.cf_bot
+  Q12Example.not_local
 
 end DclegProofsTests

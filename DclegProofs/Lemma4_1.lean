@@ -270,22 +270,32 @@ theorem followsBI_of_sat_BI_zero {γ : World} {w : Node} (hγ : M.Reaches γ w)
 **Status.** Base case proved. Inductive case open. Writing the definitions
 and reading the inductive case against them turned up the following.
 
-1. **The induction hypothesis does not match the statement.** Lemma 4.1
-   is stated for "w at depth z." In *Satisfaction ⇒ BI path* (p. 29) the
-   hypothesis for w at depth n+1 gives X ⋁_{0≤z≤n} BI_z, so at
-   w′ = next(w, m_γ) some BI_{z′} holds with z′ ≤ n, and the proof says
-   "so the path dictated by H(γ) starting from w′ is a backward induction
-   path by the inductive hypothesis." But the inductive hypothesis, as an
-   instance of the lemma, applies to BI_{z′} at w′ only if depth(w′) = z′,
-   and nothing so far says which z′ the disjunction supplies. The gap can
-   be closed by a separate fact, *M, γ, w ⊩ BI_z implies depth(w) = z*
-   (plausible: the ⋀_{m′} conjunct together with the requirement that
-   every outcome is reached in some world forces every successor to have
-   depth ≤ z, and ◇X BI_z forces one of depth z), which the thesis does not
-   state or prove; or by restating the lemma without the depth hypothesis
-   as "M, γ, w ⊩ BI_z iff depth(w) = z and the path from w is a BI path."
-   The same issue does not arise in *BI path ⇒ Satisfaction*, where the
-   depth of w′ is known.
+1. **The two directions are proved with different induction hypotheses,
+   and each direction uses the other.** The lemma is stated for "w at
+   depth z." The *BI path ⇒ Satisfaction* direction (p. 27) is proved
+   with a depth-indexed hypothesis ("if a node w has depth z, then …").
+   The *Satisfaction ⇒ BI path* direction (p. 29) is proved with a
+   hypothesis that carries no depth condition ("Suppose that, for any
+   z = 0, …, n, if M, γ, w ⊩ BI_z, then the path … is a backward
+   induction path"), and its base case is stated for "any w ∈ V"; taken
+   on its own, that direction is therefore a depth-free statement, and
+   applying its hypothesis at w′ = next(w, m_γ) to the disjunct
+   ⋁_{0≤z≤n} BI_z is legitimate. The step that is not covered is a
+   different one. From (4.7), □((m_γ ∧ X ⋁_{z≤n} BI_z) □→ ⋁_{h≥k_BI} hᵢ),
+   the proof concludes that "taking move m_γ and subsequently following a
+   backward induction path guarantees at least k_BI for player i." To get
+   from "follows a BI path from w′" to "satisfies X ⋁_{z≤n} BI_z", so that
+   (4.7) applies, one needs the *BI path ⇒ Satisfaction* direction at w′,
+   with depth(w′) ≤ n; and, symmetrically, (4.3) in the first direction
+   is obtained from worlds that satisfy the formula, which needs
+   *Satisfaction ⇒ BI path* at w′. So the two directions cannot be proved
+   one after the other as written: they need a single joint induction on
+   the depth, in which the depth-free direction is available at the
+   successors. That joint induction goes through if one also has
+   *M, γ, w ⊩ BI_z implies depth(w) = z* (plausible: the ⋀_{m′} conjunct,
+   together with every outcome being reached in some world, forces every
+   successor to have depth ≤ z, and ◇X BI_z forces one of depth z), which
+   the thesis does not state. The base case is unaffected.
 
 2. **"Every possible path has to be represented in a model" (p. 27).**
    The model only requires every *outcome node* to be reached in some
@@ -313,6 +323,6 @@ and reading the inductive case against them turned up the following.
 
 None of these affects the base case. Items 1 and 2 are what the inductive
 case would need before the reasoning on pp. 27–29 can be replayed step by
-step; item 1 is the one that changes what has to be proved. -/
+step; item 1 is the one that changes how the proof has to be organized. -/
 
 end DclegProofs

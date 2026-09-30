@@ -16,12 +16,16 @@ conditioned rationality:
 > The proof of this conditional's validity is similar to the proof
 > presented for (V^{y,z}ᵢ ∧ Ratᵢ) □→ CondRat^zᵢ, but more streamlined …
 
-**Status: partly formalized.** The claim is `claim_lemma5_2`. What the
-Theorem 5.1 argument establishes when replayed here, the (m, k) disjunct
-of CondRat^zᵢ for the move m actually made, is proved as
-`lemma5_2_actual_move`. The ⋀_{m′} part, for moves other than m, is where
-the argument stops, for the reasons given in `Theorem5_1.lean` and
-repeated at the end of this file.
+**Status: partly formalized.** The claim is `claim_lemma5_2`. The thesis
+gives no written proof of Lemma 5.2: p. 43 says it is "similar to the
+proof presented for (V^{y,z}ᵢ ∧ Ratᵢ) □→ CondRat^zᵢ, but more
+streamlined." What that argument establishes when replayed here is proved
+as `lemma5_2_actual_move`: the *Bᵢ conjunct* of CondRat^zᵢ's (m, k)
+disjunct, for the move m actually made, taking Bᵢ(m □→ ⋁_{h≥k} hᵢ) (the
+corresponding conjunct of Ratᵢ) as a hypothesis. The (m, k) disjunct's
+third conjunct, ⋀_{m′}(…), is not proved, and is where the argument
+stops, for the reasons given in `Theorem5_1.lean` and repeated at the end
+of this file.
 -/
 
 namespace DclegProofs
@@ -53,13 +57,15 @@ def claim_lemma5_2 (sig : Signature Agent Move) (PVar : Type) : Prop :=
     Valid sig ((deep z ∧' Fcond (PVar := PVar) sig i z ∧' bel i (AX sig (FutRat sig i z)) ∧' Rat sig i)
       □→ CondRat sig i z)
 
-/-! ## The part that goes through: the actual move
+/-! ## The part that goes through: the Bᵢ conjunct for the actual move
 
 Fix a pointed model (γ, w) on i's turn where i makes move m, and suppose
 F^zᵢ, Bᵢ AX FutRat^zᵢ, Ratᵢ, and (from Ratᵢ, for some k)
-Bᵢ(m □→ ⋁_{h≥k} hᵢ). Then the second conjunct of CondRat's (m, k) disjunct
-holds: Bᵢ((m ∧ X B^E FutRat^zᵢ) □→ ⋁_{h≥k} hᵢ). The steps, each mapped to
-the hand proof of Theorem 5.1 as adapted on p. 43:
+Bᵢ(m □→ ⋁_{h≥k} hᵢ), which is taken as a hypothesis rather than extracted
+from Ratᵢ. Then the second conjunct of CondRat's (m, k) disjunct holds:
+Bᵢ((m ∧ X B^E FutRat^zᵢ) □→ ⋁_{h≥k} hᵢ). The first conjunct, mᵢ, is
+immediate; the third, ⋀_{m′}(…), is not addressed. The steps, each mapped
+to the hand proof of Theorem 5.1 as p. 43 says to adapt it:
 
 1. Take μ ∈ ⊒ʷᵢ(γ). By Self-Awareness μ plays m. (Not in the hand proof;
    it is what makes the counterfactuals at μ collapse.)
@@ -130,8 +136,10 @@ theorem lemma5_2_actual_move {γ : World} {w w' : Node} {i : Agent} {m : Move} {
 
 /-! ## What the formalization found
 
-**Status.** The (m, k) part for the actual move is proved; the ⋀_{m′}
-part is open, and with it the lemma.
+**Status.** The Bᵢ conjunct of the (m, k) disjunct is proved for the
+actual move; the ⋀_{m′} conjunct is open, and with it the lemma. The
+thesis has no written proof to compare against (p. 43: "similar to …"),
+so the comparison below is with the proof of Theorem 5.1.
 
 1. **What the proof does not say.** `lemma5_2_actual_move` uses
    Self-Awareness (three times), Expectational Continuity, Transitivity,
@@ -160,11 +168,12 @@ part is open, and with it the lemma.
    depends on i's beliefs there, which Minimal Revision ties to the
    beliefs of the *counterfactual* world's plausible set, not γ's.
 
-So Lemma 5.2 stands or falls with the same inference as Theorem 5.1. If
-that inference can be justified (perhaps by a strengthened F^zᵢ that
-speaks of Bᵢ FutRat as well as Bⱼ for j ≠ i, or by an extra frame
-condition), the rest of the proof is routine and the pieces here would
-carry over. -/
+So the proof of Lemma 5.2 has the same gap as the proof of Theorem 5.1,
+for m′ ≠ m and for the dropped ¬◇(m′ ∧ Ratᵢ) case; this says nothing
+about whether the lemma is true. If that inference can be justified
+(perhaps by a strengthened F^zᵢ that speaks of Bᵢ FutRat as well as Bⱼ
+for j ≠ i, or by an extra frame condition), the rest of the proof is
+routine and the pieces here would carry over. -/
 
 end
 

@@ -246,7 +246,12 @@ against them and could not be replayed, for the following reasons.
    B̂ᵢ(m′ □→ ⋁_{h≤k} hᵢ), was added for exactly this situation (p. 39,
    "the third condition is necessary since …"), but the proof does not
    argue that ¬◇(m′ ∧ Ratᵢ) implies ¬◇(m′ ∧ X B^E FutRat^zᵢ), and it is
-   not clear that it does.
+   not clear that it does. The closing remark on p. 41 ("Note that this
+   ignores the cases when it is impossible for i to play a move m′ and
+   have everyone subsequently believe that i will be only rational in the
+   future …") anticipates part of this: it proposes weakening the
+   condition so that such moves are exempted. The proof as written,
+   however, drops the case rather than handling or exempting it.
 
 2. **"This gives us M, μ, w ⊩ m □→ X Bᵢ FutRat^zᵢ" (p. 41).** For the move
    m actually made at (γ, w) this is `bel_next_of_bel_AX`, via
@@ -257,10 +262,12 @@ against them and could not be replayed, for the following reasons.
    β's beliefs at next(w, m′) are constrained (by Minimal Revision) only
    through β's *own* plausible worlds at w, about which Bᵢ AX FutRat^zᵢ
    at γ says nothing. So (5.3)'s j = i component, hence "m′ □→ X B^E
-   FutRat^zᵢ at ν" as used before (5.5), is unsupported for m′ ≠ m.
-   Whether the *theorem* survives is a separate question; a countermodel
-   would have to defeat CondRat's second and third disjuncts at once, and
-   this formalization did not construct one.
+   FutRat^zᵢ at ν" as used before (5.5), is not established for m′ ≠ m.
+   This is a gap in the *proof*, for m′ ≠ m and for the dropped case of
+   item 1; it is not a claim that the theorem is false. No countermodel
+   was constructed (one would have to defeat CondRat's second and third
+   disjuncts at once), and none was looked for beyond checking that the
+   frame conditions do not supply the inference as stated.
 
 3. **The (5.6) inference** "Bᵢ(m □→ ⋁ hᵢ) and Bᵢ(m □→ X B^E FutRat) give
    Bᵢ((m ∧ X B^E FutRat) □→ ⋁ hᵢ)" is cautious monotonicity,
@@ -279,10 +286,11 @@ against them and could not be replayed, for the following reasons.
    M, γ, w ⊮ V^{y,z}ᵢ ∧ Ratᵢ …") is unnecessary: `valid_cf_of_imp`.
 
 Item 1 and item 2 together are why this result is marked open rather than
-partly proved: the proof establishes the m-part of CondRat for the actual
-move (that much is `bel_next_of_bel_AX` plus `sat_rat_of_dox`), but the
-⋀_{m′} part rests on an inference that the frame conditions do not seem
-to supply. -/
+partly proved: the proof establishes the Bᵢ conjunct of CondRat's (m, k)
+disjunct for the actual move (that much is `bel_next_of_bel_AX` plus
+`sat_rat_of_dox`), but the ⋀_{m′} conjunct rests on an inference that the
+frame conditions do not seem to supply. Open means: the proof has a gap
+here; the theorem's truth is undetermined by this work. -/
 
 end
 

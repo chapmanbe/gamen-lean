@@ -151,10 +151,11 @@ then `Lemma4_1.lean`, `Theorem4_2.lean`, `Theorem5_1.lean`, `Lemma5_2.lean`.
 | Chapter 3 definitions (syntax, strategic structures, histories, game models, satisfaction, validity) | formalized, awaiting sign-off | `Semantics.lean` | (definitions) |
 | Chapter 3 prose claims: `end` marks outcome nodes (p. 21), □ is world-independent (p. 23), centering makes a true antecedent's world the only maximally consistent one (p. 19), Bᵢ is D/4/5/C4 (p. 22), Bᵢ–□ interactions (p. 23), `Move` is a function, ◇φ yields a maximally φ-consistent world (p. 22, under Q12), cautious monotonicity | **proved** | `Basics.lean` | all of the above |
 | Validity of φ □→ ψ is equivalent to validity of φ → ψ | **proved** | `Basics.lean` | `valid_cf_iff` |
+| Q12: a concrete game model (five nodes, three worlds) on which ◇m′ holds but no world is maximally m′-consistent, under the literal reading of p. 19 | **proved** | `Q12Example.lean` | `exM` checked against every `GameModel` condition; `dia_move'`, `no_maxConsistent`, `cf_bot`, `not_local` |
 | Lemma 4.1 | partly | `Lemma4_1.lean` | base case z = 0 (`lemma4_1_zero`); definitions of BI_z, depth, BI paths |
 | Theorem 4.2 | partly | `Theorem4_2.lean` | base case z = 0 (`theorem4_2_zero`); Ratᵢ ↔ BᵢRatᵢ on i's turn; B^E B^E ψ → B^E ψ |
 | Theorem 5.1 | open | `Theorem5_1.lean` | definitions; the step "Bᵢ AX φ gives X Bᵢ φ at plausible worlds" for the actual move (`bel_next_of_bel_AX`) |
-| Lemma 5.2 | partly | `Lemma5_2.lean` | the (m, k) part of CondRat for the actual move (`lemma5_2_actual_move`) |
+| Lemma 5.2 (no written proof in the thesis; p. 43 says "similar to" Theorem 5.1's) | partly | `Lemma5_2.lean` | the Bᵢ conjunct of CondRat's (m, k) disjunct, for the actual move m only, taking Bᵢ(m □→ ⋁_{h≥k} hᵢ) as a hypothesis; the ⋀_{m′} conjunct is not proved (`lemma5_2_actual_move`) |
 
 "Open" means the formalization found a step of the hand proof it could not
 justify from the definitions; the file says which. "Partly" means part of
@@ -162,24 +163,33 @@ the result is proved and the rest is unfinished for reasons of effort or
 of a missing lemma, again spelled out in the file.
 
 Findings that concern the thesis itself, in one line each (details in the
-files):
+files; `FINDINGS.md` classifies each one and says which depend on the open
+questions):
 
 * Centering as printed (p. 19) is unsatisfiable at pairs (γ,w) with
   w ∉ V_γ; the Lean restricts it to reached pairs (Q7).
 * Maximal φ-consistency's clause 2(b) quantifies ⟦φ⟧ over all nodes, which
   makes the p. 22 claim ("◇m′ gives a maximally m′-consistent world") false
-  unless premises are node-local (Q12); Theorem 4.2's proof uses that claim.
-* Lemma 4.1's inductive hypothesis is applied at the next node without
-  knowing that node's depth matches the BI index; a lemma "BI_z holds only
-  at depth z" would close it (`Lemma4_1.lean`, item 1).
+  unless premises are node-local (Q12); `Q12Example.lean` is a
+  machine-checked model where it fails. Theorem 4.2's proof uses that claim.
+* Lemma 4.1's two directions each use the other at the successor node
+  (the step from (4.7) to "guarantees at least k_BI" needs BI path ⇒
+  satisfaction at w′), so they need one joint induction on depth, with a
+  lemma "BI_z holds only at depth z" (`Lemma4_1.lean`, item 1).
 * Theorem 4.2's "R^z = B^E ψ regardless of z" fails at z = 0; the z = 0
-  case needs Present Seriality instead of C4. Its "by perfect information"
-  step needs "R^z holds only at depth z" (`Theorem4_2.lean`, items 1–2).
+  case needs Present Seriality and A ≠ ∅ instead of C4. Its "by perfect
+  information" step needs "R^z holds only at depth z", whose proof in turn
+  depends on Q12 (`Theorem4_2.lean`, items 1–2).
 * Theorem 5.1 and Lemma 5.2: the step "Bᵢ AX FutRat gives m □→ X Bᵢ FutRat
   at μ" is justified for the actual move (using Self-Awareness,
   Expectational Continuity, Transitivity, Euclideanness, none cited) but
-  not for other moves, and the case ¬◇(m ∧ Ratᵢ) is dropped
-  (`Theorem5_1.lean`, items 1–2).
+  not established for other moves, and the case ¬◇(m ∧ Ratᵢ) is dropped
+  (which p. 41's closing remark partly anticipates). These are gaps in the
+  proofs, not counterexamples to the results (`Theorem5_1.lean`, items 1–2).
+  Lemma 5.2 has no written proof in the thesis.
+* Three typos in the proof of Theorem 4.2: a missing X in the sentence
+  before (4.18), m for m′ in (4.12), and "PMoves(w) \ w" for
+  PMoves(w) \ {m} on p. 33.
 * The closing "vacuous or by contemporary universality" paragraph of each
   validity proof is unnecessary: φ □→ ψ is valid iff φ → ψ is
   (`valid_cf_iff`).

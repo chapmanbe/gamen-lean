@@ -172,21 +172,27 @@ against the definitions:
 1. **"Note that, regardless of the value of z, R^z = B^E ψ for some
    formula ψ" (p. 32) is false for z = 0**, where R⁰ = end. The step it
    supports, from X ⋁_{z≤n} B^E R^z to X ⋁_{z≤n} R^z, still holds for the
-   z = 0 disjunct, but by a different route: Bᵢ end → end needs Present
-   Seriality and the fact that `end` depends only on the node (`sat_end_iff`
-   with `dox_reaches`), not C4. For z ≥ 1 the C4 route is
-   `belE_belE_imp_belE`.
+   z = 0 disjunct, but by a different route: B^E end → end needs Present
+   Seriality, the fact that `end` depends only on the node (`sat_end_iff`
+   with `dox_reaches`), and A ≠ ∅ (B^E over an empty set of agents is ⊤,
+   see `belE`), not C4. For z ≥ 1 the C4 route is `belE_belE_imp_belE`.
 
 2. **"By perfect information, we have to have M, γ, w ⊩ X ⋁ B^E R^z"
    (p. 32)**, from X B^E ⋁ R^z. Moving a disjunction out of B^E is not a
    modal validity; it is justified here because R^z, for each z, can only
    hold at nodes of depth z (so at the fixed next node w′, only one
    disjunct is live in any world). That fact — *M, γ, w ⊩ R^z implies
-   depth(w) = z* — is not stated in the thesis. It appears to follow by
-   induction, using Present Seriality to get out from under B^E and the
-   `AX` and `◇(m ∧ X R^z)` conjuncts to pin the successors' depths, but
-   it is a lemma of its own, and it is the same lemma that Lemma 4.1's
-   inductive case needs (item 1 there).
+   depth(w) = z* — is not stated in the thesis. It would be proved by
+   induction: Present Seriality to get out from under B^E, then the
+   conjunct AX ⋁_{z′≤z} R^{z′} to bound every successor's depth and the
+   conjunct ⋁_m (◇m ∧ (m □→ X R^z)) to find a successor of depth exactly
+   z. Both of those steps read a counterfactual m □→ X(…) at worlds that
+   are maximally m-consistent, so they need such worlds to *exist* for
+   each available m: that is the p. 22 argument, which under the literal
+   definition of maximal consistency holds only for node-local premises
+   (Q12; `exists_maxConsistent_of_dia`). So this lemma is missing from the
+   thesis, and its proof depends on how Q12 is resolved. It is also the
+   lemma that Lemma 4.1's inductive case needs (item 1 there).
 
 3. **"Then clearly M, γ, w ⊩ B^E ◇X R^n" (p. 32)**, from
    B^E ⋁_m (◇m ∧ (m □→ X R^n)). This needs, at each plausible world μ,
@@ -201,9 +207,12 @@ against the definitions:
    γ, not μ; and moving B̂ᵢ(m □→ ⋁ hᵢ) from μ back to γ uses
    `sat_dbel_of_dox`. Both are fine.
 
-5. **(4.18).** The hand proof writes "Bᵢ(m′ □→ ⋁ R^z)"; from the AX
-   conjunct of R^{n+1} what one has is Bᵢ(m′ □→ X ⋁ R^z), with an X, which
-   is what (4.18) then uses. A typo, not a gap.
+5. **Typos, not gaps.** The sentence just before (4.18) writes
+   "Bᵢ(m′ □→ ⋁_{0≤z≤n} R^z)"; from the AX conjunct of R^{n+1} what one has
+   is Bᵢ(m′ □→ X ⋁ R^z), with an X, and (4.18) itself has the X. In (4.12)
+   the displayed formula has "□¬m ∨ ◇(m ∧ …)" where the text around it
+   (and (4.13)) has m′. On p. 33, "Take m′ ∈ PMoves(w) \ w" should read
+   PMoves(w) \ {m}.
 
 6. **(4.19) → "M, ν, w ⊩ ¬(m′ □→ ⋁_{h≤k} hᵢ)".** The proof takes η
    maximally m′-consistent with F(ν,w), notes η ⊩ X ⋁BI, and applies
@@ -226,6 +235,8 @@ against the definitions:
    universality) is unnecessary: `valid_cf_of_imp`.
 
 Items 2 and 3 are the substantive ones. Item 2 needs a lemma the thesis
-lacks; item 3 depends on how Q12 is resolved. -/
+lacks, and both it and item 3 depend on how Q12 is resolved: under
+node-local premises, `exists_maxConsistent_of_dia` supplies what they
+need, and what remains is to write the lemma of item 2 down. -/
 
 end DclegProofs

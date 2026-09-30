@@ -288,13 +288,19 @@ Returns the violation messages; `[]` means the model passes:
   or successor) is a world of the model;
 * *N^w_i ⊆ R^w*: each doxastic successor β of γ at vertex w has w ∈ V_β;
 * *doxastic seriality (KD)*: wherever agent i has a doxastic map at vertex
-  w, N^w_i(γ) is non-empty for every γ ∈ R^w.
+  w, N^w_i(γ) is non-empty for every γ ∈ R^w;
+* *admissible premises* (§3.2.2, p. 19), at every reached pair (γ,w),
+  w ∈ V_γ, decision and outcome vertices alike: Centering,
+  ⋂F(γ,w) = {(γ,w)}, and Contemporary Universality, (β,w) ∈ ⋃F(γ,w) for
+  every β with w ∈ V_β. A missing F(γ,w) is ∅, as the evaluator reads it,
+  and ∅ violates Centering (its intersection is not {(γ,w)}). Not in
+  gamen-hs; see `docs/dcleg-outcome-node-premises-2026-09-30.md`.
 
-These are the referential and seriality guarantees the evaluator relies on
-(Present Seriality is condition 2 of §3.2.2's doxastic conditions, p. 20),
-not the full Conditions 1–7 of §3.2.1 (p. 17). -/
+These are the referential, seriality and premise guarantees the evaluator
+relies on (Present Seriality is condition 2 of §3.2.2's doxastic conditions,
+p. 20), not the full Conditions 1–7 of §3.2.1 (p. 17). -/
 def validateDclegModel (m : DclegModel) : List String :=
-  historyIntegrity ++ doxasticWorldIntegrity ++ nSubsetR ++ doxSeriality
+  historyIntegrity ++ doxasticWorldIntegrity ++ nSubsetR ++ doxSeriality ++ premiseAdmissibility
 where
   nodes := m.dmStructure.ssNodes
   ws := m.dmWorlds
@@ -335,6 +341,26 @@ where
           if (doxSuccs perVtx w g).isEmpty then
             out := out ++ [s!"validateDclegModel: agent {repr i} at vertex {repr w} \
               has no doxastic successors for world {repr g} ∈ R^w (violates KD seriality)"]
+    return out
+  premiseAdmissibility : List String := Id.run do
+    let mut out := []
+    for g in ws.toList do
+      for w in (worldVertices m g).toList do
+        let fgw := (m.dmPremises.getD (g, w) ∅).toList
+        match fgw with
+        | [] =>
+          out := out ++ [s!"validateDclegModel: F({repr g},{repr w}) is empty \
+            (violates Centering: ⋂F(γ,w) must be \{(γ,w)}, §3.2.2, p. 19)"]
+        | p :: ps =>
+          let cap := ps.foldl (fun a b => a ∩ b) p
+          if cap.toList != [(g, w)] then
+            out := out ++ [s!"validateDclegModel: ⋂F({repr g},{repr w}) = {repr cap.toList}, \
+              not \{({repr g},{repr w})} (violates Centering, §3.2.2, p. 19)"]
+        for beta in settledAccessible m w do
+          unless fgw.any (·.contains (beta, w)) do
+            out := out ++ [s!"validateDclegModel: world {repr beta} reaches vertex {repr w} \
+              but ({repr beta},{repr w}) ∉ ⋃F({repr g},{repr w}) (violates Contemporary \
+              Universality, §3.2.2, p. 19)"]
     return out
 
 /-! ## Counterfactual selection (§3.2.2, p. 19) -/
@@ -452,19 +478,24 @@ def dclegTrueIn (m : DclegModel) (phi : DclegFormula) : Except String Bool :=
 
 /-! ## Default move-based premise function -/
 
-/-- F(γ,w) under the move-based default, for each decision vertex w
-reached in γ: one premise per move mv ∈ PMoves(w), the pairs (β,w) of the
-worlds β that play mv at w, with (γ,w) added to every *non-actual* move's
-premise, plus the singleton premise {(γ,w)} (Centering; gamen-hs
-TODO(#18)). Outcome nodes get no entry. -/
+/-- F(γ,w) under the default, for each vertex w reached in γ. At a decision
+vertex: one premise per move mv ∈ PMoves(w), the pairs (β,w) of the worlds β
+that play mv at w, with (γ,w) added to every *non-actual* move's premise,
+plus the singleton premise {(γ,w)} (Centering; gamen-hs TODO(#18)). At an
+outcome vertex: {(γ,w)} and {(β,w) | w ∈ V_β} (see `withMovePremises`). -/
 private def buildPremises (m : DclegModel) :
     Std.TreeMap (World × Vertex) (Std.TreeSet DclegProp) :=
   Std.TreeMap.ofList <| m.dmWorlds.toList.flatMap fun gamma =>
-    ((worldVertices m gamma).toList.filter fun w =>
-        !m.dmStructure.ssEndNodes.contains w).map fun w =>
-      ((gamma, w), premisesAt gamma w)
+    (worldVertices m gamma).toList.map fun w =>
+      ((gamma, w),
+        if m.dmStructure.ssEndNodes.contains w then outcomePremisesAt gamma w
+        else premisesAt gamma w)
 where
   allWorlds := m.dmWorlds.toList
+  /-- {(γ,w)} ⊂ {(β,w) | w ∈ V_β}: one arbitrary admissible choice. -/
+  outcomePremisesAt (gamma : World) (w : Vertex) : Std.TreeSet DclegProp :=
+    Std.TreeSet.ofList [Std.TreeSet.ofList [(gamma, w)],
+      Std.TreeSet.ofList ((settledAccessible m w).map fun beta => (beta, w))]
   worldsWithMoveAt (w : Vertex) (mv : Move) : List World :=
     allWorlds.filter fun beta => (worldVertices m beta).contains w && moveAt m beta w == some mv
   mkPremise (gamma : World) (w : Vertex) (mv : Move) (actual : Option Move) : DclegProp :=
@@ -476,14 +507,16 @@ where
     (Std.TreeSet.ofList (allMvs.map fun mv => mkPremise gamma w mv actual)).insert
       (Std.TreeSet.ofList [(gamma, w)])
 
-/-- Populate F(γ,w) from the moves actually played (gamen-hs's own
-construction; F's constraints are Centering and Contemporary Universality,
-§3.2.2, p. 19). For each available move mv at w, the premise
+/-- Populate F(γ,w) at every reached pair: from the moves actually played at
+decision vertices (gamen-hs's own construction), and with a fixed nested pair
+at outcome vertices (below). F's constraints are Centering and Contemporary
+Universality (§3.2.2, p. 19). At a decision vertex w: for each available
+move mv at w, the premise
 {(β,w) | β plays mv at w}, with (γ,w) added to every *non-actual* move's
 premise; and the singleton premise {(γ,w)}.
 
-Contemporary Universality holds because every world reaching w plays some
-move there. Centering (∩F(γ,w) = {(γ,w)}) holds at every decision vertex
+Contemporary Universality holds at a decision vertex because every world
+reaching w plays some move there. Centering (∩F(γ,w) = {(γ,w)}) holds at every decision vertex
 because of the singleton premise. Without it, Centering holds only where at
 least two moves are available: at a *single-move* vertex the lone premise
 is the whole R^w, so ∩F(γ,w) = R^w ⊋ {(γ,w)} whenever more than one world
@@ -499,10 +532,24 @@ available the other premises already intersect to {(γ,w)}; and if
 so the maximal sets are the same as before. At a vertex where only γ plays
 its move the singleton equals that move's premise and F is unchanged.
 
-Outcome nodes still get no premises, as in gamen-hs. The thesis states
-Centering and Contemporary Universality for every w ∈ V, outcome nodes
-included, so neither holds there, and every φ □→ ψ is vacuously true at an
-outcome node. That gap is not closed here. -/
+**Outcome nodes** (deliberate divergence from gamen-hs, which gives them no
+entry: fixed in gamen-lean; `docs/dcleg-outcome-node-premises-2026-09-30.md`).
+With no premises, Centering and Contemporary Universality fail there, and
+every φ □→ ψ is vacuously true (so ⊤ □→ ⊥ held at every outcome node). Each
+reached outcome pair (γ,w) now gets two nested premises,
+
+  F(γ,w) = { {(γ,w)}, {(β,w) | w ∈ V_β} },
+
+"the actual world, inside all worlds that reach this outcome". Centering and
+Contemporary Universality then hold at every reached pair; they are what
+§3.2.2 (p. 19) requires of F, and `validateDclegModel` checks them.
+
+This is **one arbitrary admissible choice**, not something the thesis
+requires. The thesis leaves F unspecified, a parameter of the model subject
+only to those two conditions, and other admissible systems give some
+counterfactuals other truth values. A validity must hold for *every*
+admissible F, so property tests draw random admissible premise systems
+rather than rely on this default. -/
 def withMovePremises (m : DclegModel) : DclegModel :=
   { m with dmPremises := buildPremises m }
 

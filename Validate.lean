@@ -1,5 +1,4 @@
-import Validate.Core
-import Lean.Elab.Term
+import Validate.BuildInfo
 
 /-!
 # gamen-validate (Lean port)
@@ -39,32 +38,6 @@ The non-`IO` request/response logic lives in `Validate.Core`, so it can be
 `main` colliding.
 -/
 
-open Lean Elab Term in
-/-- The git commit this file was compiled at: `git rev-parse --short=12
-HEAD`, with `-dirty` if tracked files had uncommitted changes, or
-`unknown` if git isn't available. Evaluated at compile time.
-
-Lake recompiles this file whenever `gamen-validate`'s sources change, so a
-new commit that changes none of them keeps the old stamp, which still
-names a commit with the same code (though a `-dirty` stamp may outlive
-the commit that cleaned it). `tools/install.sh` forces a recompile, so an
-installed binary's stamp is current. -/
-elab "build_commit%" : term => do
-  let git (args : Array String) : IO (Option String) := do
-    try
-      let out ← IO.Process.output { cmd := "git", args }
-      return if out.exitCode == 0 then some out.stdout.trimAscii.toString else none
-    catch _ => return none
-  let stamp := match ← git #["rev-parse", "--short=12", "HEAD"],
-      ← git #["status", "--porcelain", "--untracked-files=no"] with
-    | some rev, some changes => if changes.isEmpty then rev else rev ++ "-dirty"
-    | some rev, none => rev
-    | none, _ => "unknown"
-  return mkStrLit stamp
-
-/-- The commit `version` reports. -/
-def buildCommit : String := build_commit%
-
 /-- Read JSON Lines until EOF; skip empty lines, as `BL.null` does in Haskell. -/
 partial def main : IO Unit := do
   let stdin ← IO.getStdin
@@ -74,7 +47,7 @@ partial def main : IO Unit := do
     if line.isEmpty then return  -- EOF
     let body := if line.endsWith "\n" then line.dropEnd 1 |>.toString else line
     unless body.isEmpty do
-      stdout.putStrLn (processLine body buildCommit).compress
+      stdout.putStrLn (serveLine body).compress
       stdout.flush
     loop
   loop

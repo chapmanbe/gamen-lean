@@ -4,11 +4,30 @@
 Jeremiah Chapman, *Doxastic Conditional Logic of Extensive Games* (v5.0),
 University of Gothenburg, April 2026, supervised by Martin Kaså.
 
-**Every unqualified "Chapman (2026)" or "DCLEG" citation in gamen-lean means
-the v5.0 draft below.** The final thesis is signed for release but not yet
-in GUPEA (checked 2026-09-29). When it appears, compare it with v5.0 and
-re-check every Chapman (2026) citation, just as for a new B&D edition
-(`notes/bd-edition.md`).
+**Two versions are pinned.** Until the citation migration is done, every
+unqualified "Chapman (2026)" or "DCLEG" citation in gamen-lean still means
+the **v5.0 draft**, because that is what `Gamen.Dcleg` was ported against.
+The **final thesis** (below) supersedes it. A consistency check (2026-09-30)
+compares the two and the implementation. Once it maps the citations,
+unqualified citations will mean the final thesis, and v5.0 citations will
+be named explicitly ("DCLEG v5.0, §2.7").
+
+## Final thesis (2026-06-04)
+
+| | |
+|---|---|
+| Title | *Doxastic Conditional Logic, Rationality, and Backward Induction: Formalizing Belief and Counterfactual Reasoning in Games* |
+| Degree | Thesis for the Master's degree in Logic (30 credits), University of Gothenburg; supervisor Martin Kaså |
+| Date | June 4th 2026 (title page); PDF created 2026-06-15; 64 pages |
+| File | `notes/dcleg-thesis-final.pdf`, **untracked**: not added to git yet, by Brian's instruction (2026-09-30); GUPEA publication pending |
+| SHA-256 | `e4828132a4333cf6d629ba327c460714bd6a577362db6dbce0d4fa713fe86c88` |
+| DCLEG | Chapter 3 (§3.1 syntax, §3.2 semantics; v5.0's §1–2) |
+| Proved results | Lemma 4.1, Theorem 4.2 (Ch. 4, backward induction); Theorem 5.1, Lemma 5.2 (Ch. 5, conditioned dominance) |
+
+PDF page indices (e.g. Lemma 4.1 on PDF p. 35) differ from the printed page
+numbers. Cite the printed ones.
+
+## v5.0 draft (April 2026)
 
 | | |
 |---|---|

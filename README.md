@@ -31,6 +31,7 @@ lake test      # unit, widget, notebook answer-key, and property tests
 | `Validate.lean` | `gamen-validate`, the JSON Lines service used by guideline-validation, guideline-cds-simulation, patient-agent-assistant, and cwyde |
 | `Widgets/` | Infoview widgets for the notebooks (clickable Kripke models, hints) |
 | `Notebooks/` | Teaching notebooks ported from the Gamen.jl Pluto notebooks |
+| `DclegProofs/` | Machine-checked proofs from the DCLEG thesis (Chapter 3 semantics, Lemma 4.1, Theorem 4.2, Theorem 5.1, Lemma 5.2); Prop-level, no Mathlib. Start at its `README.md` |
 | `Tests/` | The test suite |
 | `tools/compare/` | Side-by-side comparison of the gamen-hs and Lean `gamen-validate` |
 | `web/` | Local web editor (lean4web) for the notebooks |

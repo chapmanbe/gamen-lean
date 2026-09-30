@@ -30,6 +30,7 @@ import Notebooks.Ch6Countermodels
 import Validate.Core
 import Tests.PropertyHelpers
 import Tests.ManyValued
+import Tests.DclegProofs
 
 /-!
 # Tests

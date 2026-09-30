@@ -1,6 +1,6 @@
 name = "gamen"
 version = "0.1.0"
-defaultTargets = ["Gamen", "Widgets", "Notebooks", "gamen-validate"]
+defaultTargets = ["Gamen", "Widgets", "Notebooks", "gamen-validate", "DclegProofs"]
 testDriver = "tests"
 
 # ── Dependencies ────────────────────────────────────────────────────
@@ -32,6 +32,13 @@ globs = ["Widgets.+"]
 [[lean_lib]]
 name = "Notebooks"
 globs = ["Notebooks.+"]
+
+# Machine-checked proofs of results from the DCLEG thesis (Chapters 3–5),
+# written for Jeremiah. Prop-level, over arbitrary types; imports neither
+# `Gamen` nor Mathlib. Start at `DclegProofs/README.md`.
+[[lean_lib]]
+name = "DclegProofs"
+globs = ["DclegProofs.+"]
 
 [[lean_lib]]
 name = "Tests"

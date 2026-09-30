@@ -35,6 +35,8 @@ theorem violated :
   strongKleene_tables_monotone strongKleene_monotone completes_le completion_value
   definite_sound absent_sound mixed_possible
   contradiction_possible contradiction_never exclusive_possible exclusive_never lem_always violated
+  atom_eq_of_beq mem_dedup_foldl mem_dedup eval_congr completionsOn_sound restrict_mem
+  lookup_restrict admissible_congr mapM_ok exactStatus_spec
 
 /-! ## Unit cases -/
 

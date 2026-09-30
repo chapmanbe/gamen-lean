@@ -174,4 +174,229 @@ def exactStatus (f : Formula) (p : Atom → TV3) (cs : List (List Atom)) :
   if vals.all (! ·) then return .never
   return .sometimes
 
+/-! ## Theorem 6: the enumerator is correct -/
+
+/-- `Atom`'s derived `==` is equality (it has no `LawfulBEq` instance). -/
+theorem atom_eq_of_beq {a b : Atom} (h : (a == b) = true) : a = b := by
+  cases a; cases b
+  revert h
+  simp [BEq.beq, instBEqAtom.beq]
+
+/-- `dedup`'s fold keeps the accumulator and adds the list. -/
+theorem mem_dedup_foldl {l acc : List Atom} {a : Atom} :
+    a ∈ List.foldl (fun acc a => if acc.contains a then acc else acc ++ [a]) acc l ↔
+      a ∈ acc ∨ a ∈ l := by
+  induction l generalizing acc with
+  | nil => simp
+  | cons b l ih =>
+    rw [List.foldl_cons, ih]
+    split <;> rename_i h
+    · have hb : b ∈ acc := by
+        obtain ⟨x, hx, hbx⟩ := List.contains_iff_exists_mem_beq.mp h
+        exact atom_eq_of_beq hbx ▸ hx
+      constructor
+      · rintro (h | h)
+        · exact .inl h
+        · exact .inr (List.mem_cons_of_mem _ h)
+      · rintro (h | h)
+        · exact .inl h
+        · rcases List.mem_cons.mp h with rfl | h
+          · exact .inl hb
+          · exact .inr h
+    · simp [or_assoc]
+
+/-- `dedup` keeps exactly the members of its input. -/
+theorem mem_dedup {l : List Atom} {a : Atom} : a ∈ dedup l ↔ a ∈ l := by
+  simp [dedup, mem_dedup_foldl]
+
+/-- `eval` depends only on the valuation of the formula's atoms. -/
+theorem eval_congr {V : Type} {m : Matrix V} {v w : Atom → V} (f : Formula)
+    (h : ∀ a ∈ atomList.go f, v a = w a) : eval m v f = eval m w f := by
+  induction f with
+  | atomF a => simp [eval, h a (by simp [atomList.go])]
+  | not a ih => simp only [eval]; rw [ih h]
+  | and a b iha ihb | or a b iha ihb | implies a b iha ihb =>
+    simp only [eval]
+    rw [iha (fun x hx => h x (by simp [atomList.go, hx])),
+      ihb (fun x hx => h x (by simp [atomList.go, hx]))]
+  | _ => rfl
+
+/-- An enumerated assignment keeps every known value of `p` on `as`. -/
+theorem completionsOn_sound {p : Atom → TV3} {as : List Atom} {asg : List (Atom × Bool)}
+    (h : asg ∈ completionsOn p as) : ∀ a ∈ as, p a = .u ∨ p a = TV3.ofBool (lookup asg a) := by
+  induction as generalizing asg with
+  | nil => simp
+  | cons a0 as ih =>
+    intro a ha
+    simp only [completionsOn, List.mem_flatMap, List.mem_map] at h
+    obtain ⟨b, hb, r, hr, rfl⟩ := h
+    have hb' : p a0 = .u ∨ p a0 = TV3.ofBool b := by
+      cases hpa : p a0 <;> rw [hpa] at hb <;> cases b <;> simp_all [TV3.ofBool]
+    simp only [lookup]
+    by_cases hab : a = a0
+    · subst hab; simpa using hb'
+    · simp only [hab, ↓reduceIte]
+      exact ih hr a (by simpa [hab] using ha)
+
+/-- A completion restricted to `as` is enumerated by `completionsOn`. -/
+theorem restrict_mem {p : Atom → TV3} {c : Atom → Bool} (hc : Completes p c) (as : List Atom) :
+    as.map (fun a => (a, c a)) ∈ completionsOn p as := by
+  induction as with
+  | nil => simp [completionsOn]
+  | cons a0 as ih =>
+    simp only [completionsOn, List.mem_flatMap, List.mem_map, List.map_cons]
+    refine ⟨c a0, ?_, _, ih, rfl⟩
+    rcases hc a0 with h | h <;> rw [h] <;> cases c a0 <;> simp [TV3.ofBool]
+
+/-- Looking up a restriction gives back the completion on `as`. -/
+theorem lookup_restrict {c : Atom → Bool} {as : List Atom} {a : Atom} (ha : a ∈ as) :
+    lookup (as.map fun a => (a, c a)) a = c a := by
+  induction as with
+  | nil => simp at ha
+  | cons a0 as ih =>
+    simp only [List.map_cons, lookup]
+    by_cases hab : a = a0
+    · subst hab; simp
+    · simp only [hab, ↓reduceIte]
+      exact ih (by simpa [hab] using ha)
+
+/-- `admissible` depends only on the atoms in the groups. -/
+theorem admissible_congr {cs : List (List Atom)} {c d : Atom → Bool}
+    (h : ∀ g ∈ cs, ∀ a ∈ g, c a = d a) : admissible cs c = admissible cs d := by
+  induction cs with
+  | nil => rfl
+  | cons g cs ih =>
+    have e1 := List.filter_congr (h g (by simp))
+    have e2 := ih (fun g' hg' => h g' (by simp [hg']))
+    simp only [admissible, List.all_cons] at e2 ⊢
+    rw [e1, e2]
+
+/-- `mapM` of a function that never errors is `.ok` of `map`. -/
+theorem mapM_ok {α β ε : Type} {l : List α} {g : α → Except ε β} {k : α → β}
+    (H : ∀ x ∈ l, g x = .ok (k x)) : l.mapM g = .ok (l.map k) := by
+  induction l with
+  | nil => rfl
+  | cons x l ih =>
+    rw [List.mapM_cons, H x (by simp), ih (fun y hy => H y (by simp [hy]))]
+    rfl
+
+/-- `c` is a completion of `p` that satisfies every constraint. -/
+def AdmissibleCompletion (p : Atom → TV3) (cs : List (List Atom)) (c : Atom → Bool) : Prop :=
+  Completes p c ∧ admissible cs c = true
+
+/-- **Theorem 6.** `exactStatus` says what it enumerates. Each enumerated
+assignment extends to an admissible completion with the same value of `f`
+(atoms outside the enumeration take their known value, or true), and each
+admissible completion restricts to an enumerated assignment with the same
+value, because `f` and the constraints mention only enumerated atoms. -/
+theorem exactStatus_spec {f : Formula} {p : Atom → TV3} {cs : List (List Atom)}
+    (hf : isCore f = true) :
+    match exactStatus f p cs with
+    | .ok .noAdmissibleCompletion => ¬ ∃ c, AdmissibleCompletion p cs c
+    | .ok .always => (∃ c, AdmissibleCompletion p cs c) ∧
+        ∀ c, AdmissibleCompletion p cs c → eval classical c f = .ok true
+    | .ok .never => (∃ c, AdmissibleCompletion p cs c) ∧
+        ∀ c, AdmissibleCompletion p cs c → eval classical c f = .ok false
+    | .ok .sometimes => (∃ c, AdmissibleCompletion p cs c ∧ eval classical c f = .ok true) ∧
+        (∃ c, AdmissibleCompletion p cs c ∧ eval classical c f = .ok false)
+    | .error _ => False := by
+  have hev : ∀ c, eval classical c f = .ok ((eval classical c f).toOption.getD false) := by
+    intro c
+    obtain ⟨b, hb⟩ := eval_core_ok classical c f hf
+    rw [hb]; rfl
+  simp only [exactStatus, hf, ite_true]
+  rw [mapM_ok (k := fun asg => (eval classical (lookup asg) f).toOption.getD false)
+    (fun asg _ => hev _)]
+  generalize hS : List.filter (fun asg => admissible cs (lookup asg))
+    (completionsOn p (dedup (atomList f ++ cs.flatten))) = S
+  generalize hk : (fun asg => (eval classical (lookup asg) f).toOption.getD false) = k
+  have hinf : ∀ {a}, a ∈ atomList.go f → a ∈ dedup (atomList f ++ cs.flatten) := fun ha =>
+    mem_dedup.mpr (List.mem_append_left _ (mem_dedup.mpr ha))
+  have hincs : ∀ {g a}, g ∈ cs → a ∈ g → a ∈ dedup (atomList f ++ cs.flatten) := fun hg ha =>
+    mem_dedup.mpr (List.mem_append_right _ (List.mem_flatten.mpr ⟨_, hg, ha⟩))
+  -- every enumerated assignment extends to an admissible completion
+  have h2 : ∀ asg ∈ S, ∃ c, AdmissibleCompletion p cs c ∧ eval classical c f = .ok (k asg) := by
+    classical
+    intro asg hm
+    rw [← hS, List.mem_filter] at hm
+    obtain ⟨hmc, hadm⟩ := hm
+    refine ⟨fun a => if a ∈ dedup (atomList f ++ cs.flatten) then lookup asg a else decide (p a = .t),
+      ⟨?_, ?_⟩, ?_⟩
+    · intro a
+      by_cases ha : a ∈ dedup (atomList f ++ cs.flatten)
+      · simp only [ha, ↓reduceIte]
+        exact completionsOn_sound hmc a ha
+      · simp only [ha, ↓reduceIte]
+        cases p a <;> simp [TV3.ofBool]
+    · rw [admissible_congr (d := lookup asg) (fun g hg a ha => by simp [hincs hg ha])]
+      exact hadm
+    · rw [← hk, eval_congr (w := lookup asg) f (fun a ha => by simp [hinf ha])]
+      exact hev _
+  -- every admissible completion restricts to an enumerated assignment
+  have h3 : ∀ c, AdmissibleCompletion p cs c → ∃ asg ∈ S, eval classical c f = .ok (k asg) := by
+    rintro c ⟨hc, hadm⟩
+    refine ⟨(dedup (atomList f ++ cs.flatten)).map (fun a => (a, c a)), ?_, ?_⟩
+    · rw [← hS, List.mem_filter]
+      refine ⟨restrict_mem hc _, ?_⟩
+      rw [admissible_congr (d := c) (fun g hg a ha => lookup_restrict (hincs hg ha))]
+      exact hadm
+    · rw [← hk]
+      dsimp only
+      rw [eval_congr (w := c) f (fun a ha => lookup_restrict (hinf ha))]
+      exact hev c
+  dsimp only [bind, Except.bind]
+  by_cases e1 : (S.map k).isEmpty = true
+  · simp only [e1, ↓reduceIte]
+    show ¬ _
+    rintro ⟨c, hc⟩
+    obtain ⟨asg, hm, _⟩ := h3 c hc
+    have : S = [] := by simpa using e1
+    rw [this] at hm
+    simp at hm
+  obtain ⟨asg0, hasg0⟩ : ∃ asg0, asg0 ∈ S := by
+    cases S with
+    | nil => simp at e1
+    | cons x _ => exact ⟨x, List.mem_cons_self⟩
+  obtain ⟨c0, hc0, _⟩ := h2 asg0 hasg0
+  simp only [e1, ↓reduceIte, Bool.false_eq_true]
+  by_cases e2 : (S.map k).all id = true
+  · simp only [e2, ↓reduceIte]
+    show _ ∧ _
+    refine ⟨⟨c0, hc0⟩, fun c hc => ?_⟩
+    obtain ⟨asg, hm, he⟩ := h3 c hc
+    rw [he]
+    have := List.all_eq_true.mp e2 (k asg) (List.mem_map_of_mem hm)
+    simp only [id] at this
+    rw [this]
+  simp only [e2, ↓reduceIte, Bool.false_eq_true]
+  by_cases e3 : ((S.map k).all fun x => !x) = true
+  · simp only [e3, ↓reduceIte]
+    show _ ∧ _
+    refine ⟨⟨c0, hc0⟩, fun c hc => ?_⟩
+    obtain ⟨asg, hm, he⟩ := h3 c hc
+    rw [he]
+    have := List.all_eq_true.mp e3 (k asg) (List.mem_map_of_mem hm)
+    simp only [Bool.not_eq_true'] at this
+    rw [this]
+  simp only [e3, ↓reduceIte, Bool.false_eq_true]
+  show _ ∧ _
+  have hfalse : ∃ asg ∈ S, k asg = false := by
+    refine Classical.byContradiction fun hne => e2 (List.all_eq_true.mpr ?_)
+    intro x hx
+    obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hx
+    cases hka : k a
+    · exact absurd ⟨a, ha, hka⟩ hne
+    · rfl
+  have htrue : ∃ asg ∈ S, k asg = true := by
+    refine Classical.byContradiction fun hne => e3 (List.all_eq_true.mpr ?_)
+    intro x hx
+    obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hx
+    cases hka : k a
+    · rfl
+    · exact absurd ⟨a, ha, hka⟩ hne
+  obtain ⟨a1, ha1, hk1⟩ := htrue
+  obtain ⟨a2, ha2, hk2⟩ := hfalse
+  obtain ⟨c1, hc1, he1⟩ := h2 a1 ha1
+  obtain ⟨c2, hc2, he2⟩ := h2 a2 ha2
+  exact ⟨⟨c1, hc1, hk1 ▸ he1⟩, ⟨c2, hc2, hk2 ▸ he2⟩⟩
 end Gamen.ManyValued

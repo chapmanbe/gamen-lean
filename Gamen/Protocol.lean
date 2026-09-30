@@ -61,7 +61,12 @@ end Protocol
 
 open Protocol in
 /-- Decode a formula. A `"type"` key selects tree format; an `"op"` key
-selects flat format. -/
+selects flat format.
+
+`partial` because the recursion goes through field lookups (`sub`
+fetches a child by key from the object's field map), which Lean can't see
+as structural descent into `Json`. It terminates: every recursive call
+decodes a value nested strictly inside `j`, and parsed JSON is finite. -/
 partial def decodeFormula (j : Json) : Except String Formula := do
   let .obj _ := j | throw "Formula JSON must be an object"
   match ← optStr j "type", ← optStr j "op" with

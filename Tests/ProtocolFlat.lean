@@ -57,6 +57,21 @@ def cases : List (String × Bool) := [
   ("gamen-lean#1: temporal_op is checked before op, as in gamen-hs",
     isErr (flat "{\"op\":\"must\",\"atom\":\"x\",\"temporal_op\":\"weird\"}")
       "unknown flat temporal_op: weird"),
+  ("flat: a missing atom is reported before a bad temporal_op or op, as in gamen-hs",
+    isErr (flat "{\"op\":\"must\"}") "key \"atom\" not found"
+      && isErr (flat "{\"op\":\"box\",\"temporal_op\":\"weird\"}") "key \"atom\" not found"),
+  ("gamen-lean#1: an empty op or temporal_op is rejected",
+    isErr (flat "{\"op\":\"\",\"atom\":\"x\"}") "unknown flat op: "
+      && isErr (flat "{\"op\":\"box\",\"atom\":\"x\",\"temporal_op\":\"\"}")
+        "unknown flat temporal_op: "),
+  ("flat: a null agent or conditional means absent",
+    flat "{\"op\":\"box\",\"atom\":\"x\",\"agent\":null}" == .ok (.box (.atom "x"))
+      && flat "{\"op\":\"box\",\"atom\":\"x\",\"conditional\":null}" == .ok (.box (.atom "x"))),
+  ("flat: a \"type\" key selects tree format even when \"op\" is present",
+    flat "{\"type\":\"atom\",\"name\":\"p\",\"op\":\"must\"}" == .ok (.atom "p")),
+  ("gamen-lean#1: check_consistency answers ok:false for an unknown flat op",
+    (processLine "{\"action\":\"check_consistency\",\"formulas\":[{\"op\":\"prohibition\",\"atom\":\"x\"}]}").compress
+      == "{\"error\":\"unknown flat op: prohibition\",\"ok\":false}"),
   ("gamen-lean#1: validate_formula reports it as a parse_error (gamen-hs's exact bytes)",
     (processLine "{\"action\":\"validate_formula\",\"formula\":{\"op\":\"box\",\"atom\":\"statin\",\"temporal_op\":\"sometimes\"}}").compress
       == "{\"ok\":true,\"result\":{\"parse_error\":\"unknown flat temporal_op: sometimes\",\"valid\":false}}") ]

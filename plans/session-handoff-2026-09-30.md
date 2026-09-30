@@ -16,7 +16,7 @@ thread means: its plan's "Done when" is met; it was reviewed independently
 ## Where things stand (snapshot, 2026-09-30; verify with `git log`)
 
 **gamen-lean:**
-- `main` is at `820fc3a`, **pushed**. `lake test` passes 1167/1167.
+- `main` is at `e2a3749`, **pushed**. `lake test` passes 1188/1188.
 - Every gamen-hs library module is ported, including Visualize. See
   PORTING.md for the rest.
 - Untracked, deliberately: `notes/dcleg-thesis-final.pdf`, Jeremiah's final
@@ -108,14 +108,16 @@ pushed, with Phase 1 (honest timing reporting) merged. Its untracked
 | K tableau soundness | `plans/countermodel-explorer-and-k-soundness-2026-09-29.md` Part B | Part A (countermodel explorer) merged | B0 spike on derived `Ord` lawfulness |
 | Edition-proof citations | same plan, Part C | not started | `tools/bd/citations.py` index/check/migrate. Now also covers DCLEG citations |
 | DCLEG thesis verification | `plans/dcleg-thesis-verification-2026-09-29.md` | Proofs draft on `dcleg-proofs-draft` (see above). An F-condition validator and a random admissible-F generator exist in `Gamen/Dcleg.lean` and the tests | **Wait for Brian's talk with Jeremiah.** Then: his answers to Q1–Q18 (especially Q12 and Q13), then finish Lemma 4.1, Theorem 4.2, Lemma 5.2 and Theorem 5.1 |
-| Downstream migration | `plans/downstream-migration-2026-09-29.md` | not started | Phase 0a/0b: a `{"action":"version"}` request and `tools/install.sh`; then guideline-validation, then cwyde. Blocked beyond that: gamen-simulations needs the `dcleg-service` port (0c) |
+| Downstream migration | `plans/downstream-migration-2026-09-29.md` | **Phase 0a/0b done 2026-09-30** (merged): the Lean-only `version` action (commit stamped at compile time in `Validate/BuildInfo.lean`; `enableArtifactCache = false` in `lakefile.toml` keeps Lake's shared cache from restoring another commit's stamp) and `tools/install.sh`, which copies the binary to `~/.local/share/gamen-lean/` and puts it on PATH only with `--link` (`~/.local/bin` is already on PATH, so linking switches every caller at once). Also fixed gamen-lean#1 (flat decoder guessed on unknown `op`/`temporal_op`; port of gamen-hs#60), found by `compare.py` | Migrate guideline-validation (set `GAMEN_VALIDATE_BIN` to the installed copy; a session in that repo, with Brian's approval), then cwyde (`CWYDE_GAMEN_BIN`). `tools/install.sh --link` only after both are verified. Blocked beyond that: gamen-simulations needs the `dcleg-service` port (0c) |
 
 ## Interfaces / contracts
 
 - **`gamen-validate`:** existing request types are byte-compatible with
-  gamen-hs, except for the listed divergences. The planned `version`
-  action is
-  `{"ok":true,"result":{"implementation":"gamen-lean","commit":…,"protocol":1}}`.
+  gamen-hs, except for the listed divergences. Compare against gamen-hs
+  `main` (`fd8b269`): the only disagreements are divergence #1's 103. The
+  Lean-only `version` action answers
+  `{"ok":true,"result":{"commit":…,"implementation":"gamen-lean","protocol":1}}`
+  (keys alphabetical, as Lean's `Json.compress` writes them).
 - **The DCLEG premise function:** `withMovePremises` gives decision nodes
   one premise per move plus {(γ,w)}, and outcome nodes the two-premise
   system above. `validateDclegModel` returns `[]` iff the model is
@@ -166,6 +168,13 @@ pushed, with Phase 1 (honest timing reporting) merged. Its untracked
 - [ ] **Housekeeping:** a stale lean4web `nodemon` process (pid 10887,
   from `gamen-roc/sketches`, started Sept 23) serves nothing. Brian may
   kill it.
+- [ ] **Lake's shared artifact cache** holds entries a reviewer agent
+  wrote from a scratch copy, stamped with a commit that exists nowhere
+  else. gamen-lean no longer reads the cache, but other projects might.
+  Brian to delete, under
+  `~/.elan/toolchains/leanprover--lean4---v4.34.0/lake/cache/`:
+  `artifacts/{20f4a01cacdbb3c6.olean,327f6e9ba58ade39.c,5516e1a25897b132.o,acee21cabbec8663}`
+  and `outputs/gamen/{6c5edf91c6782ab3,059682ff6733f6dd,bb9345f3b77a0a02}.json`.
 - [ ] **The draft limitation paragraph** in the Lean GV port,
   `docs/notes/timing-limitation-draft.md`, awaits Brian's review before
   any manuscript use.
@@ -174,8 +183,9 @@ pushed, with Phase 1 (honest timing reporting) merged. Its untracked
 
 1. **Ask Brian which thread to pick up.** Only the DCLEG proofs are waiting
    on him and Jeremiah; everything else is unblocked.
-2. If he doesn't say: **migration Phase 0a/0b.** It's small, unblocks the
-   downstream work, and ends the "which binary answered" ambiguity.
+2. **Migration Phase 0a/0b: done 2026-09-30.** If he doesn't say: migrate
+   guideline-validation to the installed Lean binary (its own session, in
+   that repository, with Brian's approval).
 3. **Guideline-validation Phase 2: done 2026-09-30.** Waiting on Brian's
    approval of the draft definitions (see the table above). Follow-ups:
    `plans/gv-phase2-followups-2026-09-30.md`.

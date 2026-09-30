@@ -40,13 +40,20 @@ note in the plan records this.
   (canonical mode) or ignores it (paper mode). K3 over opaque atoms is a
   lookup, so Phase 2 needs a **condition vocabulary**: each slug defined as a
   formula over patient facts.
-- The 20 paper-mode conflicts (`test/golden/conflicts_stripped.json`) involve
-  only 4 rec conditionals and 3 restriction `applies_when` strings:
-  - recs: `atrial_fibrillation_in_ckd` (R138), `adults_high_bp_and_ckd` (R16),
-    `children_with_ckd` (R17), `ckd_g1_g4_a3_without_diabetes` (R18);
-  - restrictions: `CKD G3-G5 (universal in this stage range)`,
+- The 20 paper-mode conflicts (`test/golden/conflicts_stripped.json`) pair 4
+  AHA recs from `blumenthal-2026_extracted.json` with 3 KDIGO restrictions.
+  (Corrected 2026-09-30: an earlier survey looked the rec ids up in the KDIGO
+  files, where the same ids name different recs.)
+  - Only R18 has a `conditional`: `moderate_hypertriglyceridemia` ("In
+    adults with fasting TG levels of 150 to 499 mg/dL …"). R16, R17 and
+    R138 are unconditional.
+  - Restrictions: `CKD G3-G5 (universal in this stage range)`,
     `hyperkalemia on renin-angiotensin system inhibitor therapy`,
     `hyperphosphatemia`.
+  - So the vocabulary needs 4 definitions. KDIGO Rec 4.1.8 reads "In
+    patients with CKD G3a–G5D … in the treatment of hyperphosphatemia," so
+    the draft follows the cited source text, not the `applies_when`
+    paraphrase, and notes the difference for Brian's review.
 - With these definitions no real conflict pair can over-warn (no pair joins
   contradictory conditions). Over-warning is tested with synthetic formulas.
 
@@ -88,11 +95,11 @@ planted bug (flip one K3 table entry) caught.
 
 **`facts.json`**, the fact vocabulary:
 - enumerated: `ckd_status ∈ {none, G1, G2, G3a, G3b, G4, G5}`,
-  `albuminuria ∈ {A1, A2, A3}`, `age_group ∈ {child, adult}`. Each value is an
-  atom (`ckd_status=G3a`); each enumerated fact yields an `exactlyOne`
-  constraint. "Has CKD" is `ckd_status ≠ none`;
-- boolean: `diabetes`, `hypertension`, `atrial_fibrillation`, `hyperkalemia`,
-  `on_rasi`, `hyperphosphatemia`;
+  `fasting_tg ∈ {below_150, 150_to_499, 500_or_more}` (mg/dL),
+  `age_group ∈ {child, adult}`. Each value is an atom (`ckd_status=G3a`);
+  each enumerated fact yields an `exactlyOne` constraint. "Has CKD" is
+  `ckd_status ≠ none`;
+- boolean: `hyperkalemia`, `on_rasi`, `hyperphosphatemia`;
 - each category system cites the KDIGO section defining it, checked against
   the KDIGO text, not memory.
 

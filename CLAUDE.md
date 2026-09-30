@@ -1,10 +1,15 @@
 # gamen-lean — Claude Code instructions
 
-Lean 4 port of [gamen-hs](https://github.com/chapmanbe/gamen-hs)
-(`~/Projects/Logic/Haskell/gamen-hs`), plus teaching notebooks that
-replace the Gamen.jl Pluto notebooks. Brian Chapman and Jeremiah Chapman.
-Plan and per-module status: `PORTING.md`. Why Lean, and the evidence:
-`docs/assessment/`.
+The Gamen modal logics in Lean 4, plus teaching notebooks that replace the
+Gamen.jl Pluto notebooks. Brian Chapman and Jeremiah Chapman.
+
+**gamen-lean is the primary implementation** (decided 2026-09-29). It began
+as a port of [gamen-hs](https://github.com/chapmanbe/gamen-hs)
+(`~/Projects/Logic/Haskell/gamen-hs`), and every library module was ported
+by 2026-09-29. gamen-hs is now frozen: new logics, features and bug fixes
+happen here, and are not mirrored back to Haskell. Port history and status
+by module: `PORTING.md`. Why Lean, and the evidence: `docs/assessment/`.
+Forward plans: `plans/*-2026-09-29.md`.
 
 ## Build
 
@@ -12,13 +17,22 @@ Plan and per-module status: `PORTING.md`. Why Lean, and the evidence:
 - `lake test`: unit, widget, answer-key, and property tests
 - `lake exe slowtests`: slow property cross-checks (~10 min); run after
   touching Tableau, Semantics, RankingTheory, or the DeonticStit prover
-- `python3 tools/compare/compare.py`: side-by-side against gamen-hs's
-  `gamen-validate` (build both first)
+- `python3 tools/compare/compare.py`: compatibility check against gamen-hs's
+  `gamen-validate` for the existing request types (build both first). Any
+  disagreement must be a known, intentional divergence listed in
+  `tools/compare/intentional-divergences.md`; anything else is a
+  regression.
 - Toolchain pinned in `lean-toolchain` (4.34.0); Plausible and ProofWidgets
   pinned to the matching tags in `lakefile.toml`. Upgrade all three together.
 
-## Porting conventions
+## Conventions
 
+- **Fix bugs here, don't copy them.** Until 2026-09-29, bugs found while
+  porting were filed on gamen-hs and copied faithfully until fixed there.
+  Now a bug inherited from gamen-hs is fixed in Lean directly, with a test.
+  If the fix changes `gamen-validate` output for an existing request, add it
+  to `tools/compare/intentional-divergences.md`. File issues on gamen-lean
+  (`gh issue create -R chapmanbe/gamen-lean`), not gamen-hs.
 - **One Lean module per gamen-hs module**, same name (`Gamen.Tableau` ↔
   `src/Gamen/Tableau.hs`), so the two can be read side by side. Keep the
   Haskell function names in lowerCamelCase; constructors are lowerCamelCase
@@ -77,10 +91,13 @@ Plan and per-module status: `PORTING.md`. Why Lean, and the evidence:
   `docs/assessment/lean-library-reuse-2026-09-23.md`: most of Lean's
   library versions are proof-only definitions, and the few executable ones
   must keep gamen-hs's order and output.
-- **Wire compatibility is the contract.** `gamen-validate` output must stay
-  byte-identical to gamen-hs for the requests in scope; run
-  `tools/compare/compare.py` after touching `Protocol.lean`, `Validate.lean`,
-  or any prover.
+- **Keep existing requests compatible.** Downstream projects (cwyde,
+  patient-agent-assistant, guideline-cds-simulation) may still call a
+  `gamen-validate` binary. For the existing request types, output stays
+  byte-identical to gamen-hs except for listed intentional divergences. Run
+  `tools/compare/compare.py` after touching `Protocol.lean`, `Validate.lean`
+  or any prover. New capabilities are Lean-only protocol extensions (new
+  fields or actions, with a version field), out of scope for `compare.py`.
 - Domain knowledge lives in data, not code (Buchanan's separation
   principle); domain axioms come from authoritative sources, never LLMs.
 

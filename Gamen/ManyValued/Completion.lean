@@ -133,6 +133,8 @@ inductive ExactStatus where
   | always | sometimes | never | noAdmissibleCompletion
   deriving DecidableEq, Repr
 
+/-- The K3 verdict: t ↦ `definite`, u ↦ `possible`, f ↦ `absent`; errors on
+a non-core formula, like `eval`. -/
 def k3Status (f : Formula) (p : Atom → TV3) : Except String K3Status := do
   match ← eval strongKleene p f with
   | .t => pure .definite
@@ -140,7 +142,9 @@ def k3Status (f : Formula) (p : Atom → TV3) : Except String K3Status := do
   | .f => pure .absent
 
 /-- `c` makes exactly one atom of each group true. Groups should not
-repeat an atom. -/
+repeat an atom. An empty group is unsatisfiable (no completion makes
+exactly one of zero atoms true), so a `cs` containing `[]` makes
+`exactStatus` return `noAdmissibleCompletion`. -/
 def admissible (cs : List (List Atom)) (c : Atom → Bool) : Bool :=
   cs.all fun g => (g.filter c).length == 1
 
@@ -161,6 +165,7 @@ by enumeration over the atoms of `f` and `cs`. Errors if `f` is not
 propositional. -/
 def exactStatus (f : Formula) (p : Atom → TV3) (cs : List (List Atom)) :
     Except String ExactStatus := do
+  unless isCore f do throw s!"ManyValued.exactStatus: {f} is not a propositional formula"
   let atoms := dedup (atomList f ++ cs.flatten)
   let asgs := (completionsOn p atoms).filter fun asg => admissible cs (lookup asg)
   let vals ← asgs.mapM fun asg => eval classical (lookup asg) f

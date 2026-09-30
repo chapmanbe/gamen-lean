@@ -52,7 +52,9 @@ def cases : List (String × Bool) := [
   ("Completion: k3Status errors on a non-core formula (□p)",
     ManyValuedTests.isErr (k3Status (.box p) allU)),
   ("Completion: exactStatus errors on a non-core formula (□p)",
-    ManyValuedTests.isErr (exactStatus (.box p) allU []))
+    ManyValuedTests.isErr (exactStatus (.box p) allU [])),
+  ("Completion: exactStatus errors on a non-core formula even with no admissible completion",
+    ManyValuedTests.isErr (exactStatus (.box p) (fun _ => .t) [[⟨"p"⟩, ⟨"q"⟩]]))
 ]
 
 /-! ## Plausible support -/

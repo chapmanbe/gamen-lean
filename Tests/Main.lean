@@ -33,6 +33,7 @@ import Tests.ManyValued
 import Tests.Completion
 import Tests.ManyValuedNotebooks
 import Tests.ValidateVersion
+import Tests.ProtocolFlat
 
 /-!
 # Tests
@@ -6120,7 +6121,8 @@ def main : IO UInt32 := do
   -- tables in `data/specs/` checked against strong Kleene.
   let specCases ← ManyValuedTests.specTableCases
   for (name, ok) in ManyValuedTests.cases ++ specCases ++ CompletionTests.cases
-      ++ ManyValuedNotebookTests.cases ++ ValidateVersionTests.cases do
+      ++ ManyValuedNotebookTests.cases ++ ValidateVersionTests.cases
+      ++ ProtocolFlatTests.cases do
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
   IO.println "Properties (Plausible; sample size varies by property, see Tests/Main.lean)"
@@ -6147,6 +6149,7 @@ def main : IO UInt32 := do
     + visualizeCases.length
     + ManyValuedTests.cases.length + specCases.length + CompletionTests.cases.length
     + ManyValuedNotebookTests.cases.length + ValidateVersionTests.cases.length
+    + ProtocolFlatTests.cases.length
     + properties.length
   IO.println s!"{total - failures}/{total} passed"
   return if failures == 0 then 0 else 1

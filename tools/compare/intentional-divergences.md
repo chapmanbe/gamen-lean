@@ -30,6 +30,12 @@ Each entry records:
     and was built 2026-09-29 18:27: **103 DISAGREE**, all of them this case.
     (`compare.py` seed 20260923; 4731 requests: 4614 identical, 14
     equivalent, 0 scope gaps, 103 disagreements.)
+  - gamen-hs `main` at `fd8b269` (after its #57, #58, #61 and #63 merged,
+    2026-09-29 evening), compared 2026-09-30 after gamen-lean#1 ported
+    gamen-hs#60 (the flat decoder): **103 DISAGREE**, all of them this case.
+    (4731 requests: 4582 identical, 46 equivalent, 0 scope gaps, 103
+    disagreements. Before gamen-lean#1, section C also had 64
+    disagreements: that was a gamen-lean bug, not a divergence.)
 - **Status:** intentional. PR #44 is still open on gamen-hs. If it merges,
   this divergence disappears against gamen-hs `main`.
 

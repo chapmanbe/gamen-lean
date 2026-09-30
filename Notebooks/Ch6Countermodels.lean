@@ -58,7 +58,9 @@ K this is a decision procedure (B&D §6.9, p. 110).
 B&D shows that □(p ∨ q) → (□p ∨ □q) is not valid in K. Here is the open
 branch the tableau finds, computed, not typed in. Each line says which rule
 produced it from which earlier line; "assumption" marks the starting
-point.
+point. It is a single branch: where a rule splits (the ∨T lines 10 and 11),
+only the side that stays open is printed. The side that closes belongs to
+another branch and is not shown; the note on the split line names it.
 -/
 open Gamen Gamen.Widgets ProofWidgets
 
@@ -75,8 +77,9 @@ p ∨ q into every world that 1 sees (lines 7 and 9).
 Lines 10 and 11 are splits. At 1.1, p ∨ q can be true because p is or
 because q is. The p side contradicts line 6 (1.1 F p), so that branch
 closes; the q side stays open. At 1.2 the q side closes against line 8, and
-the p side stays open. Nothing else applies, so this branch is open and
-complete.
+the p side stays open. Only the open sides, 1.1 T q and 1.2 T p, appear in
+the printout; the closed sides 1.1 T p and 1.2 T q are named only in the
+notes. Nothing else applies, so this branch is open and complete.
 
 ## Example 6.22: the model
 
@@ -96,6 +99,11 @@ that it satisfies every line of the branch.
 #eval (countermodelView systemK [] example622).summary
 
 /-!
+`.summary` is the verdict as one line of text (`#eval countermodelView …`
+without it shows the same line). The branch and the diagram need `#html`.
+"Open branch 1" means the first open branch in the order the tableau lists
+them; here there is only one.
+
 Compare with B&D (pp. 112–113): W = {1, 1.1, 1.2},
 R = {⟨1, 1.1⟩, ⟨1, 1.2⟩}, V(p) = {1.2} and V(q) = {1.1} (Figure 6.1).
 
@@ -109,12 +117,14 @@ unknown, from giving the tableau only 3 steps:
 /-!
 ## Example 6.22: explore the model
 
-`countermodelHtml` draws the countermodel. The panel has three parts:
+`countermodelHtml` draws the countermodel. The panel has four parts:
 
 - **the diagram**: each circle is a world, labeled by its prefix, with
   arrows for R;
 - **the facts** listed under each world: the atoms true there, or
   "(nothing)";
+- **the row of fact buttons** below the diagram, one per atom: click one to
+  select it, then click a world to switch that fact on or off there;
 - **the checks** at the bottom, evaluated at world 1: ✗ means false there,
   ✓ means true. For a countermodel the conclusion's check is ✗.
 
@@ -192,6 +202,7 @@ and Lean rejects the file if it is wrong.
 -/
 
 example : (countermodelView systemK [] example622).isCountermodel = true := by native_decide
+-- Not an exercise: the K axiom, for comparison. It is valid.
 example : (countermodelView systemK [] ml[ □(p → q) → (□p → □q) ]).isValid = true := by
   native_decide
 example : (countermodelView systemK [] exercise1).isCountermodel = true := by native_decide

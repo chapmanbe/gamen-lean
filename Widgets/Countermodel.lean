@@ -404,6 +404,10 @@ def CountermodelView.summary : CountermodelView → String
   | .unknown why => s!"unknown: {why}"
   | .countermodel sc i => s!"countermodel (open branch {i}): {"; ".intercalate sc.modelLines}"
 
+/-- `#eval countermodelView …` shows the one-line summary. -/
+instance : ToString CountermodelView := ⟨CountermodelView.summary⟩
+instance : Repr CountermodelView := ⟨fun v _ => v.summary⟩
+
 /-- Feedback for "is it valid?": `n` numbers the line, `hint` is shown only
 after a wrong answer. -/
 def gradeValidity (n : Nat) (prediction : Option Bool) (v : CountermodelView)

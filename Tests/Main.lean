@@ -508,6 +508,9 @@ def answerKeyCases : List Case := [
       "9. 1.2 T (p ∨ q)    (□T 2)",
       "10. 1.1 T q    (∨T 7; the other side, 1.1 T p, closes against line 6)",
       "11. 1.2 T p    (∨T 9; the other side, 1.2 T q, closes against line 8)"]⟩,
+  ⟨"ch6 #eval of a verdict shows its summary",
+    toString ex622View == ex622View.summary
+      && (repr ex622View).pretty == ex622View.summary⟩,
   ⟨"ch6 the unknown verdict with a 3-step budget",
     (Gamen.Widgets.countermodelView systemK [] example622 (maxSteps := 3)).summary
       == "unknown: the tableau ran out of its step budget (3 steps)"⟩,

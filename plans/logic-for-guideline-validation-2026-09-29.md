@@ -26,7 +26,9 @@ KD and doxastic D.
 
 The literature search is in
 `references/logic-for-guideline-validation-2026-09-29.md` (13 papers, all
-verified by Crossref DOI). It is not committed yet; see decision D1.
+verified by Crossref DOI). Its PDFs live in `references/pdfs/` (decision D1,
+resolved 2026-09-29: references that drive gamen-lean's implementation live
+in gamen-lean).
 
 What this plan relies on:
 - **anselma2006** (Anselma, Terenziani, Montani, Bottrighi, *AI in
@@ -170,14 +172,16 @@ For a real patient, a condition may be unknown.
   joint research question rather than an engineering task. Start only
   after Phases 2–4.
 
-### Phase 6: getting it into the checker (decision D2)
+### Phase 6: getting it into the checker
 
-- `gamen-validate` must stay **byte-identical to gamen-hs** for the requests
-  in scope. The new layers are outside that scope, so they need either:
-  - a Lean-only protocol extension: new request fields or actions, a
-    version field, and `compare.py` treating these requests as out of
-    scope; or
-  - the same features ported to gamen-hs.
+**Decision D2, resolved 2026-09-29: Lean-only. gamen-hs is not updated.**
+Brian's direction is that gamen-lean is now the primary implementation, and
+Haskell work stops unless Lean proves unable to implement a logic. So:
+- the new layers are a Lean-only protocol extension: new request fields or
+  actions, plus a version field;
+- `compare.py` treats these requests as out of scope for gamen-hs;
+- the existing requests stay byte-compatible, so `gamen-validate` still
+  replaces the Haskell binary for downstream callers.
 - The Lean guideline-validation port calls gamen-lean as a library, so it
   can use Phases 2 and 4 **without** protocol changes. That makes it the
   natural first consumer.
@@ -203,9 +207,6 @@ For a real patient, a condition may be unknown.
 4. Phase 4's periodicity, then Phase 5, as research milestones.
 
 **Stop and ask the user** before:
-- **D1:** where the references and PDFs live: gamen-lean `references/`,
-  the canonical repository's `papers/`, or the Lean port;
-- **D2:** a Lean-only protocol extension vs changes to gamen-hs;
 - any change in the canonical repository (the extraction schema or prompt,
   the manuscript);
 - involving Jeremiah, or clinicians;

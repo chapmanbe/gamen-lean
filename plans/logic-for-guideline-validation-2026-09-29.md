@@ -108,6 +108,11 @@ For a real patient, a condition may be unknown.
   - possible ⇔ conflict in some completions but not all.
 
   These are small and teachable, and the notebooks can reuse them.
+
+  **Correction (2026-09-30):** the third is false as stated. K3 is sound
+  but not complete: `p ∧ ¬p` with `p` unknown is possible, yet true in no
+  completion. What holds is one direction: some-but-not-all ⇒ possible.
+  Design: `docs/superpowers/specs/2026-09-30-gv-phase2-missing-data-design.md`.
 - **Data:** patient facts come from the simulation or C-CDA side
   (guideline-cds-simulation, patient-agent-assistant). Pin the condition
   vocabulary in a data file, not in code.

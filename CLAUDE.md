@@ -122,8 +122,13 @@ Forward plans: `plans/*-2026-09-29.md`.
   the pinned ProofWidgets release (Apache-2.0; debug line removed).
 - Notebooks: prose in `/-! … -/`, formulas in `ml[ … ]`, answers graded by
   `#eval` (`grade`, `gradeFormula`), and machine-checked claims via
-  `native_decide`. `decide` does not work on the current semantics
-  (well-founded recursion, `TreeSet`).
+  `native_decide`. `decide` does not work on the Kripke semantics
+  (well-founded recursion, `TreeSet`). `Gamen.ManyValued` is the
+  exception: it was built for `decide` (structural recursion, no `TreeSet`),
+  so its claims are kernel-checked. Design new modules that way when you
+  can. Axiom audits must be allowlists (`propext`, `Classical.choice`,
+  `Quot.sound`): at Lean 4.34, `native_decide` shows up as
+  `<thm>._native.native_decide.ax_…`, not `Lean.ofReduceBool`.
 - Every stated answer in a ported notebook goes into the answer-key tests.
 
 ## Web editor (`web/`)

@@ -3682,12 +3682,12 @@ def properties : List (String × IO Bool) :=
           let a ← dclegSatisfies dclegPropGame g w (.dfOr f.getFormula .dfBot)
           let b ← dclegSatisfies dclegPropGame g w f.getFormula
           return a == b) = true) 100),
-    ("Dcleg □ T-axiom (§2.5 S5): □φ → φ at every point",
+    ("Dcleg □ T-axiom (§3.2.5 S5, p. 23): □φ → φ at every point",
       run (NamedBinder "f" <| ∀ f : DclegPropFormula,
         isOkTrue (dclegPropPoints.allM fun (g, w) => do
           if !(← dclegSatisfies dclegPropGame g w (.dfBox f.getFormula)) then return true
           dclegSatisfies dclegPropGame g w f.getFormula) = true) 100),
-    ("Dcleg centering (§2.2): if φ holds at (γ,w) then φ □→ ψ ↔ ψ at decision nodes",
+    ("Dcleg centering (§3.2.2, p. 19): if φ holds at (γ,w) then φ □→ ψ ↔ ψ at decision nodes",
       run (NamedBinder "f" <| ∀ f : DclegPropFormula, NamedBinder "g" <| ∀ g : DclegPropFormula,
         isOkTrue (dclegDecisionPoints.allM fun (γ, w) => do
           if !(← dclegSatisfies dclegPropGame γ w f.getFormula) then return true
@@ -5390,12 +5390,22 @@ Ports, in file order:
 * Not in gamen-hs (end of `dclegCases`): errors, short-circuiting, and a
   three-move and a one-move vertex, every value and error text from GHCi.
 
-Citations fixed against the pinned DCLEG v5.0 draft (`notes/dcleg-edition.md`):
-Table 1 ("Some Validities") is §2.7, not §2.5 or §1.2; □'s uniformity is
-§2.5's text, not Table 1; Presence and Self-Awareness are §2.2's doxastic
-conditions 1 and 5, not §2.4. Table 1 states PerfectInfo, TurnStr, and
-SinglePref with the counterfactual □→ (gamen-hs#53); the Haskell tests check the material
-→ at one point, and are ported as they are.
+Citations are to the final thesis (Chapter 3), with printed pages
+(`notes/dcleg-edition.md`); "DCLEG v5.0" names the April 2026 draft, and
+gamen-hs's quoted describe titles keep its v5.0 numbering, each followed by
+the final section. v5.0's Table 1 ("Some Validities") is its §2.7, not §2.5
+or §1.2, and the final thesis dropped it: the ten tests that cite it are
+labeled "DCLEG v5.0 Table 1 (not in the final thesis)" and kept. □'s
+uniformity is §3.2.5's text (p. 23), not Table 1; Presence and
+Self-Awareness are §3.2.2's doxastic conditions 1 and 5 (p. 20), not §2.4.
+v5.0's Table 1 states PerfectInfo, TurnStr, and SinglePref with the
+counterfactual □→ (gamen-hs#53); the Haskell tests check the material → at
+one point, and are ported as they are.
+
+`withMovePremises` adds the singleton premise {(γ,w)} (gamen-hs TODO(#18),
+fixed in gamen-lean), so Centering holds at single-move vertices; the
+tests that depend on it are marked "fixed in gamen-lean; gamen-hs
+TODO(#18)".
 
 Every satisfaction result is compared with `okIs`/`bothOkEq`, so an error
 fails the case whichever answer was expected. -/
@@ -5454,13 +5464,48 @@ def dclegThreeMove : DclegModel := withMovePremises <| mkDclegModel
   [("p1", [("v0", [("gL", ["gL"]), ("gM", ["gM"]), ("gR", ["gR"])])])]
   [("p1", [("v1", 2), ("v2", 1), ("v3", 0)])]
 
-/-- Not in gamen-hs: a single-move vertex reached by two worlds, where
-`withMovePremises` does not give Centering (adversarial review B8). -/
+/-- Not in gamen-hs: a single-move vertex reached by two worlds. gamen-hs's
+`withMovePremises` does not give Centering here (adversarial review B8);
+gamen-lean's does (fixed in gamen-lean; gamen-hs TODO(#18)). -/
 def dclegOneMove : DclegModel := withMovePremises <| mkDclegModel
   (mkStrategicStructure ["v0", "v1"] ["v1"] [("v0", "p1")] [("v0", ["L"])] [("v0", "L", "v1")])
   ["gA", "gB"]
   [("gA", mkHistory [("v0", "L")] "v1"), ("gB", mkHistory [("v0", "L")] "v1")]
   [("p", [("gB", "v0")])] [] []
+
+/-- Not in gamen-hs: p1 chooses L or R at v0; after L, p2 has the single
+move C at v1, which two worlds (gA, gB) reach. p is true at (gB,v1) and
+(gC,v0), so p varies between the two worlds at the single-move vertex. -/
+def dclegOneMoveDeep : DclegModel := withMovePremises <| mkDclegModel
+  (mkStrategicStructure ["v0", "v1", "v2", "v3"] ["v2", "v3"] [("v0", "p1"), ("v1", "p2")]
+    [("v0", ["L", "R"]), ("v1", ["C"])] [("v0", "L", "v1"), ("v0", "R", "v2"), ("v1", "C", "v3")])
+  ["gA", "gB", "gC"]
+  [("gA", mkHistory [("v0", "L"), ("v1", "C")] "v3"),
+   ("gB", mkHistory [("v0", "L"), ("v1", "C")] "v3"),
+   ("gC", mkHistory [("v0", "R")] "v2")]
+  [("p", [("gB", "v1"), ("gC", "v0")])] [] []
+
+/-- Every (γ,w) with w a decision vertex reached in γ. -/
+def dclegDecisionPointsOf (m : DclegModel) : List (String × String) :=
+  m.dmWorlds.toList.flatMap fun g =>
+    ((worldVertices m g).toList.filter (!m.dmStructure.ssEndNodes.contains ·)).map (g, ·)
+
+/-- Centering (§3.2.2, p. 19) at every decision vertex: ∩F(γ,w) = {(γ,w)}. -/
+def dclegCenteringAtDecisionPoints (m : DclegModel) : Bool :=
+  (dclegDecisionPointsOf m).all fun (g, w) =>
+    match (m.dmPremises.getD (g, w) ∅).toList with
+    | [] => false
+    | p :: ps => (ps.foldr (fun a b => a ∩ b) p).toList == [(g, w)]
+
+/-- §3.2.5 (p. 23): "if the main connective of φ is □, the counterfactual
+conditional φ □→ ψ always collapses to a material conditional". Checks
+(□χ □→ ψ) ↔ (□χ → ψ) at every decision point, for each χ and ψ given. -/
+def dclegBoxCollapseAtDecisionPoints (m : DclegModel) (chis psis : List DclegFormula) : Bool :=
+  isOkTrue <| (dclegDecisionPointsOf m).allM fun (g, w) =>
+    chis.allM fun chi => psis.allM fun psi => do
+      let c ← dclegSatisfies m g w (.dfConditional (.dfBox chi) psi)
+      let d ← dclegSatisfies m g w (dfImplies (.dfBox chi) psi)
+      return c == d
 
 def dclegCases : List Case :=
   let mi (mv : String) : DclegFormula := dfAnd (.dfMove mv) (.dfTurn "p1")
@@ -5474,53 +5519,55 @@ def dclegCases : List Case :=
     ⟨"DclegServiceSpec: withMovePremises leaves end nodes out of dmPremises",
       (svcModel.dmPremises.contains ("gL", "v1") || svcModel.dmPremises.contains ("gL", "v2"))
         == false⟩,
-    -- "sat — atomic formulas (§2.3 Chapman 2026)"
-    ⟨"DclegServiceSpec: ⊥ is never satisfied (§2.3 DFBot)", okIs (svcSat "gL" "v0" .dfBot) false⟩,
-    ⟨"DclegServiceSpec: prop 'alive' true at (gL,v0) — in valuation extension (§2.3 DFProp)",
+    -- "sat — atomic formulas (§2.3 Chapman 2026)"; final §3.2.3, p. 21
+    ⟨"DclegServiceSpec: ⊥ is never satisfied (§3.2.3, p. 21, DFBot)", okIs (svcSat "gL" "v0" .dfBot) false⟩,
+    ⟨"DclegServiceSpec: prop 'alive' true at (gL,v0) — in valuation extension (§3.2.3, p. 21, DFProp)",
       okIs (svcSat "gL" "v0" (.dfProp "alive")) true⟩,
-    ⟨"DclegServiceSpec: prop 'alive' false at (gR,v0) — not in extension (§2.3 DFProp)",
+    ⟨"DclegServiceSpec: prop 'alive' false at (gR,v0) — not in extension (§3.2.3, p. 21, DFProp)",
       okIs (svcSat "gR" "v0" (.dfProp "alive")) false⟩,
-    ⟨"DclegServiceSpec: turn_p1 true at v0 — Q(v0)=p1 (§2.3 DFTurn)",
+    ⟨"DclegServiceSpec: turn_p1 true at v0 — Q(v0)=p1 (§3.2.3, p. 21, DFTurn)",
       okIs (svcSat "gL" "v0" (.dfTurn "p1")) true⟩,
-    ⟨"DclegServiceSpec: turn_p1 false at outcome v1 — Q undefined at end nodes (§2.3 DFTurn)",
+    ⟨"DclegServiceSpec: turn_p1 false at outcome v1 — Q undefined at end nodes (§3.2.3, p. 21, DFTurn)",
       okIs (svcSat "gL" "v1" (.dfTurn "p1")) false⟩,
-    ⟨"DclegServiceSpec: DFMove L true at (gL,v0) — Mv(gL,v0)=L (§2.3 DFMove)",
+    ⟨"DclegServiceSpec: DFMove L true at (gL,v0) — Move(gL,v0)=L (§3.2.3, p. 21, DFMove)",
       okIs (svcSat "gL" "v0" (.dfMove "L")) true⟩,
-    ⟨"DclegServiceSpec: DFMove R false at (gL,v0) — Mv(gL,v0)=L not R (§2.3 DFMove)",
+    ⟨"DclegServiceSpec: DFMove R false at (gL,v0) — Move(gL,v0)=L not R (§3.2.3, p. 21, DFMove)",
       okIs (svcSat "gL" "v0" (.dfMove "R")) false⟩,
-    ⟨"DclegServiceSpec: DFPayoff 1 p1 true at (gL,v0) — P_p1(v1)=1 (§2.3 DFPayoff)",
+    ⟨"DclegServiceSpec: DFPayoff 1 p1 true at (gL,v0) — P_p1(v1)=1 (§3.2.3, p. 21, DFPayoff)",
       okIs (svcSat "gL" "v0" (.dfPayoff 1 "p1")) true⟩,
-    ⟨"DclegServiceSpec: DFPayoff 0 p1 true at (gR,v0) — P_p1(v2)=0 (§2.3 DFPayoff)",
+    ⟨"DclegServiceSpec: DFPayoff 0 p1 true at (gR,v0) — P_p1(v2)=0 (§3.2.3, p. 21, DFPayoff)",
       okIs (svcSat "gR" "v0" (.dfPayoff 0 "p1")) true⟩,
-    ⟨"DclegServiceSpec: DFPayoff 0 p1 false at (gL,v0) — P_p1(v1)=1 not 0 (§2.3 DFPayoff)",
+    ⟨"DclegServiceSpec: DFPayoff 0 p1 false at (gL,v0) — P_p1(v1)=1 not 0 (§3.2.3, p. 21, DFPayoff)",
       okIs (svcSat "gL" "v0" (.dfPayoff 0 "p1")) false⟩,
-    -- "sat — temporal operators X and Y (§2.3 Chapman 2026)"
-    ⟨"DclegServiceSpec: X(payoff 1) true at (gL,v0): next(v0,L)=v1, P_p1(v1)=1 (§2.3 DFNext)",
+    -- "sat — temporal operators X and Y (§2.3 Chapman 2026)"; final §3.2.3, p. 21
+    ⟨"DclegServiceSpec: X(payoff 1) true at (gL,v0): next(v0,L)=v1, P_p1(v1)=1 (§3.2.3, p. 21, DFNext)",
       okIs (svcSat "gL" "v0" (.dfNext (.dfPayoff 1 "p1"))) true⟩,
-    ⟨"DclegServiceSpec: X(payoff 1) false at (gR,v0): next(v0,R)=v2, P_p1(v2)=0 (§2.3 DFNext)",
+    ⟨"DclegServiceSpec: X(payoff 1) false at (gR,v0): next(v0,R)=v2, P_p1(v2)=0 (§3.2.3, p. 21, DFNext)",
       okIs (svcSat "gR" "v0" (.dfNext (.dfPayoff 1 "p1"))) false⟩,
-    ⟨"DclegServiceSpec: X⊤ false at outcome v1 — no successor move exists (§2.3 DFNext)",
+    ⟨"DclegServiceSpec: X⊤ false at outcome v1 — no successor move exists (§3.2.3, p. 21, DFNext)",
       okIs (svcSat "gL" "v1" (.dfNext dfTop)) false⟩,
-    ⟨"DclegServiceSpec: Y⊤ false at root v0 — no predecessor exists (§2.3 DFYesterday)",
+    ⟨"DclegServiceSpec: Y⊤ false at root v0 — no predecessor exists (§3.2.3, p. 21, DFYesterday)",
       okIs (svcSat "gL" "v0" (.dfYesterday dfTop)) false⟩,
-    ⟨"DclegServiceSpec: Y⊤ true at (gL,v1): predecessor of v1 is v0 (§2.3 DFYesterday)",
+    ⟨"DclegServiceSpec: Y⊤ true at (gL,v1): predecessor of v1 is v0 (§3.2.3, p. 21, DFYesterday)",
       okIs (svcSat "gL" "v1" (.dfYesterday dfTop)) true⟩,
-    -- "sat — necessity □ and belief B_i (§2.3–2.4 Chapman 2026)"
-    ⟨"DclegServiceSpec: □(turn_p1) true at v0: both worlds reach v0 with Q(v0)=p1 (§2.3 DFBox)",
+    -- "sat — necessity □ and belief B_i (§2.3–2.4 Chapman 2026)"; final §3.2.3, p. 21
+    ⟨"DclegServiceSpec: □(turn_p1) true at v0: both worlds reach v0 with Q(v0)=p1 (§3.2.3, p. 21, DFBox)",
       okIs (svcSat "gL" "v0" (.dfBox (.dfTurn "p1"))) true⟩,
-    ⟨"DclegServiceSpec: □(DFMove L) false at v0: gR reaches v0 but plays R (§2.3 DFBox)",
+    ⟨"DclegServiceSpec: □(DFMove L) false at v0: gR reaches v0 but plays R (§3.2.3, p. 21, DFBox)",
       okIs (svcSat "gL" "v0" (.dfBox (.dfMove "L"))) false⟩,
-    -- Haskell cites "§2.5 Table 1"; uniformity is §2.5's text, Table 1 is §2.7.
-    ⟨"DclegServiceSpec: □ uniformity: □(turn_p1) same truth at v0 regardless of world (§2.5)",
+    -- Haskell cites "§2.5 Table 1"; uniformity is v5.0 §2.5's text (final §3.2.5), not Table 1.
+    ⟨"DclegServiceSpec: □ uniformity: □(turn_p1) same truth at v0 regardless of world (§3.2.5, p. 23)",
       bothOkEq (svcSat "gL" "v0" (.dfBox (.dfTurn "p1"))) (svcSat "gR" "v0" (.dfBox (.dfTurn "p1")))⟩,
-    ⟨"DclegServiceSpec: B_p1(DFMove L) true at (gL,v0): p1 considers only gL at v0 (§2.3 DFBelief)",
+    ⟨"DclegServiceSpec: B_p1(DFMove L) true at (gL,v0): p1 considers only gL at v0 (§3.2.3, p. 21, DFBelief)",
       okIs (svcSat "gL" "v0" (.dfBelief "p1" (.dfMove "L"))) true⟩,
-    ⟨"DclegServiceSpec: B_p1(DFMove L) false at (gR,v0): gR-successor plays R not L (§2.3 DFBelief)",
+    ⟨"DclegServiceSpec: B_p1(DFMove L) false at (gR,v0): gR-successor plays R not L (§3.2.3, p. 21, DFBelief)",
       okIs (svcSat "gR" "v0" (.dfBelief "p1" (.dfMove "L"))) false⟩,
-    ⟨"DclegServiceSpec: B_p1(DFMove R) true at (gR,v0): p1 in gR considers only gR (§2.3 DFBelief)",
+    ⟨"DclegServiceSpec: B_p1(DFMove R) true at (gR,v0): p1 in gR considers only gR (§3.2.3, p. 21, DFBelief)",
       okIs (svcSat "gR" "v0" (.dfBelief "p1" (.dfMove "R"))) true⟩,
-    -- Haskell cites "(§2.4)"; PerfectInfo is Table 1 (§2.7), Presence §2.2.
-    ⟨"DclegServiceSpec: PerfectInfo (Table 1, §2.7): □φ → B_p1 φ at (gL,v0) — Presence (§2.2) \
+    -- Haskell cites "(§2.4)"; PerfectInfo is DCLEG v5.0 Table 1 (v5.0 §2.7; not
+    -- in the final thesis). Presence is §3.2.2, p. 20.
+    ⟨"DclegServiceSpec: PerfectInfo (DCLEG v5.0 Table 1, not in the final thesis): □φ → B_p1 φ at \
+      (gL,v0) — Presence (§3.2.2, p. 20) \
       entails inclusion",
       okIs (svcSat "gL" "v0" (dfImplies (.dfBox (.dfTurn "p1")) (.dfBelief "p1" (.dfTurn "p1"))))
         true⟩,
@@ -5533,94 +5580,95 @@ def dclegCases : List Case :=
       okIs (dclegTrueIn svcModel (.dfBox dfTop)) true⟩,
     ⟨"DclegServiceSpec: DFMove L is NOT globally true: false at (gR,v0) (dclegTrueIn)",
       okIs (dclegTrueIn svcModel (.dfMove "L")) false⟩,
-    -- "counterfactual — maxPhiConsistent witnesses (§2.2 Chapman 2026)"
+    -- "counterfactual — maxPhiConsistent witnesses (§2.2 Chapman 2026)"; final §3.2.2, p. 19
     ⟨"DclegServiceSpec: L □→ payoff_1 at (gL,v0): witnesses = {gL}, satisfied, not vacuous \
-      (§2.2 Centering)",
+      (§3.2.2 Centering, p. 19)",
       okIs (svcWitnesses "gL" (.dfMove "L") (.dfPayoff 1 "p1")) (["gL"], true, false)⟩,
-    ⟨"DclegServiceSpec: R □→ payoff_0 at (gL,v0): witnesses = {gR}, satisfied, not vacuous (§2.3)",
+    ⟨"DclegServiceSpec: R □→ payoff_0 at (gL,v0): witnesses = {gR}, satisfied, not vacuous (§3.2.3, p. 21)",
       okIs (svcWitnesses "gL" (.dfMove "R") (.dfPayoff 0 "p1")) (["gR"], true, false)⟩,
-    ⟨"DclegServiceSpec: R □→ payoff_1 at (gL,v0): witnesses = {gR}, NOT satisfied (§2.3)",
+    ⟨"DclegServiceSpec: R □→ payoff_1 at (gL,v0): witnesses = {gR}, NOT satisfied (§3.2.3, p. 21)",
       okIs ((·.2.1) <$> svcWitnesses "gL" (.dfMove "R") (.dfPayoff 1 "p1")) false⟩,
-    ⟨"DclegServiceSpec: ⊥ □→ anything at (gL,v0): vacuous — no φ-consistent worlds (§2.2)",
+    ⟨"DclegServiceSpec: ⊥ □→ anything at (gL,v0): vacuous — no φ-consistent worlds (§3.2.2, p. 19; §3.2.3, p. 22)",
       okIs (maxPhiConsistent svcModel "gL" "v0" .dfBot) []⟩,
-    ⟨"DclegServiceSpec: dclegSatisfies handles vacuous counterfactual as True (§2.3 DFConditional)",
+    ⟨"DclegServiceSpec: dclegSatisfies handles vacuous counterfactual as True (§3.2.3, p. 21, DFConditional)",
       okIs (svcSat "gL" "v0" (.dfConditional .dfBot .dfBot)) true⟩,
     ⟨"DclegServiceSpec: counterfactual witness set is symmetric by world: gR witnesses R □→ \
-      payoff_0 from gR (§2.3)",
+      payoff_0 from gR (§3.2.3, p. 21)",
       okIs (sortedStrings <$> maxPhiConsistent svcModel "gR" "v0" (.dfMove "R")) ["gR"]⟩,
-    -- "axiom_check — standard doxastic axioms (§2.2 Chapman 2026)"
+    -- "axiom_check — standard doxastic axioms (§2.2 Chapman 2026)"; final §3.2.2, p. 20
     ⟨"DclegServiceSpec: presence satisfied: gR does not reach v1, successors at v1 for gR are \
-      empty (§2.2)",
+      empty (§3.2.2, p. 20)",
       okIs (svcDox "v1" "gR") []⟩,
     ⟨"DclegServiceSpec: presence satisfied: gL does not reach v2, successors at v2 for gL are \
-      empty (§2.2)",
+      empty (§3.2.2, p. 20)",
       okIs (svcDox "v2" "gL") []⟩,
     ⟨"DclegServiceSpec: present_seriality satisfied at decision vertex: R_p1^{v0}(gL) non-empty \
-      (§2.2)",
+      (§3.2.2, p. 20)",
       okIs ((!·.isEmpty) <$> svcDox "v0" "gL") true⟩,
     ⟨"DclegServiceSpec: present_seriality VIOLATED at end node v1: model defines no beliefs \
-      there (§2.2)",
+      there (§3.2.2, p. 20)",
       okIs (svcDox "v1" "gL") []⟩,
     ⟨"DclegServiceSpec: transitivity satisfied: {gL} is a singleton so transitivity holds \
-      trivially (§2.2)",
+      trivially (§3.2.2, p. 20)",
       okIs (do
         let succs ← svcDox "v0" "gL"
         let trans ← succs.mapM (svcDox "v0")
         return trans.flatten.all (succs.contains ·)) true⟩,
     ⟨"DclegServiceSpec: euclideanness satisfied: singleton successors are trivially euclidean \
-      (§2.2)",
+      (§3.2.2, p. 20)",
       okIs (do
         let succs ← svcDox "v0" "gL"
         let pairs := succs.flatMap fun a => succs.map fun b => (a, b)
         pairs.allM fun (a, b) => return (← svcDox "v0" a).contains b) true⟩,
-    -- "axiom_check — self-awareness and intentional-awareness (§2.2–2.4 Chapman 2026)"
-    ⟨"DclegServiceSpec: self_awareness: all gL-successors at v0 play L — matches actual move (§2.2)",
+    -- "axiom_check — self-awareness and intentional-awareness (§2.2–2.4 Chapman 2026)"; final
+    -- §3.2.2, p. 20, and §3.2.4, p. 23
+    ⟨"DclegServiceSpec: self_awareness: all gL-successors at v0 play L — matches actual move (§3.2.2, p. 20)",
       okIs ((·.map fun d => moveAt svcModel d "v0") <$> svcDox "v0" "gL") [some "L"]⟩,
-    ⟨"DclegServiceSpec: self_awareness: all gR-successors at v0 play R — matches actual move (§2.2)",
+    ⟨"DclegServiceSpec: self_awareness: all gR-successors at v0 play R — matches actual move (§3.2.2, p. 20)",
       okIs ((·.map fun d => moveAt svcModel d "v0") <$> svcDox "v0" "gR") [some "R"]⟩,
-    ⟨"DclegServiceSpec: intentional_awareness: B_p1(L ∧ turn_p1) ↔ (L ∧ turn_p1) at (gL,v0) (§2.4)",
+    ⟨"DclegServiceSpec: intentional_awareness: B_p1(L ∧ turn_p1) ↔ (L ∧ turn_p1) at (gL,v0) (§3.2.4, p. 23)",
       bothOkEq (svcSat "gL" "v0" (.dfBelief "p1" (mi "L"))) (svcSat "gL" "v0" (mi "L"))⟩,
-    ⟨"DclegServiceSpec: intentional_awareness: B_p1(R ∧ turn_p1) ↔ (R ∧ turn_p1) at (gL,v0) (§2.4)",
+    ⟨"DclegServiceSpec: intentional_awareness: B_p1(R ∧ turn_p1) ↔ (R ∧ turn_p1) at (gL,v0) (§3.2.4, p. 23)",
       bothOkEq (svcSat "gL" "v0" (.dfBelief "p1" (mi "R"))) (svcSat "gL" "v0" (mi "R"))⟩,
-    ⟨"DclegServiceSpec: intentional_awareness: B_p1(R ∧ turn_p1) ↔ (R ∧ turn_p1) at (gR,v0) (§2.4)",
+    ⟨"DclegServiceSpec: intentional_awareness: B_p1(R ∧ turn_p1) ↔ (R ∧ turn_p1) at (gR,v0) (§3.2.4, p. 23)",
       bothOkEq (svcSat "gR" "v0" (.dfBelief "p1" (mi "R"))) (svcSat "gR" "v0" (mi "R"))⟩,
-    -- "axiom_check — premise function axioms (§2.2 Chapman 2026)"
-    ⟨"DclegServiceSpec: centering: ∩F(gL,v0) = {(gL,v0)} (§2.2)",
+    -- "axiom_check — premise function axioms (§2.2 Chapman 2026)"; final §3.2.2, p. 19
+    ⟨"DclegServiceSpec: centering: ∩F(gL,v0) = {(gL,v0)} (§3.2.2, p. 19)",
       svcPremiseCap "gL" == some [("gL", "v0")]⟩,
-    ⟨"DclegServiceSpec: centering: ∩F(gR,v0) = {(gR,v0)} (§2.2)",
+    ⟨"DclegServiceSpec: centering: ∩F(gR,v0) = {(gR,v0)} (§3.2.2, p. 19)",
       svcPremiseCap "gR" == some [("gR", "v0")]⟩,
     ⟨"DclegServiceSpec: contemporary_universality: gL ∈ ∪F(gL,v0) at v0 — centering places it in \
-      premise (§2.2)",
+      premise (§3.2.2, p. 19)",
       (svcPremiseUnion "gL").contains ("gL", "v0")⟩,
     ⟨"DclegServiceSpec: contemporary_universality: gR ∈ ∪F(gL,v0) — all worlds reaching v0 \
-      covered (§2.2)",
+      covered (§3.2.2, p. 19)",
       (svcPremiseUnion "gL").contains ("gR", "v0")⟩,
     -- Haskell cites "(withMovePremises §2.3)"; the move-based F is gamen-hs's
-    -- own construction, and F's constraints are §2.2.
-    ⟨"DclegServiceSpec: F(gL,v0) has exactly two premises — one per move (withMovePremises; F: §2.2)",
+    -- own construction, and F's constraints are §3.2.2 (p. 19).
+    ⟨"DclegServiceSpec: F(gL,v0) has exactly two premises — one per move (withMovePremises; F: §3.2.2, p. 19)",
       (svcModel.dmPremises.getD ("gL", "v0") ∅).size == 2⟩,
-    -- "axiom_check — belief-revision dynamics (§2.2 Chapman 2026)"
-    ⟨"DclegServiceSpec: minimal_revision satisfied: no worlds at v1 to check — vacuously true (§2.2)",
+    -- "axiom_check — belief-revision dynamics (§2.2 Chapman 2026)"; final §3.2.2, p. 20
+    ⟨"DclegServiceSpec: minimal_revision satisfied: no worlds at v1 to check — vacuously true (§3.2.2, p. 20)",
       okIs (svcDox "v1" "gL") []⟩,
-    ⟨"DclegServiceSpec: minimal_revision: witness pool for move L includes gL (§2.2)",
+    ⟨"DclegServiceSpec: minimal_revision: witness pool for move L includes gL (§3.2.2, p. 20)",
       okIs (maxPhiConsistent svcModel "gL" "v0" (.dfMove "L")) ["gL"]⟩,
-    ⟨"DclegServiceSpec: minimal_revision: witness pool for move R includes gR (§2.2)",
+    ⟨"DclegServiceSpec: minimal_revision: witness pool for move R includes gR (§3.2.2, p. 20)",
       okIs (sortedStrings <$> maxPhiConsistent svcModel "gL" "v0" (.dfMove "R")) ["gR"]⟩,
     ⟨"DclegServiceSpec: expectational_continuity VIOLATED at (gL,v0): successors play L but \
-      beliefs change at v1 (§2.2)",
+      beliefs change at v1 (§3.2.2, p. 20)",
       okIs (do return sortedStrings (← svcDox "v0" "gL") != sortedStrings (← svcDox "v1" "gL"))
         true⟩,
-    ⟨"DclegServiceSpec: expectational_continuity VIOLATED at (gR,v0): same pattern for move R (§2.2)",
+    ⟨"DclegServiceSpec: expectational_continuity VIOLATED at (gR,v0): same pattern for move R (§3.2.2, p. 20)",
       okIs (do return sortedStrings (← svcDox "v0" "gR") != sortedStrings (← svcDox "v2" "gR"))
         true⟩,
     ⟨"DclegServiceSpec: recall VIOLATED at (gL,v0): R_p1(v0,gL) ≠ ∪{R_p1(v0,δ) | δ∈R_p1(v1,gL)} \
-      (§2.2)",
+      (§3.2.2, p. 20)",
       okIs (do
         let atV0 ← svcDox "v0" "gL"
         let atV1 ← svcDox "v1" "gL"
         let u ← atV1.mapM (svcDox "v0")
         return sortedStrings atV0 != sortedStrings u.flatten) true⟩,
-    ⟨"DclegServiceSpec: recall VIOLATED at (gR,v0): symmetric case for world gR (§2.2)",
+    ⟨"DclegServiceSpec: recall VIOLATED at (gR,v0): symmetric case for world gR (§3.2.2, p. 20)",
       okIs (do
         let atV0 ← svcDox "v0" "gR"
         let atV2 ← svcDox "v2" "gR"
@@ -5660,8 +5708,36 @@ def dclegCases : List Case :=
     ⟨"Not in gamen-hs: three moves: (M ∨ R) □→ payoff_1 false at (gL,v0) (gR gets 0)",
       okIs (dclegSatisfies dclegThreeMove "gL" "v0"
         (.dfConditional (.dfOr (.dfMove "M") (.dfMove "R")) (.dfPayoff 1 "p1"))) false⟩,
-    ⟨"Not in gamen-hs: single-move vertex: ⊤ □→ selects both worlds (no Centering, review B8)",
-      okIs (maxPhiConsistent dclegOneMove "gA" "v0" dfTop) ["gA", "gB"]⟩,
+    -- Fixed in gamen-lean; gamen-hs TODO(#18). Deliberate divergence from
+    -- gamen-hs, whose F(gA,v0) is the lone premise {gA,gB}, so max^⊤ there
+    -- is [gA, gB] (review B8). With the singleton premise {(gA,v0)},
+    -- Centering (§3.2.2, p. 19) gives max^⊤ = {gA}, as the thesis says it
+    -- must whenever (γ,w) ∈ [[φ]].
+    ⟨"Not in gamen-hs: single-move vertex: max^⊤_{F(gA,v0)} = [gA] by Centering \
+      (fixed in gamen-lean; gamen-hs TODO(#18))",
+      okIs (maxPhiConsistent dclegOneMove "gA" "v0" dfTop) ["gA"]⟩,
+    ⟨"Not in gamen-hs: single-move vertex: a φ false at γ still selects every φ-world \
+      (p □→ ⊥ false at (gA,v0): max^p = [gB])",
+      okIs (maxPhiConsistent dclegOneMove "gA" "v0" (.dfProp "p")) ["gB"]
+        && okIs (dclegSatisfies dclegOneMove "gA" "v0" (.dfConditional (.dfProp "p") .dfBot))
+          false⟩,
+    ⟨"Not in gamen-hs: Centering ∩F(γ,w) = {(γ,w)} at every decision vertex, single-move \
+      ones included (§3.2.2, p. 19; fixed in gamen-lean; gamen-hs TODO(#18))",
+      [dclegOneMove, dclegOneMoveDeep, svcModel, dclegThreeMove, dclegPropGame].all
+        dclegCenteringAtDecisionPoints⟩,
+    ⟨"Not in gamen-hs: □⊤ □→ p ↔ □⊤ → p at single-move (gB,v0): true (fixed in gamen-lean; \
+      gamen-hs TODO(#18) gives false)",
+      okIs (dclegSatisfies dclegOneMove "gB" "v0" (.dfConditional (.dfBox dfTop) (.dfProp "p")))
+        true⟩,
+    ⟨"Not in gamen-hs: §3.2.5 (p. 23): φ □→ ψ collapses to φ → ψ when φ's main connective \
+      is □, at every decision vertex, single-move ones included (fixed in gamen-lean; \
+      gamen-hs TODO(#18))",
+      let chis : List DclegFormula := [dfTop, .dfBot, .dfProp "p", .dfNeg (.dfProp "p"),
+        .dfMove "L", .dfMove "C", .dfNext dfTop, .dfYesterday dfTop, dfDiamond (.dfProp "p")]
+      let psis : List DclegFormula := [.dfBot, dfTop, .dfProp "p", .dfNeg (.dfProp "p"),
+        .dfMove "L", .dfNext (.dfProp "p"), .dfYesterday (.dfProp "p")]
+      [dclegOneMove, dclegOneMoveDeep, svcModel, dclegThreeMove].all fun m =>
+        dclegBoxCollapseAtDecisionPoints m chis psis⟩,
     ⟨"Not in gamen-hs: validateDclegModel reports a stray vertex and a stray doxastic world",
       validateDclegModel (mkDclegModel
           (mkStrategicStructure ["v0", "v1", "v2"] ["v1", "v2"] [("v0", "p1")]
@@ -5677,95 +5753,107 @@ def dclegCases : List Case :=
 /-- `PaperCorrespondence.hs`'s `dclegM` (the same game as `dclegPropGame`). -/
 def dclegM : DclegModel := dclegPropGame
 
-/-- fin = □¬X⊤ (§1.2): true exactly at outcome nodes. -/
-def dclegFin : DclegFormula := .dfBox (.dfNeg (.dfNext dfTop))
+/-- end = □¬X⊤ (§3.1.2, p. 16; v5.0's `fin`): true exactly at outcome nodes
+(§3.2.3, p. 21). -/
+def dclegEnd : DclegFormula := .dfBox (.dfNeg (.dfNext dfTop))
 
-/-- beg = □¬Y⊤ (§1.2): true exactly at the unique root. -/
-def dclegBeg : DclegFormula := .dfBox (.dfNeg (.dfYesterday dfTop))
+/-- start = □¬Y⊤ (§3.1.2, p. 16; v5.0's `beg`): true exactly at the unique
+root (§3.2.3, p. 21). -/
+def dclegStart : DclegFormula := .dfBox (.dfNeg (.dfYesterday dfTop))
 
 def dclegPaperCorrespondenceCases : List Case :=
   let sat (g w : String) (f : DclegFormula) : Except String Bool := dclegSatisfies dclegM g w f
   let t := "Chapman (2026) — DCLEG: "
-  [ -- "§2.3 Satisfaction: atomic clauses"
-    ⟨t ++ "⊥ is never satisfied (§2.3)", okIs (sat "γL" "v0" .dfBot) false⟩,
-    ⟨t ++ "prop 'alive' true at (γL,v0) — only world+vertex in its extension (§2.3)",
+  let v5 := "DCLEG v5.0 Table 1 (not in the final thesis): "
+  [ -- "§2.3 Satisfaction: atomic clauses"; final §3.2.3, p. 21
+    ⟨t ++ "⊥ is never satisfied (§3.2.3, p. 21)", okIs (sat "γL" "v0" .dfBot) false⟩,
+    ⟨t ++ "prop 'alive' true at (γL,v0) — only world+vertex in its extension (§3.2.3, p. 21)",
       okIs (sat "γL" "v0" (.dfProp "alive")) true⟩,
-    ⟨t ++ "prop 'alive' false at (γR,v0) — not in extension (§2.3)",
+    ⟨t ++ "prop 'alive' false at (γR,v0) — not in extension (§3.2.3, p. 21)",
       okIs (sat "γR" "v0" (.dfProp "alive")) false⟩,
-    ⟨t ++ "turn_p1 true at v0 — Q(v0) = p1 (§2.3)", okIs (sat "γL" "v0" (.dfTurn "p1")) true⟩,
-    ⟨t ++ "turn_p1 false at outcome v1 — Q undefined at end nodes (§2.3)",
+    ⟨t ++ "turn_p1 true at v0 — Q(v0) = p1 (§3.2.3, p. 21)", okIs (sat "γL" "v0" (.dfTurn "p1")) true⟩,
+    ⟨t ++ "turn_p1 false at outcome v1 — Q undefined at end nodes (§3.2.3, p. 21)",
       okIs (sat "γL" "v1" (.dfTurn "p1")) false⟩,
-    ⟨t ++ "DFMove L true at (γL,v0) — Mv(γL,v0) = L (§2.3)", okIs (sat "γL" "v0" (.dfMove "L")) true⟩,
-    ⟨t ++ "DFMove R false at (γL,v0) — Mv(γL,v0) = L, not R (§2.3)",
+    ⟨t ++ "DFMove L true at (γL,v0) — Move(γL,v0) = L (§3.2.3, p. 21)", okIs (sat "γL" "v0" (.dfMove "L")) true⟩,
+    ⟨t ++ "DFMove R false at (γL,v0) — Move(γL,v0) = L, not R (§3.2.3, p. 21)",
       okIs (sat "γL" "v0" (.dfMove "R")) false⟩,
-    ⟨t ++ "DFPayoff 1 p1 true at (γL,v0) — P_p1(v1) = 1 (§2.3)",
+    ⟨t ++ "DFPayoff 1 p1 true at (γL,v0) — P_p1(v1) = 1 (§3.2.3, p. 21)",
       okIs (sat "γL" "v0" (.dfPayoff 1 "p1")) true⟩,
-    ⟨t ++ "DFPayoff 0 p1 false at (γL,v0) — P_p1(v1) = 1, not 0 (§2.3)",
+    ⟨t ++ "DFPayoff 0 p1 false at (γL,v0) — P_p1(v1) = 1, not 0 (§3.2.3, p. 21)",
       okIs (sat "γL" "v0" (.dfPayoff 0 "p1")) false⟩,
-    ⟨t ++ "DFPayoff 0 p1 true at (γR,v0) — P_p1(v2) = 0 (§2.3)",
+    ⟨t ++ "DFPayoff 0 p1 true at (γR,v0) — P_p1(v2) = 0 (§3.2.3, p. 21)",
       okIs (sat "γR" "v0" (.dfPayoff 0 "p1")) true⟩,
-    -- "§2.3 Satisfaction: temporal operators (X and Y)"
-    ⟨t ++ "X(payoff 1) true at (γL,v0): next(v0,L)=v1, P_p1(v1)=1 (§2.3)",
+    -- "§2.3 Satisfaction: temporal operators (X and Y)"; final §3.2.3, p. 21
+    ⟨t ++ "X(payoff 1) true at (γL,v0): next(v0,L)=v1, P_p1(v1)=1 (§3.2.3, p. 21)",
       okIs (sat "γL" "v0" (.dfNext (.dfPayoff 1 "p1"))) true⟩,
-    ⟨t ++ "X(payoff 1) false at (γR,v0): next(v0,R)=v2, P_p1(v2)=0 (§2.3)",
+    ⟨t ++ "X(payoff 1) false at (γR,v0): next(v0,R)=v2, P_p1(v2)=0 (§3.2.3, p. 21)",
       okIs (sat "γR" "v0" (.dfNext (.dfPayoff 1 "p1"))) false⟩,
-    ⟨t ++ "X⊤ false at outcome v1 — no move at outcome nodes (§2.3, fin = □¬X⊤)",
+    ⟨t ++ "X⊤ false at outcome v1 — no move at outcome nodes (§3.2.3, p. 21, end = □¬X⊤)",
       okIs (sat "γL" "v1" (.dfNext dfTop)) false⟩,
-    ⟨t ++ "Y⊤ false at root v0 — no predecessor (§2.3, beg = □¬Y⊤)",
+    ⟨t ++ "Y⊤ false at root v0 — no predecessor (§3.2.3, p. 21, start = □¬Y⊤)",
       okIs (sat "γL" "v0" (.dfYesterday dfTop)) false⟩,
-    ⟨t ++ "Y⊤ true at (γL,v1): predecessor is v0 (§2.3)",
+    ⟨t ++ "Y⊤ true at (γL,v1): predecessor is v0 (§3.2.3, p. 21)",
       okIs (sat "γL" "v1" (.dfYesterday dfTop)) true⟩,
-    -- "§2.3 Satisfaction: necessity operator □"
-    ⟨t ++ "□(turn_p1) true at v0: both γL and γR reach v0 with Q(v0)=p1 (§2.3)",
+    -- "§2.3 Satisfaction: necessity operator □"; final §3.2.3, p. 21
+    ⟨t ++ "□(turn_p1) true at v0: both γL and γR reach v0 with Q(v0)=p1 (§3.2.3, p. 21)",
       okIs (sat "γL" "v0" (.dfBox (.dfTurn "p1"))) true⟩,
-    ⟨t ++ "□(DFMove L) false at v0: γR reaches v0 but plays R (§2.3)",
+    ⟨t ++ "□(DFMove L) false at v0: γR reaches v0 but plays R (§3.2.3, p. 21)",
       okIs (sat "γL" "v0" (.dfBox (.dfMove "L"))) false⟩,
-    ⟨t ++ "□ uniformity: □(turn_p1) has the same truth at v0 regardless of γ (§2.5)",
+    ⟨t ++ "□ uniformity: □(turn_p1) has the same truth at v0 regardless of γ (§3.2.5, p. 23)",
       bothOkEq (sat "γL" "v0" (.dfBox (.dfTurn "p1"))) (sat "γR" "v0" (.dfBox (.dfTurn "p1")))⟩,
-    -- "§2.3 Satisfaction: counterfactual conditional □→"
-    ⟨t ++ "L □→ (payoff 1): actual-move conditional collapses to ψ at (γL,v0) — Centering (§2.2)",
+    -- "§2.3 Satisfaction: counterfactual conditional □→"; final §3.2.3, pp. 21–22
+    ⟨t ++ "L □→ (payoff 1): actual-move conditional collapses to ψ at (γL,v0) — Centering (§3.2.2, p. 19)",
       okIs (sat "γL" "v0" (.dfConditional (.dfMove "L") (.dfPayoff 1 "p1"))) true⟩,
-    ⟨t ++ "R □→ (payoff 0) at (γL,v0): counter-to-fact conditional selects γR (§2.3)",
+    ⟨t ++ "R □→ (payoff 0) at (γL,v0): counter-to-fact conditional selects γR (§3.2.3, p. 21)",
       okIs (sat "γL" "v0" (.dfConditional (.dfMove "R") (.dfPayoff 0 "p1"))) true⟩,
-    ⟨t ++ "R □→ (payoff 1) at (γL,v0): false — γR gets payoff 0, not 1 (§2.3)",
+    ⟨t ++ "R □→ (payoff 1) at (γL,v0): false — γR gets payoff 0, not 1 (§3.2.3, p. 21)",
       okIs (sat "γL" "v0" (.dfConditional (.dfMove "R") (.dfPayoff 1 "p1"))) false⟩,
-    ⟨t ++ "vacuous conditional (L∧R) □→ ⊥ is true at (γL,v0): no world plays both L and R (§2.2)",
+    ⟨t ++ "vacuous conditional (L∧R) □→ ⊥ is true at (γL,v0): no world plays both L and R (§3.2.3, p. 22)",
       okIs (sat "γL" "v0" (.dfConditional (dfAnd (.dfMove "L") (.dfMove "R")) .dfBot)) true⟩,
-    -- "§2.3 Satisfaction: belief operator B_i". Self-Awareness is §2.2's
-    -- doxastic condition 5 (the Haskell cites "§2.4" here and "§2.4 Cond. 5"
-    -- in the fixture comment).
-    ⟨t ++ "B_p1(DFMove L) true at (γL,v0): p1 considers only γL at v0 (§2.3, §2.2 Self-Awareness)",
+    -- "§2.3 Satisfaction: belief operator B_i"; final §3.2.3, p. 21.
+    -- Self-Awareness is §3.2.2's doxastic condition 5 (p. 20; v5.0 §2.2's);
+    -- the Haskell cites "§2.4" here and "§2.4 Cond. 5" in the fixture comment.
+    ⟨t ++ "B_p1(DFMove L) true at (γL,v0): p1 considers only γL at v0 (§3.2.3, p. 21; §3.2.2 Self-Awareness, p. 20)",
       okIs (sat "γL" "v0" (.dfBelief "p1" (.dfMove "L"))) true⟩,
-    ⟨t ++ "B_p1(DFMove L) false at (γR,v0): p1 in γR considers only γR where R is played (§2.3)",
+    ⟨t ++ "B_p1(DFMove L) false at (γR,v0): p1 in γR considers only γR where R is played (§3.2.3, p. 21)",
       okIs (sat "γR" "v0" (.dfBelief "p1" (.dfMove "L"))) false⟩,
-    ⟨t ++ "B_p1(DFMove R) true at (γR,v0): p1 believes R is played — only γR considered (§2.3)",
+    ⟨t ++ "B_p1(DFMove R) true at (γR,v0): p1 believes R is played — only γR considered (§3.2.3, p. 21)",
       okIs (sat "γR" "v0" (.dfBelief "p1" (.dfMove "R"))) true⟩,
-    -- "§2.4 Intentional Awareness: B_i(m_i) ↔ m_i"
-    ⟨t ++ "§2.4 Intentional Awareness: B_p1(L ∧ turn_p1) ↔ (L ∧ turn_p1) at (γL,v0): agent \
+    -- "§2.4 Intentional Awareness: B_i(m_i) ↔ m_i"; final §3.2.4, p. 23
+    ⟨t ++ "§3.2.4 Intentional Awareness (p. 23): B_p1(L ∧ turn_p1) ↔ (L ∧ turn_p1) at (γL,v0): agent \
       correctly believes own move",
       bothOkEq (sat "γL" "v0" (.dfBelief "p1" (dfAnd (.dfMove "L") (.dfTurn "p1"))))
         (sat "γL" "v0" (dfAnd (.dfMove "L") (.dfTurn "p1")))⟩,
     -- "§2.5 / Table 1 (Some Validities): structural game laws". Table 1 is
-    -- in §2.7 ("Some Validities"), not §2.5. Table 1 writes TurnStr,
-    -- PerfectInfo, and SinglePref with □→; these check the material →
-    -- (filed as gamen-hs#53).
-    ⟨t ++ "§2.7 Table 1: TurnStr: turn_p1 → □(turn_p1) at (γL,v0)",
+    -- DCLEG v5.0's §2.7 ("Some Validities"), not §2.5, and the final thesis
+    -- dropped it: these ten tests (with PerfectInfo in `dclegCases`) check
+    -- claims only v5.0 makes, and are kept as v5.0 tests. v5.0's Table 1
+    -- writes TurnStr, PerfectInfo, and SinglePref with □→; these check the
+    -- material → (gamen-hs#53, fixed there by PR #61, not followed here).
+    -- The end/start cases rest on definitions the final thesis keeps
+    -- (§3.1.2, p. 16) and on §3.2.3's account of them (p. 21).
+    ⟨t ++ v5 ++ "TurnStr: turn_p1 → □(turn_p1) at (γL,v0)",
       okIs (sat "γL" "v0" (dfImplies (.dfTurn "p1") (.dfBox (.dfTurn "p1")))) true⟩,
-    ⟨t ++ "§2.7 Table 1: PerfectInfo: □(turn_p1) → B_p1(turn_p1) at (γL,v0)",
+    ⟨t ++ v5 ++ "PerfectInfo: □(turn_p1) → B_p1(turn_p1) at (γL,v0)",
       okIs (sat "γL" "v0" (dfImplies (.dfBox (.dfTurn "p1")) (.dfBelief "p1" (.dfTurn "p1")))) true⟩,
-    ⟨t ++ "§2.7 Table 1: fin = □¬X⊤ false at decision node v0: p1 still has a move (§1.2)",
-      okIs (sat "γL" "v0" dclegFin) false⟩,
-    ⟨t ++ "§2.7 Table 1: fin = □¬X⊤ true at outcome node v1: no move remains (§1.2)",
-      okIs (sat "γL" "v1" dclegFin) true⟩,
-    ⟨t ++ "§2.7 Table 1: beg = □¬Y⊤ true at root v0: v0 has no predecessor in any world (§1.2)",
-      okIs (sat "γL" "v0" dclegBeg) true⟩,
-    ⟨t ++ "§2.7 Table 1: beg = □¬Y⊤ false at non-root v1 (§1.2)", okIs (sat "γL" "v1" dclegBeg) false⟩,
-    ⟨t ++ "§2.7 Table 1: OneAct: ¬fin → (L ∨ R) at (γL,v0) — exactly one move is played",
-      okIs (sat "γL" "v0" (dfImplies (.dfNeg dclegFin) (.dfOr (.dfMove "L") (.dfMove "R")))) true⟩,
-    ⟨t ++ "§2.7 Table 1: SinglePref: (payoff 1) → ¬(payoff 0) at (γL,v0), distinct payoffs k ≠ h",
+    ⟨t ++ v5 ++ "end = □¬X⊤ (v5.0's fin) false at decision node v0: p1 still has a move \
+      (§3.1.2, p. 16)",
+      okIs (sat "γL" "v0" dclegEnd) false⟩,
+    ⟨t ++ v5 ++ "end = □¬X⊤ (v5.0's fin) true at outcome node v1: no move remains \
+      (§3.1.2, p. 16)",
+      okIs (sat "γL" "v1" dclegEnd) true⟩,
+    ⟨t ++ v5 ++ "start = □¬Y⊤ (v5.0's beg) true at root v0: v0 has no predecessor in \
+      any world (§3.1.2, p. 16)",
+      okIs (sat "γL" "v0" dclegStart) true⟩,
+    ⟨t ++ v5 ++ "start = □¬Y⊤ (v5.0's beg) false at non-root v1 \
+      (§3.1.2, p. 16)",
+      okIs (sat "γL" "v1" dclegStart) false⟩,
+    ⟨t ++ v5 ++ "OneAct: ¬end → (L ∨ R) at (γL,v0) — exactly one move is played",
+      okIs (sat "γL" "v0" (dfImplies (.dfNeg dclegEnd) (.dfOr (.dfMove "L") (.dfMove "R")))) true⟩,
+    ⟨t ++ v5 ++ "SinglePref: (payoff 1) → ¬(payoff 0) at (γL,v0), distinct payoffs k ≠ h",
       okIs (sat "γL" "v0" (dfImplies (.dfPayoff 1 "p1") (.dfNeg (.dfPayoff 0 "p1")))) true⟩,
-    -- Haskell's title ends "(§1.2)"; CompletePref is Table 1, §2.7.
-    ⟨t ++ "§2.7 Table 1: CompletePref: (payoff 1) ∨ (payoff 0) holds in every world",
+    -- Haskell's title ends "(§1.2)"; CompletePref is v5.0 Table 1 (v5.0 §2.7).
+    ⟨t ++ v5 ++ "CompletePref: (payoff 1) ∨ (payoff 0) holds in every world",
       okIs (["γL", "γR"].allM fun g =>
         sat g "v0" (.dfOr (.dfPayoff 1 "p1") (.dfPayoff 0 "p1"))) true⟩
   ]

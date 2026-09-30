@@ -5,18 +5,24 @@ import Std.Data.TreeSet
 # Gamen.Dcleg
 
 Port of `gamen-hs/src/Gamen/Dcleg.hs`: the Doxastic Conditional Logic of
-Extensive Games (DCLEG). Jeremiah Chapman, *Doxastic Conditional Logic of
-Extensive Games* (v5.0), University of Gothenburg, April 2026, supervised by
-Martin Kaså. Unqualified section numbers below mean that draft, pinned by
-hash in `notes/dcleg-edition.md`.
+Extensive Games (DCLEG). Jeremiah Chapman, *Doxastic Conditional Logic,
+Rationality, and Backward Induction: Formalizing Belief and Counterfactual
+Reasoning in Games*, Master's thesis in Logic, University of Gothenburg,
+June 4th 2026, supervised by Martin Kaså; DCLEG is its Chapter 3.
+Unqualified section numbers below mean that final thesis, with its printed
+page numbers; both it and the April 2026 v5.0 draft this module was first
+ported against are pinned by hash in `notes/dcleg-edition.md`. The v5.0
+sections map as §1.x → §3.1.x and §2.1–2.6 → §3.2.1–3.2.6, and the
+semantics did not change between them.
 
 Formulas are evaluated at pointed models (M, γ, w), where γ is a possible
 world and w a game vertex actually reached in γ. The language combines the
 propositional operators (¬, ∨), a counterfactual conditional (φ □→ ψ),
 belief operators B_i, the temporal operators X (next) and Y (yesterday), and
 a necessity operator □ (true at every world reaching the current vertex).
-Syntax is §1.1, abbreviations §1.2, strategic structures §2.1, game models
-and the premise function §2.2, satisfaction §2.3.
+Syntax is §3.1.1 (pp. 15–16), abbreviations §3.1.2 (p. 16), strategic
+structures §3.2.1 (pp. 16–18), game models and the premise function §3.2.2
+(pp. 18–20), satisfaction §3.2.3 (pp. 20–22).
 
 ## Deviations from the Haskell
 
@@ -47,6 +53,13 @@ and the premise function §2.2, satisfaction §2.3.
   has at least one world, even at an outcome vertex with no premises; the
   port always computes `[[φ]]` first, which differs only when there are no
   worlds, and then `[[φ]]` is empty and cannot error.
+* **Centering fixed (gamen-hs TODO(#18)).** `withMovePremises` adds the
+  singleton premise {(γ,w)} to every F(γ,w), so Centering holds at
+  single-move vertices too. gamen-hs leaves this as a TODO, and there
+  ∩F(γ,w) is all of R^w at a single-move vertex. This is a deliberate
+  divergence: gamen-lean is primary. It changes results only at
+  single-move vertices reached by more than one world (see
+  `withMovePremises`); Dcleg is not part of `gamen-validate`.
 * `DclegModel` derives no `BEq`/`Repr` (the Haskell derives `Eq, Show`;
   nothing here or in the tests compares models).
 -/
@@ -66,9 +79,9 @@ end Dcleg
 
 open Dcleg
 
-/-! ## Syntax (§1.1) -/
+/-! ## Syntax (§3.1.1, pp. 15–16) -/
 
-/-- Formulas of DCLEG (§1.1). Atoms: ⊥, propositions p, turn_i, moves m,
+/-- Formulas of DCLEG (§3.1.1, pp. 15–16). Atoms: ⊥, propositions p, turn_i, moves m,
 payoffs k_i. Operators: ¬, ∨, □→ (counterfactual), B_i, X, Y, □. -/
 inductive DclegFormula where
   /-- ⊥ (falsity) -/
@@ -97,7 +110,7 @@ inductive DclegFormula where
   | dfBox (φ : DclegFormula)
   deriving BEq, Ord, Repr, Inhabited
 
-/-! ### Abbreviation helpers (§1.2) -/
+/-! ### Abbreviation helpers (§3.1.2, p. 16) -/
 
 /-- ⊤ = ¬⊥ -/
 def dfTop : DclegFormula := .dfNeg .dfBot
@@ -115,9 +128,10 @@ def dfDiamond (p : DclegFormula) : DclegFormula := .dfNeg (.dfBox (.dfNeg p))
 def dfPlausible (i : Agent) (p : DclegFormula) : DclegFormula :=
   .dfNeg (.dfBelief i (.dfNeg p))
 
-/-! ## Strategic structure (§2.1) -/
+/-! ## Strategic structure (§3.2.1, pp. 16–18) -/
 
-/-- T = ⟨V, EndV, Q, PMoves, next⟩ (§2.1). Conditions 1–7 of §2.1 are
+/-- T = ⟨V, EndV, Q, PMoves, next⟩ (§3.2.1, pp. 16–17). Conditions 1–7
+(§3.2.1, p. 17) are
 documented but not enforced here. -/
 structure StrategicStructure where
   /-- V: all nodes -/
@@ -144,9 +158,9 @@ def mkStrategicStructure (ns ends : List Vertex) (player : List (Vertex × Agent
   ssMoves := Std.TreeMap.ofList (moves.map fun (v, ms) => (v, Std.TreeSet.ofList ms))
   ssNext := Std.TreeMap.ofList (trans.map fun (v, m, v') => ((v, m), v'))
 
-/-! ## History (§2.2) -/
+/-! ## History (§3.2.2, pp. 18–19) -/
 
-/-- A complete play: H(γ) = ⟨(v₀,m₀),…,(vₑ,mₑ)⟩, v_{e+1} (§2.2).
+/-- A complete play: H(γ) = ⟨(v₀,m₀),…,(vₑ,mₑ)⟩, v_{e+1} (§3.2.2, pp. 18–19).
 Conditions: v₀ is the unique root; m_j ∈ PMoves(v_j); next(v_j,m_j) = v_{j+1}. -/
 structure History where
   /-- (v₀,m₀), …, (vₑ,mₑ) -/
@@ -163,7 +177,7 @@ def histVertices (h : History) : Std.TreeSet Vertex :=
 
 /-! ## Propositions -/
 
-/-- A proposition is a subset of I = {(γ,w) | w ∈ V_γ} (§2.2). Haskell's
+/-- A proposition is a subset of I = {(γ,w) | w ∈ V_γ} (§3.2.2, p. 19). Haskell's
 `Prop`, renamed so as not to shadow Lean's `Prop`. -/
 abbrev DclegProp := Std.TreeSet (World × Vertex)
 
@@ -176,17 +190,17 @@ instance : Ord DclegProp where
 instance : BEq DclegProp where
   beq a b := a.toList == b.toList
 
-/-! ## Game model (§2.2) -/
+/-! ## Game model (§3.2.2, pp. 18–20) -/
 
-/-- M = ⟨T, Γ, H, F, π, {R^w}, {N^w_i}, {P_i}⟩ (§2.2).
+/-- M = ⟨T, Γ, H, F, π, {R^w}, {N^w_i}, {P_i}⟩ (§3.2.2, p. 18).
 
-R^w is derived from H at evaluation time (§2.2):
+R^w is derived from H at evaluation time (§3.2.2, p. 19):
 R^w = {(β,γ) ∈ Γ² | w ∈ V_γ ∩ V_β}, so it is not stored. -/
 structure DclegModel where
   dmStructure : StrategicStructure
   dmWorlds : Std.TreeSet World
   dmHistory : Std.TreeMap World History
-  /-- F(γ,w) ∈ P(P(I)): premise function for counterfactuals (§2.2).
+  /-- F(γ,w) ∈ P(P(I)): premise function for counterfactuals (§3.2.2, p. 19).
   Constraints: Centering (∩F(γ,w) = {(γ,w)}) and Contemporary Universality
   (∀β: w ∈ V_β → (β,w) ∈ ∪F(γ,w)). Populate with `withMovePremises` or
   supply explicitly. -/
@@ -224,13 +238,13 @@ def worldVertices (m : DclegModel) (gamma : World) : Std.TreeSet Vertex :=
   | some h => histVertices h
   | none => ∅
 
-/-- Mv(γ,w): move made at vertex w in world γ (§2.3). The first matching
-pair in the history, as Haskell's `lookup`. -/
+/-- Move(γ,w): move made at vertex w in world γ (§3.2.3, p. 20; v5.0's
+Mv). The first matching pair in the history, as Haskell's `lookup`. -/
 def moveAt (m : DclegModel) (gamma : World) (w : Vertex) : Option Move := do
   let h ← m.dmHistory.get? gamma
   (h.histMoves.find? (·.1 == w)).map (·.2)
 
-/-- Predecessor of w in world γ: the unique v with next(v, Mv(γ,v)) = w. -/
+/-- Predecessor of w in world γ: the unique v with next(v, Move(γ,v)) = w. -/
 def predecessorVertex (m : DclegModel) (gamma : World) (w : Vertex) : Option Vertex :=
   match m.dmHistory.get? gamma with
   | none => none
@@ -244,7 +258,7 @@ where
         | [] => h.histEnd
       if w' == w then some v else go h rest
 
-/-- R^w: worlds β with w ∈ V_β (derived from H, §2.2). -/
+/-- R^w: worlds β with w ∈ V_β (derived from H, §3.2.2, p. 19). -/
 def settledAccessible (m : DclegModel) (w : Vertex) : List World :=
   m.dmWorlds.toList.filter fun beta => (worldVertices m beta).contains w
 
@@ -254,7 +268,7 @@ private def doxSuccs (perAgt : Std.TreeMap Vertex (Std.TreeMap World (Std.TreeSe
   ((perAgt.getD w ∅).getD gamma ∅).toList
 
 /-- N^w_i(γ): worlds doxastically accessible from γ for agent i at vertex w
-(§2.2).
+(ᚣ^w_i(γ), §3.2.2, pp. 19–20).
 
 Errors on an agent with no doxastic map rather than returning ∅: an unknown
 agent must not make `B_i φ` vacuously true (adversarial review B1;
@@ -277,8 +291,8 @@ Returns the violation messages; `[]` means the model passes:
   w, N^w_i(γ) is non-empty for every γ ∈ R^w.
 
 These are the referential and seriality guarantees the evaluator relies on
-(Present Seriality is condition 2 of §2.2's doxastic conditions), not the
-full Conditions 1–7 of §2.1. -/
+(Present Seriality is condition 2 of §3.2.2's doxastic conditions, p. 20),
+not the full Conditions 1–7 of §3.2.1 (p. 17). -/
 def validateDclegModel (m : DclegModel) : List String :=
   historyIntegrity ++ doxasticWorldIntegrity ++ nSubsetR ++ doxSeriality
 where
@@ -323,7 +337,7 @@ where
               has no doxastic successors for world {repr g} ∈ R^w (violates KD seriality)"]
     return out
 
-/-! ## Counterfactual selection (§2.2) -/
+/-! ## Counterfactual selection (§3.2.2, p. 19) -/
 
 /-- Haskell's `Data.List.subsequences`, same order:
 `subsequences [1,2,3] = [[],[1],[2],[1,2],[3],[1,3],[2,3],[1,2,3]]`. -/
@@ -334,7 +348,7 @@ where
     | [] => []
     | x :: rest => [x] :: (nonEmpty rest).foldr (fun ys r => ys :: (x :: ys) :: r) []
 
-/-- max_{F(γ,w)}^φ(Γ), given `ext` = [[φ]] (§2.2): the worlds γ' with
+/-- max_{F(γ,w)}^φ(Γ), given `ext` = [[φ]] (§3.2.2, p. 19): the worlds γ' with
 (γ',w) ∈ [[φ]] and a non-empty G ⊆ F(γ,w) such that (γ',w) ∈ ∩G and every
 G' ⊋ G within F(γ,w) is φ-inconsistent. Haskell's `maxPhiConsistentWith`;
 pure, since the only thing that can error, [[φ]], is the caller's.
@@ -366,9 +380,9 @@ private def extensionBy (m : DclegModel) (sat : World → Vertex → Except Stri
       if ← sat gamma w then out := out.insert (gamma, w)
   return out
 
-/-! ## Satisfaction (§2.3) -/
+/-! ## Satisfaction (§3.2.3, pp. 20–22) -/
 
-/-- M, γ, w ⊩ φ (§2.3). Requires w ∈ V_γ, and errors otherwise, at every
+/-- M, γ, w ⊩ φ (§3.2.3, p. 21). Requires w ∈ V_γ, and errors otherwise, at every
 recursive call, as the Haskell's first equation does. -/
 def dclegSatisfies (m : DclegModel) : World → Vertex → DclegFormula → Except String Bool
   | gamma, w, phi => do
@@ -381,7 +395,7 @@ def dclegSatisfies (m : DclegModel) : World → Vertex → DclegFormula → Exce
     | .dfProp p => pure ((m.dmValuation.getD p ∅).contains (gamma, w))
     -- turn_i: Q(w) = i
     | .dfTurn i => pure (m.dmStructure.ssPlayer.get? w == some i)
-    -- m: Mv(γ,w) = m
+    -- m: Move(γ,w) = m
     | .dfMove mv => pure (moveAt m gamma w == some mv)
     -- k_i: P_i(w_{e+1}) = k, where w_{e+1} = histEnd(H(γ))
     | .dfPayoff k i =>
@@ -398,7 +412,7 @@ def dclegSatisfies (m : DclegModel) : World → Vertex → DclegFormula → Exce
     | .dfBelief i f => do
       let succs ← doxasticSuccessors m i w gamma
       succs.allM fun delta => dclegSatisfies m delta w f
-    -- X φ: φ holds at next(w, Mv(γ,w)); false at outcome nodes.
+    -- X φ: φ holds at next(w, Move(γ,w)); false at outcome nodes.
     | .dfNext f =>
       match moveAt m gamma w with
       | none => pure false
@@ -411,19 +425,20 @@ def dclegSatisfies (m : DclegModel) : World → Vertex → DclegFormula → Exce
       match predecessorVertex m gamma w with
       | none => pure false
       | some w' => dclegSatisfies m gamma w' f
-    -- □ φ: φ holds at w in every world β with w ∈ V_β; uniform across γ (§2.5).
+    -- □ φ: φ holds at w in every world β with w ∈ V_β; uniform across γ (§3.2.5, p. 23).
     | .dfBox f => (settledAccessible m w).allM fun beta => dclegSatisfies m beta w f
-    -- φ □→ ψ: ψ holds at w in every maximally φ-consistent world (§2.2–2.3).
+    -- φ □→ ψ: ψ holds at w in every maximally φ-consistent world
+    -- (§3.2.2, p. 19; §3.2.3, pp. 21–22).
     | .dfConditional f g => do
       let ext ← extensionBy m fun beta v => dclegSatisfies m beta v f
       (maxPhiConsistentWith m ext gamma w).allM fun beta => dclegSatisfies m beta w g
 
-/-- [[φ]]: the set of (world, vertex) pairs satisfying φ (§2.2). -/
+/-- [[φ]]: the set of (world, vertex) pairs satisfying φ (§3.2.2, p. 19). -/
 def extension (m : DclegModel) (phi : DclegFormula) :
     Except String (Std.TreeSet (World × Vertex)) :=
   extensionBy m fun gamma w => dclegSatisfies m gamma w phi
 
-/-- max_{F(γ,w)}^φ(Γ): the worlds maximally φ-consistent with γ at w (§2.2). -/
+/-- max_{F(γ,w)}^φ(Γ): the worlds maximally φ-consistent with γ at w (§3.2.2, p. 19). -/
 def maxPhiConsistent (m : DclegModel) (gamma : World) (w : Vertex) (phi : DclegFormula) :
     Except String (List World) := do
   return maxPhiConsistentWith m (← extension m phi) gamma w
@@ -440,7 +455,8 @@ def dclegTrueIn (m : DclegModel) (phi : DclegFormula) : Except String Bool :=
 /-- F(γ,w) under the move-based default, for each decision vertex w
 reached in γ: one premise per move mv ∈ PMoves(w), the pairs (β,w) of the
 worlds β that play mv at w, with (γ,w) added to every *non-actual* move's
-premise. Outcome nodes get no entry. -/
+premise, plus the singleton premise {(γ,w)} (Centering; gamen-hs
+TODO(#18)). Outcome nodes get no entry. -/
 private def buildPremises (m : DclegModel) :
     Std.TreeMap (World × Vertex) (Std.TreeSet DclegProp) :=
   Std.TreeMap.ofList <| m.dmWorlds.toList.flatMap fun gamma =>
@@ -457,19 +473,36 @@ where
   premisesAt (gamma : World) (w : Vertex) : Std.TreeSet DclegProp :=
     let actual := moveAt m gamma w
     let allMvs := (m.dmStructure.ssMoves.getD w ∅).toList
-    Std.TreeSet.ofList (allMvs.map fun mv => mkPremise gamma w mv actual)
+    (Std.TreeSet.ofList (allMvs.map fun mv => mkPremise gamma w mv actual)).insert
+      (Std.TreeSet.ofList [(gamma, w)])
 
 /-- Populate F(γ,w) from the moves actually played (gamen-hs's own
-construction; F's constraints are §2.2's Centering and Contemporary
-Universality). For each available move mv at w, the premise
+construction; F's constraints are Centering and Contemporary Universality,
+§3.2.2, p. 19). For each available move mv at w, the premise
 {(β,w) | β plays mv at w}, with (γ,w) added to every *non-actual* move's
-premise.
+premise; and the singleton premise {(γ,w)}.
 
-Centering (∩F(γ,w) = {(γ,w)}) then holds whenever at least *two* distinct
-moves are available at w. It does NOT hold at a *single-move* vertex: the
-lone premise is the whole R^w, so ∩F(γ,w) = R^w ⊋ {(γ,w)} whenever more
-than one world reaches w (adversarial review B8). The Haskell's TODO(#18)
-to add the singleton premise {(γ,w)} is not done there, so not here. -/
+Contemporary Universality holds because every world reaching w plays some
+move there. Centering (∩F(γ,w) = {(γ,w)}) holds at every decision vertex
+because of the singleton premise. Without it, Centering holds only where at
+least two moves are available: at a *single-move* vertex the lone premise
+is the whole R^w, so ∩F(γ,w) = R^w ⊋ {(γ,w)} whenever more than one world
+reaches w (adversarial review B8).
+
+**Deliberate divergence from gamen-hs** (its TODO(#18), not done there).
+The singleton changes max^φ_{F(γ,w)}(Γ) only at single-move vertices that
+more than one world reaches, and there only when (γ,w) ∈ [[φ]]: the answer
+is then {γ} (Centering, §3.2.2, p. 19) instead of every world at w
+satisfying φ. Elsewhere it is redundant. Where two or more moves are
+available the other premises already intersect to {(γ,w)}; and if
+(γ,w) ∉ [[φ]], no premise set containing the singleton is φ-consistent,
+so the maximal sets are the same as before. At a vertex where only γ plays
+its move the singleton equals that move's premise and F is unchanged.
+
+Outcome nodes still get no premises, as in gamen-hs. The thesis states
+Centering and Contemporary Universality for every w ∈ V, outcome nodes
+included, so neither holds there, and every φ □→ ψ is vacuously true at an
+outcome node. That gap is not closed here. -/
 def withMovePremises (m : DclegModel) : DclegModel :=
   { m with dmPremises := buildPremises m }
 

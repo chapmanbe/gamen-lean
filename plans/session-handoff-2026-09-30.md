@@ -16,7 +16,7 @@ thread means: its plan's "Done when" is met; it was reviewed independently
 ## Where things stand (snapshot, 2026-09-30; verify with `git log`)
 
 **gamen-lean:**
-- `main` is at `f6ce8b3`, **pushed**. `lake test` passes 1110/1110.
+- `main` is at `820fc3a`, **pushed**. `lake test` passes 1167/1167.
 - Every gamen-hs library module is ported, including Visualize. See
   PORTING.md for the rest.
 - Untracked, deliberately: `notes/dcleg-thesis-final.pdf`, Jeremiah's final
@@ -104,7 +104,7 @@ pushed, with Phase 1 (honest timing reporting) merged. Its untracked
 | Thread | Plan (read only if you pick it) | State | Next step |
 |---|---|---|---|
 | Guideline-validation logic | `plans/logic-for-guideline-validation-2026-09-29.md`; Phase 2 spec/plan in `docs/superpowers/` (2026-09-30) | Phase 1 merged. **Phase 2 merged 2026-09-30**: `Gamen.ManyValued.Completion` (theorems 1–6, gamen-lean `3f1127d`) and the port's `validate-guidelines applicability` (port `c6c0a54`); 7 hand-written patients × 20 conflicts: 36 definite, 64 possible, 40 absent, 0 over-warnings | **Brian approves the 4 draft definitions**: read the port's `docs/applicability-definitions-review.md` (R18 and Rec 3.3.1.1 add "adults"; potassium limited to CKD, RASi part from PP 3.6.3; phosphate limited to G3a–G5; G5D counted as G5). Then a clinician sample before any paper claim |
-| Three-valued teaching | `plans/three-valued-logic-2026-09-29.md` | Library done | The two notebooks (primer, three-valued), then a novice walkthrough |
+| Three-valued teaching | `plans/three-valued-logic-2026-09-29.md` | **Done 2026-09-30** (merged `820fc3a`): `Notebooks/PropLogicPrimer.lean`, `Notebooks/ThreeValued.lean`, `Widgets/TruthTable.lean`, answer keys in `Tests/ManyValuedNotebooks.lean`. Blind review and Fable novice walkthrough done, with one fix round (`docs/assessment/three-valued-*-2026-09-30.md`) | Optional: check the tables render in the VS Code infoview; ask Brian before raising the FHIRPath `implies` note/table conflict with HL7 (Jira not searched) |
 | K tableau soundness | `plans/countermodel-explorer-and-k-soundness-2026-09-29.md` Part B | Part A (countermodel explorer) merged | B0 spike on derived `Ord` lawfulness |
 | Edition-proof citations | same plan, Part C | not started | `tools/bd/citations.py` index/check/migrate. Now also covers DCLEG citations |
 | DCLEG thesis verification | `plans/dcleg-thesis-verification-2026-09-29.md` | Proofs draft on `dcleg-proofs-draft` (see above). An F-condition validator and a random admissible-F generator exist in `Gamen/Dcleg.lean` and the tests | **Wait for Brian's talk with Jeremiah.** Then: his answers to Q1–Q18 (especially Q12 and Q13), then finish Lemma 4.1, Theorem 4.2, Lemma 5.2 and Theorem 5.1 |
@@ -179,7 +179,7 @@ pushed, with Phase 1 (honest timing reporting) merged. Its untracked
 3. **Guideline-validation Phase 2: done 2026-09-30.** Waiting on Brian's
    approval of the draft definitions (see the table above). Follow-ups:
    `plans/gv-phase2-followups-2026-09-30.md`.
-4. **The three-valued notebooks.**
+4. **The three-valued notebooks: done 2026-09-30** (`820fc3a`).
 5. **Part C, citation tooling:** it catches wrong B&D and DCLEG citations
    at test time.
 6. **Part B0,** the soundness spike.

@@ -481,15 +481,41 @@ def answerKeyCases : List Case := [
     && ex622Scenario.valuation == [("p", ["1.2"]), ("q", ["1.1"])]
     && ex622View.summary == "countermodel (open branch 1): W = {1, 1.1, 1.2}; \
          R = {⟨1, 1.1⟩, ⟨1, 1.2⟩}; V(p) = {1.2}; V(q) = {1.1}"⟩,
-  ⟨"ch6 exercises: □p → □□p invalid in K, valid in S4; (□p ∨ □q) → □(p ∨ q) valid in K",
-    [(Gamen.Widgets.countermodelView systemK [] exercise1).isValid,
-     (Gamen.Widgets.countermodelView systemS4 [] exercise1).isValid,
-     (Gamen.Widgets.countermodelView systemK [] exercise3).isValid] == [false, true, true]⟩,
+  ⟨"ch6 exercises: □p → □□p invalid in K (a countermodel), valid in S4; \
+    (□p ∨ □q) → □(p ∨ q) valid in K",
+    [(Gamen.Widgets.countermodelView systemK [] exercise1).verdict,
+     (Gamen.Widgets.countermodelView systemS4 [] exercise2).verdict,
+     (Gamen.Widgets.countermodelView systemK [] exercise3).verdict]
+      == [some false, some true, some true]
+    && exercise2 == ml[ □p → □□p ]⟩,
   ⟨"ch6 exercise 1 hint: the K countermodel is the chain 1 → 1.1 → 1.1.1 with V(p) = {1.1}",
     match Gamen.Widgets.countermodelView systemK [] exercise1 with
     | .countermodel sc _ => sc.edges == [("1", "1.1"), ("1.1", "1.1.1")]
         && sc.valuation == [("p", ["1.1"])]
-    | _ => false⟩ ]
+    | _ => false⟩,
+  -- The notebook's reading of the branch: lines 2–11 and the two ∨T splits,
+  -- whose other sides close against lines 6 and 8 (B&D pp. 111–112).
+  ⟨"ch6 Example 6.22 open branch, line by line",
+    Gamen.Widgets.openBranchLines systemK [] example622 == [
+      "1. 1 F (□(p ∨ q) → (□p ∨ □q))    (assumption)",
+      "2. 1 T □(p ∨ q)    (→F 1)",
+      "3. 1 F (□p ∨ □q)    (→F 1)",
+      "4. 1 F □p    (∨F 3)",
+      "5. 1 F □q    (∨F 3)",
+      "6. 1.1 F p    (□F 4)",
+      "7. 1.1 T (p ∨ q)    (□T 2)",
+      "8. 1.2 F q    (□F 5)",
+      "9. 1.2 T (p ∨ q)    (□T 2)",
+      "10. 1.1 T q    (∨T 7; the other side, 1.1 T p, closes against line 6)",
+      "11. 1.2 T p    (∨T 9; the other side, 1.2 T q, closes against line 8)"]⟩,
+  ⟨"ch6 the unknown verdict with a 3-step budget",
+    (Gamen.Widgets.countermodelView systemK [] example622 (maxSteps := 3)).summary
+      == "unknown: the tableau ran out of its step budget (3 steps)"⟩,
+  ⟨"ch6 exercise feedback: numbered, the hint only after a wrong answer",
+    let v := Gamen.Widgets.countermodelView systemK [] exercise1
+    Gamen.Widgets.gradeValidity 1 (some false) v "H" == "1. ✓ Correct: not valid."
+    && Gamen.Widgets.gradeValidity 1 (some true) v "H" == "1. ✗ Not quite. H"
+    && (Gamen.Widgets.gradeValidity 2 none v "H").startsWith "2. Not answered yet"⟩ ]
 
 /-! ## Countermodel view (`Widgets/Countermodel.lean`)
 
@@ -521,13 +547,43 @@ def firstExtracted (sys : System) (prem : List Formula) (c : Formula) : Option M
   | .stillOpen bs => (firstVerified sys bs).toOption.map (·.1)
   | _ => none
 
-/-- A synthetic scenario with the layout's positions, for the canvas limits. -/
-def synth (worlds atoms : List String) (checks : Nat := 1) (loops := true) : Scenario :=
-  { title := "", worlds := layout worlds atoms,
-    edges := if loops then worlds.map fun w => (w, w) else []
-    atoms, editable := worlds, evalAt := "1",
-    checks := (List.range checks).map fun _ => { label := "c", formula := .bot },
-    valuation := atoms.map (·, []) }
+/-- Independent of `edgesClear`: no arrow of a drawn scenario comes within
+the world radius (0.42) of the center of a world it does not end at. The
+arrow is sampled at 200 points rather than solved in closed form, so a
+mistake in `segmentDistance` does not carry over. -/
+def noEdgeThroughWorld (sc : Scenario) : Bool :=
+  sc.edges.all fun (a, b) => a == b ||
+    match sc.worlds.lookup a, sc.worlds.lookup b with
+    | some (ax, ay), some (bx, by_) =>
+      (List.range 201).all fun k =>
+        let t := k.toFloat / 200
+        let px := ax + t * (bx - ax)
+        let py := ay + t * (by_ - ay)
+        sc.worlds.all fun (w, x, y) =>
+          w == a || w == b || (px - x) * (px - x) + (py - y) * (py - y) > 0.42 * 0.42
+    | _, _ => false
+
+/-- A scenario is acceptable to draw: if `countermodelHtml` would draw it
+(`fitsCanvas`), no arrow runs through a world it does not end at. -/
+def drawnOK (sc : Scenario) : Bool := !fitsCanvas sc || noEdgeThroughWorld sc
+
+def isChildW (c p : String) : Bool :=
+  (prefixPath c).length == (prefixPath p).length + 1 && (prefixPath p).isPrefixOf (prefixPath c)
+
+def isDescW (c p : String) : Bool :=
+  (prefixPath c).length > (prefixPath p).length && (prefixPath p).isPrefixOf (prefixPath c)
+
+/-- A synthetic scenario placed by `arrange`, for the canvas limits. Edges:
+`mode` 0 is the prefix tree (K), 1 adds self-loops (KT), 2 is the
+reflexive, transitive closure (S4). -/
+def synth (worlds atoms : List String) (mode : Nat := 1) (checks : List Check := []) :
+    Scenario :=
+  let es := worlds.flatMap fun a => worlds.filterMap fun b =>
+    if (mode == 2 && (isDescW b a || a == b)) || (mode < 2 && isChildW b a)
+        || (mode == 1 && a == b) then some (a, b) else none
+  arrange
+  { title := "", worlds := worlds.map (·, 0, 0), edges := es
+    atoms, editable := worlds, evalAt := "1", checks, valuation := atoms.map (·, []) }
 
 /-- Every prefix tree with `n` worlds: world i + 1 picks a parent among the
 first i worlds (with repeats up to sibling order). -/
@@ -539,7 +595,7 @@ def trees : Nat → List (List String)
         !((w.drop (parent.length + 1)).toString.contains '.')).length
       ws ++ [s!"{parent}.{k + 1}"]
 
-def depthOK (ws : List String) : Bool := ws.all fun w => depth w ≤ 2
+def depthAtMost (d : Nat) (ws : List String) : Bool := ws.all fun w => depth w ≤ d
 
 def chain (d : Nat) : List String :=
   (List.range (d + 1)).map fun i => ".".intercalate (List.replicate (i + 1) "1")
@@ -548,11 +604,24 @@ def star (n : Nat) : List String := "1" :: (List.range n).map fun i => s!"1.{i +
 
 def atoms4 : List String := ["p", "q", "r", "s"]
 
+/-- `p ∧ (p ∧ (… ∧ p))` with `n + 1` atoms. -/
+def conj : Nat → Formula
+  | 0 => p
+  | n + 1 => .and p (conj n)
+
+/-- Every countermodel scenario the unit tests draw. -/
+def drawnScenarios : List Scenario :=
+  [ex622Scenario] ++ ([(systemK, [], ml[ □p → □□p ]), (systemK, [], ml[ □p → p ]),
+    (systemS4, [], ml[ ◇p → □◇p ]), (systemS4, [], ml[ □(q → □(q ∨ ¬p)) ]),
+    (systemK, [ml[ □p ], ml[ q ]], ml[ □□p ]), (systemKT, [], ml[ ◇p → □◇p ]),
+    (systemS4, [], ml[ □(p ∨ q) → (□p ∨ □q) ])].filterMap fun (sys, ps, c) =>
+      scenarioOf (view sys ps c))
+
 def cases : List Case := [
   ⟨"countermodelView: the K axiom □(p → q) → (□p → □q) is valid",
     (view systemK [] ml[ □(p → q) → (□p → □q) ]).isValid⟩,
   ⟨"countermodelView: □p → □□p has a countermodel in K and is valid in S4",
-    (scenarioOf (view systemK [] ml[ □p → □□p ])).isSome
+    (view systemK [] ml[ □p → □□p ]).isCountermodel
       && (view systemS4 [] ml[ □p → □□p ]).isValid⟩,
   ⟨"countermodelView: □p → p has a countermodel in K with no ⟨1, 1⟩ edge, and is valid in KT",
     (match scenarioOf (view systemK [] ml[ □p → p ]) with
@@ -562,14 +631,17 @@ def cases : List Case := [
   ⟨"countermodelView: a formula outside the Kripke fragment gives .unknown, not an error",
     unknownWhy (view systemK [] (.knowledge "a" p))
       == "extractCountermodel: formula outside the Kripke fragment: K[a]p"⟩,
-  ⟨"countermodelView: an exhausted step budget gives .unknown",
-    unknownWhy (countermodelView systemK [] ml[ □(p ∨ q) → □p ∨ □q ] (maxSteps := 2))
-      == "the tableau ran out of its step budget (2 steps)"⟩,
+  ⟨"countermodelView: an exhausted step budget gives .unknown, which is neither valid \
+    nor a countermodel",
+    let v := countermodelView systemK [] ml[ □(p ∨ q) → □p ∨ □q ] (maxSteps := 2)
+    unknownWhy v == "the tableau ran out of its step budget (2 steps)"
+      && !v.isValid && !v.isCountermodel && v.verdict == none⟩,
   -- gamen-hs#42 (open): KTB's only open branch for ◇□□¬p fails the
   -- re-check, so there is no verified model to show.
   ⟨"countermodelView: KTB ◇□□¬p: the only open branch fails its re-check → .unknown, no picture",
     (unknownWhy (view systemKB [] ml[ ◇□□¬p ])).startsWith
-      "extractCountermodel: extracted model fails to satisfy"⟩,
+      "extractCountermodel: extracted model fails to satisfy"
+      && openBranchLines systemKB [] ml[ ◇□□¬p ] == []⟩,
   ⟨"firstVerified: an unexpanded (truncated) branch is rejected, not drawn",
     isErr (firstVerified systemK [Branch.ofList [pfFalse .root ml[ p → p ]]])⟩,
   ⟨"firstVerified: skips a failing branch and numbers the one it uses",
@@ -599,31 +671,54 @@ def cases : List Case := [
     (view systemK [ml[ □p ], ml[ □(p → q) ]] ml[ □q ]).isValid⟩,
   ⟨"countermodelView: Example 6.22 fits the canvas",
     fitsCanvas ex622Scenario⟩,
-  ⟨"layout: every prefix tree with ≤ 4 worlds fits, with 4 one-letter atoms",
-    (List.range 4).all fun n => (trees (n + 1)).all fun ws => fitsCanvas (synth ws atoms4)⟩,
-  ⟨"layout: every 5-world prefix tree of depth ≤ 2 fits, and a root with 5 children",
-    (trees 5).all (fun ws => !depthOK ws || fitsCanvas (synth ws atoms4))
+  -- The review's reproduction: unshifted, 1, 1.1, 1.1.1 lie on one line and
+  -- the closure edge ⟨1, 1.1.1⟩ runs under world 1.1.
+  ⟨"layout: S4 □(q → □(q ∨ ¬p)): the chain is drawn with ⟨1, 1.1.1⟩ clear of world 1.1",
+    match scenarioOf (view systemS4 [] ml[ □(q → □(q ∨ ¬p)) ]) with
+    | some sc => sc.edges.contains ("1", "1.1.1") && fitsCanvas sc && noEdgeThroughWorld sc
+        && !noEdgeThroughWorld { sc with worlds := layout (sc.worlds.map (·.1)) sc.atoms }
+    | none => false⟩,
+  ⟨"layout: every drawn scenario in these tests has no arrow through another world",
+    drawnScenarios.length == 8 && drawnScenarios.all drawnOK⟩,
+  ⟨"layout: every prefix tree with ≤ 4 worlds fits with tree edges and loops (K, KT), \
+    4 one-letter atoms, and no arrow through a world",
+    (List.range 4).all fun n => (trees (n + 1)).all fun ws =>
+      let sc := synth ws atoms4
+      fitsCanvas sc && noEdgeThroughWorld sc⟩,
+  ⟨"layout: every 5-world prefix tree of depth ≤ 2 fits (K, KT), and a root with 5 children",
+    (trees 5).all (fun ws => !depthAtMost 2 ws || fitsCanvas (synth ws atoms4))
       && fitsCanvas (synth (star 5) atoms4)⟩,
-  ⟨"layout: no prefix tree with 7 worlds fits",
-    (trees 7).all fun ws => !fitsCanvas (synth ws ["p"])⟩,
+  ⟨"layout: with the S4 closure, every tree with ≤ 3 worlds and every 4-world tree of \
+    depth ≤ 2 fits",
+    (List.range 4).all fun n => (trees (n + 1)).all fun ws =>
+      (n == 3 && !depthAtMost 2 ws) || fitsCanvas (synth ws atoms4 2)⟩,
+  ⟨"layout: no 7-world prefix tree fits with 4 atoms",
+    (trees 7).all fun ws => !fitsCanvas (synth ws atoms4)⟩,
   ⟨"layout: depth 4 does not fit (1.1.1.1.1 runs off the canvas)",
     !fitsCanvas (synth (chain 4) ["p"]) && fitsCanvas (synth (chain 3) atoms4)⟩,
   ⟨"layout: 5 atoms do not fit (fact chips); 4 do",
     !fitsCanvas (synth (star 1) (atoms4 ++ ["t"])) && fitsCanvas (synth (star 1) atoms4)⟩,
-  ⟨"layout: a 15-character atom name fits 3 worlds, not 4",
-    fitsCanvas (synth (star 2) ["active_bleeding"])
-      && !fitsCanvas (synth (star 3) ["active_bleeding"])⟩,
+  ⟨"layout: an atom name of 12 characters fits its chip, 13 do not",
+    fitsCanvas (synth (star 1) ["abcdefghijkl"])
+      && !fitsCanvas (synth (star 1) ["abcdefghijklm"])⟩,
+  ⟨"layout: a check row fits a conclusion of 6 conjoined atoms, not 7 (the SVG draws it)",
+    fitsCanvas (synth (star 1) ["p"] 1 [{ label := "conclusion", formula := conj 5 }])
+      && !fitsCanvas (synth (star 1) ["p"] 1 [{ label := "conclusion", formula := conj 6 }])⟩,
   ⟨"layout: 6 checks fit (5 premises), 7 do not",
-    fitsCanvas (synth (star 2) ["p"] 6) && !fitsCanvas (synth (star 2) ["p"] 7)⟩,
-  ⟨"layout: positions stay inside the canvas and at y ≥ 4.9 + 0.3 × atoms",
+    let c : Check := { label := "c", formula := .bot }
+    fitsCanvas (synth (star 2) ["p"] 1 (List.replicate 6 c))
+      && !fitsCanvas (synth (star 2) ["p"] 1 (List.replicate 7 c))⟩,
+  ⟨"layout: positions stay inside the canvas and at y ≥ 4.9 + 0.3 × atoms, in every \
+    layout arrange tries",
     (List.range 6).all fun n => (trees (n + 1)).all fun ws =>
-      (synth ws atoms4).worlds.all fun (_, x, y) =>
+      layoutShifts.all fun (o, b, par) => (layoutWith o b par ws atoms4).all fun (_, x, y) =>
         0 ≤ x && x ≤ 10 && y ≤ 9 && y ≥ bottomRow atoms4 - 1e-9⟩ ]
 
 /-- The property-test invariant for one system, premise and conclusion: a
-shown countermodel falsifies the conclusion where the widget evaluates it
-(the root), satisfies the premise there, and is drawn inside the canvas at
-y ≥ 4.9 + 0.3 × atoms; `.valid` means `tableauProves` proved it. -/
+countermodel refutes the conclusion where the widget evaluates it (the
+root), satisfies the premise there, lies inside the canvas at
+y ≥ 4.9 + 0.3 × atoms, and, if drawn, has no arrow through a world it does
+not end at; `.valid` means `tableauProves` proved it. -/
 def viewOK (sys : System) (prem conc : Formula) : Bool :=
   match countermodelView sys [prem] conc with
   | .valid => tableauProves sys defaultMaxSteps [prem] conc == .definitely true
@@ -632,8 +727,9 @@ def viewOK (sys : System) (prem conc : Formula) : Bool :=
     sc.evalAt == "1"
       && okIs (satisfies sc.toModel sc.evalAt conc) false
       && okIs (satisfies sc.toModel "1" prem) true
-      && sc.worlds.all fun (_, x, y) =>
-           0 ≤ x && x ≤ 10 && y ≤ 9 && y ≥ bottomRow sc.atoms - 1e-9
+      && (sc.worlds.all fun (_, x, y) =>
+           0 ≤ x && x ≤ 10 && y ≤ 9 && y ≥ bottomRow sc.atoms - 1e-9)
+      && drawnOK sc
 
 end CountermodelViewTests
 
@@ -3413,8 +3509,9 @@ def properties : List (String × IO Bool) :=
         (!proves [] f || truthsIn testModel f == some [true, true, true]) = true)),
     -- Widgets/Countermodel.lean (Lean-only; plan Part A): K, KT, S4, one
     -- premise, formulas capped at size 12 by the `Arbitrary Formula` instance.
-    ("countermodel view: shown models refute the conclusion at the root, satisfy the premise, \
-      and fit the canvas; .valid agrees with tableauProves (K, KT, S4)",
+    ("countermodel view: every countermodel refutes the conclusion at the root and \
+      satisfies the premise, lies inside the canvas bounds, and, when drawn, has no arrow \
+      through another world; .valid agrees with tableauProves (K, KT, S4)",
       run (NamedBinder "f" <| ∀ f : Formula, NamedBinder "g" <| ∀ g : Formula,
         ([systemK, systemKT, systemS4].all fun sys => CountermodelViewTests.viewOK sys g f)
           = true) 100),

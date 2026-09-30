@@ -79,8 +79,9 @@ def column {V : Type} [Inhabited V] (m : Matrix V) (f : Formula) : List (Except 
 
 /-- The valuations that designate every premise but not the conclusion:
 the counterexamples to `premises ⊨ conclusion` (B&D Definition C.19(4)).
-A row where some formula errors is not a counterexample; `entails`
-reports the error instead. -/
+A row where some formula errors is not a counterexample, so `[]` means
+"valid" only when `entails` returns `.ok`; `entailmentHtml` and
+`entailmentVerdict` report the error. -/
 def counterexamples {V : Type} [Inhabited V] (m : Matrix V) (premises : List Formula)
     (conclusion : Formula) : List (List (Atom × V)) :=
   (tableRows m (premises ++ [conclusion])).filterMap fun (asg, vals) =>
@@ -107,11 +108,22 @@ def classify {V : Type} [Inhabited V] (m : Matrix V) (f : Formula) : String :=
 /-- `premises ⊨ conclusion` as a sentence. -/
 def entailmentVerdict {V : Type} [Inhabited V] (m : Matrix V) (premises : List Formula)
     (conclusion : Formula) : String :=
-  let lhs := ", ".intercalate (premises.map toString)
+  let lhs := if premises.isEmpty then "∅" else ", ".intercalate (premises.map toString)
   match entails m premises conclusion with
   | .ok true => s!"{lhs} ⊨ {conclusion} in {m.name} logic: no counterexample."
   | .ok false => s!"{lhs} ⊭ {conclusion} in {m.name} logic: see the marked rows."
   | .error e => s!"error: {e}"
+
+/-- An argument: premises and a conclusion, for "does it follow?"
+exercises. -/
+structure Argument where
+  premises : List Formula
+  conclusion : Formula
+
+/-- Does the argument's conclusion follow (`premises ⊨ conclusion`)? -/
+def Argument.follows {V : Type} [Inhabited V] (m : Matrix V) (a : Argument) :
+    Except String Bool :=
+  entails m a.premises a.conclusion
 
 /-! ## Graders
 
@@ -148,7 +160,8 @@ def gradeClassify {V : Type} [Inhabited V] (n : Nat) (m : Matrix V) (f : Formula
       `some \"contingent\"` or `some \"unsatisfiable\"`."
   | some a =>
     let c := classify m f
-    if a == c then s!"{n}. ✓ Correct: {c}."
+    if c.startsWith "error" then s!"{n}. {f} has no value here ({c})."
+    else if a == c then s!"{n}. ✓ Correct: {c}."
     else if !["tautology", "contingent", "unsatisfiable"].contains a then
       s!"{n}. \"{a}\" is not one of the three words: tautology, contingent, unsatisfiable."
     else s!"{n}. ✗ Not quite. {hint}"
@@ -158,6 +171,9 @@ first wrong row (1-based) rather than the right answer. -/
 def gradeColumn {V : Type} [Inhabited V] [DecidableEq V] [TVLabel V] (m : Matrix V)
     (f : Formula) (answer : List (Option V)) : String :=
   let expected := column m f
+  match expected.find? (fun | .error _ => true | .ok _ => false) with
+  | some (.error e) => s!"{f} has no truth table here: {e}"
+  | _ =>
   if answer.length != expected.length then
     s!"The table for {f} has {expected.length} rows; your list has {answer.length}."
   else if answer.all (·.isNone) then
@@ -175,13 +191,15 @@ def gradeColumn {V : Type} [Inhabited V] [DecidableEq V] [TVLabel V] (m : Matrix
 
 /-- Grade a "find a formula that …" exercise: `check` says whether the
 student's formula does the job, and `goal` restates the job. -/
-def gradeFind (n : Nat) (answer : Option Formula) (check : Formula → Bool) (goal : String) :
-    String :=
+def gradeFind (n : Nat) (answer : Option Formula) (check : Formula → Except String Bool)
+    (goal : String) : String :=
   match answer with
   | none => s!"{n}. Not answered yet: replace `none` with `some ml[ … ]`."
   | some f =>
-    if check f then s!"{n}. ✓ Correct: {f} {goal}."
-    else s!"{n}. ✗ {f} does not do it: it should be a formula that {goal}."
+    match check f with
+    | .error e => s!"{n}. {f} has no value here ({e})."
+    | .ok true => s!"{n}. ✓ Correct: {f} {goal}."
+    | .ok false => s!"{n}. ✗ {f} does not do it: it should be a formula that {goal}."
 
 /-! ## HTML -/
 
@@ -212,7 +230,8 @@ def truthTableHtml {V : Type} [Inhabited V] [TVLabel V] (m : Matrix V) (fs : Lis
     Html.element "tr" #[] (asg.map (fun (p : Atom × V) => cell "td" (TVLabel.label p.2)) ++
       vals.map (valueCell m)).toArray
   Html.element "div" #[] #[tableEl header rows,
-    note s!"{m.name} logic. Bold values are designated (they count as \"true\")."]
+    note s!"{m.name} logic. In the formula columns, bold values are designated \
+      (they count as \"true\")."]
 
 /-- The table for `premises ⊨ conclusion`: the last column says, for each
 row where every premise is designated, whether the conclusion is too.
@@ -234,5 +253,9 @@ def entailmentHtml {V : Type} [Inhabited V] [TVLabel V] (m : Matrix V)
     Html.element "tr" bg (asg.map (fun (p : Atom × V) => cell "td" (TVLabel.label p.2)) ++
       vals.map (valueCell m) ++ [cell "td" verdict]).toArray
   Html.element "div" #[] #[tableEl header rows, note (entailmentVerdict m premises conclusion)]
+
+/-- `entailmentHtml` for an `Argument`. -/
+def argumentHtml {V : Type} [Inhabited V] [TVLabel V] (m : Matrix V) (a : Argument) : Html :=
+  entailmentHtml m a.premises a.conclusion
 
 end Gamen.Widgets

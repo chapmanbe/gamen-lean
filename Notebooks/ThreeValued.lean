@@ -70,6 +70,15 @@ def dot : Atom → TV3 := record .u []                                      -- n
 def eve : Atom → TV3 := record .u [("diabetic", .t), ("hba1c_high", .f)]  -- HbA1c 7%
 
 /-!
+The `: Atom → TV3` after each name says what kind of thing a record is: it
+takes an atom and gives back one of the three values (`TV3`). This → is
+Lean's arrow for functions, not the logical "if…then"; Lean needs it here
+to know that `.u` means the three-valued u. Two more Lean details: the dot
+in `.t`, `.u`, `.f` is required (`some u` doesn't work), and in a list of
+answers every item needs `some`: `[some .t, some .u]`.
+-/
+
+/-!
 ## Strong Kleene logic
 
 To evaluate `t ∧ u` we need tables with a row for u. Here is a way to find
@@ -84,9 +93,10 @@ the answer; if not, the answer is u.
 - `t ∨ u = t`, for the same reason: one side is already true.
 
 These are the tables of **strong Kleene logic**, called K3 (after Stephen
-Kleene). Designated values are the ones that count as true when we ask
-whether a formula is a tautology, or whether it follows from premises. In
-K3 only t is designated.
+Kleene). The **designated** values are the ones that count as true when we
+ask whether a formula is a tautology, or whether it follows from premises.
+In K3 only t is designated. (In the primer, the only designated value was
+T.)
 -/
 
 #html truthTableHtml strongKleene [ml[ ¬p ]]
@@ -110,6 +120,9 @@ Write `some .t`, `some .u` or `some .f`.
 4. `poorControl` for Eve (diabetic, HbA1c 7%).
 -/
 
+def valueFormula2 : Formula := ml[ diabetic ∨ hba1c_high ]
+def valueFormula3 : Formula := ml[ hba1c_high → diabetic ]
+
 def value1 : Option TV3 := none
 def value2 : Option TV3 := none
 def value3 : Option TV3 := none
@@ -117,9 +130,9 @@ def value4 : Option TV3 := none
 
 #eval [gradeValue 1 value1 (eval strongKleene cal poorControl)
         "Cal's diabetic is f. What is f ∧ (anything)?",
-       gradeValue 2 value2 (eval strongKleene bea ml[ diabetic ∨ hba1c_high ])
+       gradeValue 2 value2 (eval strongKleene bea valueFormula2)
         "Bea's diabetic is t. What is t ∨ (anything)?",
-       gradeValue 3 value3 (eval strongKleene cal ml[ hba1c_high → diabetic ])
+       gradeValue 3 value3 (eval strongKleene cal valueFormula3)
         "That is u → f. Would the answer be the same if the u were t? If it were f?",
        gradeValue 4 value4 (eval strongKleene eve poorControl)
         "Nothing about Eve is unknown. What is t ∧ f?"]
@@ -132,7 +145,10 @@ Number 4 is a reminder that nothing changes when nothing is missing.
 In fact, K3 agrees with classical logic on every formula whenever no atom
 is u. Look at the tables: the rows without a u are exactly the classical
 truth tables. That is a theorem, checked by Lean for *every* formula built
-from ¬, ∧, ∨ and → (`ofBool` turns true and false into t and f):
+from ¬, ∧, ∨ and →. You don't need to read the Lean statement below; it
+says that if every atom is t or f, K3 and classical logic give the same
+value (`ofBool` turns true and false into t and f, and `isCore` means
+"built from atoms with ¬, ∧, ∨ and →").
 -/
 
 #check @strongKleene_agrees_classical
@@ -146,9 +162,10 @@ K3? Fill in the column for `¬p ∨ q`, nine rows, in the table's order:
 (f, f). Then compare it with the → column above.
 -/
 
+def columnFormula : Formula := ml[ ¬p ∨ q ]
 def column1 : List (Option TV3) := [none, none, none, none, none, none, none, none, none]
 
-#eval gradeColumn strongKleene ml[ ¬p ∨ q ] column1
+#eval gradeColumn strongKleene columnFormula column1
 
 /-!
 ## The key result: no tautologies
@@ -163,13 +180,21 @@ doesn't", in K3:
 #eval truthValue strongKleene dot ml[ diabetic ∨ ¬diabetic ]
 
 /-!
+`classify` says "contingent", which may look odd: the column is t, u, t,
+never f. With three values, "contingent" means *designated in some rows but
+not all* (B&D's wording, "satisfiable but not a tautology"), and a u row is
+not designated. In classical logic that is the same as "true in some rows
+and false in others", because there is nothing else to be.
+
 In the row where `diabetic` is u, `¬diabetic` is u too, and `u ∨ u = u`.
 So for Dot, whose record says nothing, "has diabetes or doesn't" is
 unknown. The same happens to "if diabetic, then diabetic".
 
 This isn't an accident of these two formulas. **K3 has no tautologies at
 all.** Give every atom the value u, and every formula comes out u, because
-every K3 table sends u (and u, u) to u:
+every K3 table sends u (and u, u) to u. The Lean statement, which again
+you don't need to read, says: with every atom u, every formula built from
+¬, ∧, ∨ and → is u, and u is not designated.
 -/
 
 #check @strongKleene_no_tautologies
@@ -201,9 +226,12 @@ for Dot, whose `diabetic` is u. Try two or three, then read the hint.
 
 def trick : Option Formula := none
 
-#eval gradeFind 1 trick
-  (fun f => atomList f == [⟨"diabetic"⟩] && eval strongKleene dot f == .ok .t)
-  "is t for Dot in K3"
+/-- The grader's check (you don't need to read it). -/
+def trickCheck (f : Formula) : Except String Bool := do
+  let x ← eval strongKleene dot f
+  return atomList f == [⟨"diabetic"⟩] && x == .t
+
+#eval gradeFind 1 trick trickCheck "is t for Dot in K3"
 
 #html hint "Why none of your attempts worked"
   "There is no such formula. Dot's only atom is u, so by the theorem above every \
@@ -238,6 +266,12 @@ Only → is different, and only in one cell: `u → u = t`.
 -/
 
 #html truthTableHtml lukasiewicz3 [ml[ p → q ]]
+
+/-!
+Lean checks both halves of that claim (the statements below): the ¬, ∧ and
+∨ tables are K3's, and the → tables differ only at u → u.
+-/
+
 #check @lukasiewicz3_agrees_strongKleene
 #check @lukasiewicz3_impl_differs
 
@@ -261,33 +295,42 @@ changes is entailment.
 ### Practice: which logic?
 
 Predict: is each formula a tautology in the logic named? `some true` or
-`some false`.
+`some false`. Work from the tables, not from memory; you can draw any of
+them by copying a `#html` line above.
 
-1. `p → p` in K3.
-2. `p → p` in Ł3.
-3. `p ∨ ¬p` in Ł3.
-4. `p ∨ ¬p` in LP.
+1. `¬(p ∧ ¬p)` in K3. ("Not both diabetic and not diabetic.")
+2. `(p ∧ q) → p` in Ł3.
+3. `p ∨ ¬p` in weak Kleene.
+4. `p → p` in LP.
 -/
+
+def tautFormula1 : Formula := ml[ ¬(p ∧ ¬p) ]
+def tautFormula2 : Formula := ml[ (p ∧ q) → p ]
+def tautFormula3 : Formula := ml[ p ∨ ¬p ]
+def tautFormula4 : Formula := ml[ p → p ]
 
 def taut1 : Option Bool := none
 def taut2 : Option Bool := none
 def taut3 : Option Bool := none
 def taut4 : Option Bool := none
 
-#eval [gradeYesNo 1 taut1 (isTautology strongKleene ml[ p → p ])
-        "Remember the key result: what does every formula become when every atom is u?",
-       gradeYesNo 2 taut2 (isTautology lukasiewicz3 ml[ p → p ])
-        "Look at the one cell where Ł3 differs from K3.",
-       gradeYesNo 3 taut3 (isTautology lukasiewicz3 ml[ p ∨ ¬p ])
-        "Ł3's ∨ and ¬ are K3's. What is u ∨ ¬u?",
-       gradeYesNo 4 taut4 (isTautology logicOfParadox ml[ p ∨ ¬p ])
-        "In LP, u is designated. What values can p ∨ ¬p take?"]
+#eval [gradeYesNo 1 taut1 (isTautology strongKleene tautFormula1)
+        "It is a classical tautology. But what does every K3 formula become when every atom is u?",
+       gradeYesNo 2 taut2 (isTautology lukasiewicz3 tautFormula2)
+        "Look at the rows where p ∧ q is u: then p is u or t. What are u → u and u → t in Ł3? \
+        And when p ∧ q is t or f?",
+       gradeYesNo 3 taut3 (isTautology weakKleene tautFormula3)
+        "In weak Kleene, any u in gives u out. Try p = u.",
+       gradeYesNo 4 taut4 (isTautology logicOfParadox tautFormula4)
+        "LP uses K3's tables, so u → u = u. Is u designated in LP?"]
 
 /-!
 ### Entailment in three values
 
 Entailment works as in the primer: Γ ⊨ A if every row that designates all
-the premises designates A. Only "designated" has replaced "true". The
+the premises designates A. (A row **designates** a formula when the
+formula's value in that row is designated.) Only "designated" has replaced
+"true". The
 entailment tables mark counterexamples in red, as before.
 
 **Explosion** ({p, ¬p} ⊨ q) holds in K3, as in classical logic: no row makes
@@ -304,8 +347,8 @@ diabetic, another says not) doesn't let you conclude anything you like.
 
 ### Practice: does it follow?
 
-`some true` if the entailment holds, `some false` if not. Draw the table
-with `entailmentHtml` to see the counterexample when there is one.
+`some true` if the entailment holds, `some false` if not. The tables below
+the grader show the counterexample when there is one.
 
 1. Modus ponens, {p, p → q} ⊨ q, in K3.
 2. Modus ponens in LP.
@@ -313,27 +356,33 @@ with `entailmentHtml` to see the counterexample when there is one.
 4. {p} ⊨ p ∨ q in weak Kleene.
 -/
 
+def modusPonens : Argument := { premises := [ml[ p ], ml[ p → q ]], conclusion := ml[ q ] }
+def addition : Argument := { premises := [ml[ p ]], conclusion := ml[ p ∨ q ] }
+
 def follows1 : Option Bool := none
 def follows2 : Option Bool := none
 def follows3 : Option Bool := none
 def follows4 : Option Bool := none
 
-#eval [gradeYesNo 1 follows1 (entails strongKleene [ml[ p ], ml[ p → q ]] ml[ q ])
+#eval [gradeYesNo 1 follows1 (modusPonens.follows strongKleene)
         "Designated means t in K3. If p is t and p → q is t, what can q be?",
-       gradeYesNo 2 follows2 (entails logicOfParadox [ml[ p ], ml[ p → q ]] ml[ q ])
-        "Try p = u and q = f. Which of the three are designated in LP?",
-       gradeYesNo 3 follows3 (entails strongKleene [ml[ p ]] ml[ p ∨ q ])
+       gradeYesNo 2 follows2 (modusPonens.follows logicOfParadox)
+        "Try p = u and q = f. Which of p, p → q and q are designated in LP?",
+       gradeYesNo 3 follows3 (addition.follows strongKleene)
         "If p is t, what is p ∨ q, whatever q is?",
-       gradeYesNo 4 follows4 (entails weakKleene [ml[ p ]] ml[ p ∨ q ])
+       gradeYesNo 4 follows4 (addition.follows weakKleene)
         "Try p = t and q = u in weak Kleene's ∨ table."]
 
-#html entailmentHtml logicOfParadox [ml[ p ], ml[ p → q ]] ml[ q ]
+#html argumentHtml strongKleene modusPonens
+#html argumentHtml logicOfParadox modusPonens
+#html argumentHtml strongKleene addition
+#html argumentHtml weakKleene addition
 
 /-!
 Each logic gives something up. K3 loses every tautology, Ł3 keeps `p → p`
 but not `p ∨ ¬p`, LP keeps the tautologies but loses modus ponens, and weak
-Kleene loses even "p, so p or q". There is no three-valued logic that keeps
-everything; which one fits depends on what u means in your data.
+Kleene loses even "p, so p or q". None of these four keeps everything;
+which one fits depends on what u means in your data.
 
 ## CQL and FHIRPath are strong Kleene
 
@@ -342,9 +391,9 @@ measures are written in, and FHIRPath is the expression language used
 throughout FHIR. Neither specification names its logic, but both publish
 truth tables:
 
-- **CQL 2.0.0** (Reference, "Logical Operators", Tables 9-A and 9-A1) gives
-  `and`, `or`, `not`, `xor` and `implies` tables with `null` as the third
-  value.
+- **CQL 2.0.0** (Reference, "Logical Operators", Tables 9-A to 9-D) gives
+  tables for `and`, `implies`, `not`, `or` and `xor` (exclusive or: true
+  when exactly one side is true), with `null` as the third value.
 - **FHIRPath 3.0.0** ("Boolean logic") says its operators "use three-valued
   logic to propagate empty operands", with the empty collection `{ }` as
   the third value.
@@ -363,8 +412,8 @@ define "Poor Control":
 ```
 
 "Most Recent HbA1c Percent" is null because there is no result, and CQL's
-comparison operators return null when an argument is null ("If either
-argument is null, the result is null"). So the criterion is `true and null`,
+`>` returns null when an argument is null ("If either argument is null,
+the result is null"). So the criterion is `true and null`,
 which is null: `t ∧ u = u`.
 
 ### Where null becomes false
@@ -387,17 +436,16 @@ table for ¬ next to that rule, and something surprising happens to Bea:
 
 Bea is in neither list. A report that counts "poor control" and "not poor
 control" separately and adds them up will not reach the number of diabetic
-patients. CQL has operators to make the choice explicit: `X is null`,
-`X is true` and `X is false` always return true or false (`null is true` is
-false).
+patients. CQL has operators to make the choice explicit: `X is null` and
+`X is true` always return true or false (`null is true` is false).
 
 Measure writers do make that choice on purpose. CMS122v13, "Diabetes:
 Glycemic Status Assessment Greater Than 9%", puts patients in the numerator
 whose most recent result "is >9.0% or is missing, or was not performed
 during the measurement period". Bea counts as poorly controlled there. The
-measure is scored so that a lower rate is better, and counting a missing
-test as poor control means a clinic can't improve its score by not
-testing.
+measure's improvement notation is "Lower score indicates better quality",
+so counting a missing test as poor control means a clinic can't improve its
+score by not testing.
 
 ### Practice: what does the query do?
 
@@ -407,21 +455,30 @@ filter. A filter keeps a patient only when the condition is t.
 1. `where "Poor Control"`
 2. `where not "Poor Control"`
 3. `where "Has Diabetes" or "Poor Control"`
+
+Below, the three conditions are written as formulas. Inside `ml[ ]`,
+braces insert a formula defined earlier by its name, so `¬{poorControl}` is
+`¬(diabetic ∧ hba1c_high)`. `keptBy` is the grader's model of a `where`
+clause; you don't need to read its Lean.
 -/
 
 /-- A CQL `where` clause keeps a patient only when the condition is t. -/
 def keptBy (condition : Formula) (patient : Atom → TV3) : Except String Bool :=
   (eval strongKleene patient condition).map (· == .t)
 
+def query1 : Formula := poorControl
+def query2 : Formula := ml[ ¬{poorControl} ]
+def query3 : Formula := ml[ diabetic ∨ {poorControl} ]
+
 def kept1 : Option Bool := none
 def kept2 : Option Bool := none
 def kept3 : Option Bool := none
 
-#eval [gradeYesNo 1 kept1 (keptBy poorControl bea)
+#eval [gradeYesNo 1 kept1 (keptBy query1 bea)
         "Bea's criterion is u, and a filter keeps only t.",
-       gradeYesNo 2 kept2 (keptBy ml[ ¬{poorControl} ] bea)
+       gradeYesNo 2 kept2 (keptBy query2 bea)
         "What is ¬u?",
-       gradeYesNo 3 kept3 (keptBy ml[ diabetic ∨ {poorControl} ] bea)
+       gradeYesNo 3 kept3 (keptBy query3 bea)
         "Bea's diabetic is t. What is t ∨ u?"]
 
 /-!
@@ -436,7 +493,7 @@ The table gives, for an empty left side:
 | `{ }` | `false` | `{ }` |
 | `{ }` | `{ }` | `{ }` |
 
-and a note under the table says: "Note carefully that if the left side of an
+and a note in the same section says: "Note carefully that if the left side of an
 implies evaluates to empty, the result of the operation is the right side."
 
 1. According to the note, what is `{ } implies false`?
@@ -447,9 +504,12 @@ implies evaluates to empty, the result of the operation is the right side."
 #html hint "Answers"
   "1. The note gives false: the right side. 2. The table gives { }. 3. The table: \
   in K3, u → f = u, which is { } in FHIRPath. The note is right in two of the three rows \
-  (true and { }) and disagrees in the false row. As of the 3.0.0 release and the \
-  continuous build checked on 2026-09-30, both say the same thing, and we found no \
-  published erratum. The operator's definition in words agrees with the table."
+  (true and { }) and disagrees in the false row. The operator's definition in words \
+  agrees with the table. Both the 3.0.0 release and the continuous build, checked on \
+  2026-09-30, still contain this disagreement; we found no published erratum (HL7's \
+  issue tracker was not searched)."
+
+/-! Strong Kleene's u → f, for comparison: -/
 
 #eval truthValue strongKleene (record .u [("q", .f)]) ml[ p → q ]
 

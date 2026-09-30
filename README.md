@@ -43,6 +43,11 @@ cursor on an `#eval` or `#html` line; results and diagrams appear in the
 infoview. Or run them in a browser: `web/setup.sh` once, then
 `web/run-local.sh` (localhost only; see `web/README.md`).
 
+For health informatics students with no logic background, two notebooks
+start from clinical rules: `PropLogicPrimer.lean` (truth tables, validity,
+entailment) and then `ThreeValued.lean` (missing data, strong Kleene logic,
+and why a CQL criterion can be null).
+
 ![Clicking a fact onto a world updates the guideline checks](docs/images/gamen-lean-widget-click-test.gif)
 
 ## License

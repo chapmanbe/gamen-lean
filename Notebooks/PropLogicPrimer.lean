@@ -17,6 +17,22 @@ edition), "Syntax and Semantics".*
 tell you what to edit: usually you replace a `none` with an answer, and
 the line below it tells you whether you are right.
 
+**The Lean you need.** You don't need to know Lean, the language this file
+is written in, beyond these few things:
+
+- `def name : Type := value` gives a value a name. `def answer1 : Option
+  Bool := none` makes `answer1` an answer that is not filled in yet.
+- `Option` means "an answer, or nothing yet". `none` is nothing yet;
+  `some true`, `some false` or `some ml[ p ∧ q ]` is an answer. In a list,
+  write `some` on every item: `[some true, some false]`.
+- Formulas go between `ml[` and `]`. Type the symbols with a backslash,
+  and the editor turns them into symbols as you type: `\not` becomes ¬,
+  `\and` ∧, `\or` ∨, `\to` →. The ASCII `->` does not work inside `ml[ ]`.
+- `#eval` and `#html` lines show a result; `--` starts a comment, which
+  Lean ignores.
+- You can copy any `#eval` or `#html` line and change its formulas to try
+  your own.
+
 **Learning outcomes.** After this notebook you will be able to:
 
 1. write a clinical rule as a formula, with atoms and the connectives
@@ -36,7 +52,8 @@ Here is a screening rule of the kind found in clinical guidelines:
 Some questions about it sound easy but trip people up:
 
 - A 40-year-old with diabetes was not offered screening. Was the rule broken?
-- A patient was offered screening. Does that tell you they are 65 or older?
+- A patient was offered screening. Does that tell you they are 65 or older
+  and diabetic?
 - A patient is under 65. Does the rule say *not* to offer screening?
 
 You will be able to answer all three by the end of the notebook, and to
@@ -83,11 +100,20 @@ def rule : Formula := ml[ (age65 ∧ diabetic) → offer ]
 #eval rule
 
 /-!
-The parentheses say that `age65 ∧ diabetic` together is the "if" part.
-Formulas can be as long as you like: every atom is a formula, and if A and
-B are formulas, so are ¬A, (A ∧ B), (A ∨ B) and (A → B). B&D also uses ⊥
-("falsum", a formula that is always false), and defines A ↔ B ("A if and
-only if B") as (A → B) ∧ (B → A) (Definition C.2). We won't need either.
+(Lean shows every pair of parentheses, so it may show more than you
+typed.) The parentheses say that `age65 ∧ diabetic` together is the "if"
+part. Formulas can be as long as you like: every atom is a formula, and if
+A and B are formulas, so are ¬A, (A ∧ B), (A ∨ B) and (A → B).
+
+The connective applied last, the one that joins the largest parts, is the
+formula's **main connective**. In `(age65 ∧ diabetic) → offer` it is →; in
+`p ∧ ¬q` it is ∧, because the ¬ applies only to `q`. To work out a
+formula's value you work up to its main connective, as we'll see.
+
+B&D also uses ⊥ ("falsum", a formula that is always false), and defines
+A ↔ B ("A if and only if B") as (A → B) ∧ (B → A) (Definition C.2). We
+won't need either, and the tools in these notebooks don't accept ↔: write
+(A → B) ∧ (B → A) instead.
 
 ## Truth tables
 
@@ -135,17 +161,19 @@ above: (p, q) = (T, T), (T, F), (F, T), (F, F). Write `some true` for T and
 `some false` for F. (Tip: work out the ¬q column in your head first.)
 -/
 
+def columnFormula1 : Formula := ml[ p ∧ ¬q ]
 def column1 : List (Option Bool) := [none, none, none, none]
 
-#eval gradeColumn classical ml[ p ∧ ¬q ] column1
+#eval gradeColumn classical columnFormula1 column1
 
 /-!
 Now fill in the column for `¬p ∨ q`:
 -/
 
+def columnFormula2 : Formula := ml[ ¬p ∨ q ]
 def column2 : List (Option Bool) := [none, none, none, none]
 
-#eval gradeColumn classical ml[ ¬p ∨ q ] column2
+#eval gradeColumn classical columnFormula2 column2
 
 #html hint "Compare your answer to column2 with the table for p → q"
   "They are the same column: ¬p ∨ q and p → q have the same value in every row. \
@@ -184,6 +212,8 @@ the rule; when it is false, the record **violates** it.
 
 Predict whether each record complies with the rule (`some true`) or
 violates it (`some false`). Work it out with the table before you check.
+Every record either complies or violates: in this notebook there is no
+third answer, not even for a patient the rule doesn't seem to be about.
 -/
 
 def complies1 : Option Bool := none   -- Ben: 65+, diabetic, not offered
@@ -246,24 +276,29 @@ leave `diabetic` unknown.
 ### Practice: classify
 
 Write `some "tautology"`, `some "contingent"` or `some "unsatisfiable"`.
-Use the `#html` line to draw a table if you need one.
+To draw a table, put the formula into the `#html` line below the grader.
 -/
 
-def kind1 : Option String := none   -- the screening rule
-def kind2 : Option String := none   -- (p → q) ∨ (q → p)
-def kind3 : Option String := none   -- ¬(p → p)
-def kind4 : Option String := none   -- p → (q → p)
+def kindFormula1 : Formula := rule
+def kindFormula2 : Formula := ml[ (p → q) ∨ (q → p) ]
+def kindFormula3 : Formula := ml[ ¬(p → p) ]
+def kindFormula4 : Formula := ml[ p → (q → p) ]
 
-#eval [gradeClassify 1 classical rule kind1
+def kind1 : Option String := none
+def kind2 : Option String := none
+def kind3 : Option String := none
+def kind4 : Option String := none
+
+#eval [gradeClassify 1 classical kindFormula1 kind1
         "Ben's row makes the rule false, and Ana's makes it true.",
-       gradeClassify 2 classical ml[ (p → q) ∨ (q → p) ] kind2
+       gradeClassify 2 classical kindFormula2 kind2
         "Draw the table. For (p → q) ∨ (q → p) to be false, both sides must be false.",
-       gradeClassify 3 classical ml[ ¬(p → p) ] kind3
+       gradeClassify 3 classical kindFormula3 kind3
         "What is p → p when p is T? When p is F?",
-       gradeClassify 4 classical ml[ p → (q → p) ] kind4
+       gradeClassify 4 classical kindFormula4 kind4
         "The only way to make it false is p true and q → p false. Can q → p be false when p is true?"]
 
-#html truthTableHtml classical [ml[ (p → q) ∨ (q → p) ]]
+#html truthTableHtml classical [kindFormula2]
 
 /-!
 Number 2 is another surprise of the material conditional: of any two
@@ -280,9 +315,12 @@ Find a tautology other than `diabetic ∨ ¬diabetic` whose only atom is
 
 def myTautology : Option Formula := none
 
-#eval gradeFind 1 myTautology
-  (fun f => classify classical f == "tautology" && atomList f == [⟨"diabetic"⟩]
-    && f != ml[ diabetic ∨ ¬diabetic ])
+/-- The grader's check (you don't need to read it). -/
+def tautologyCheck (f : Formula) : Except String Bool := do
+  let taut ← isTautology classical f
+  return taut && atomList f == [⟨"diabetic"⟩] && f != ml[ diabetic ∨ ¬diabetic ]
+
+#eval gradeFind 1 myTautology tautologyCheck
   "is a tautology, other than diabetic ∨ ¬diabetic, with diabetic as its only atom"
 
 #html hint "Stuck?"
@@ -326,8 +364,8 @@ them out.
 
 ### Practice: does it follow?
 
-Predict whether each entailment holds (`some true`) or not (`some false`),
-then draw its table with `entailmentHtml` to see why.
+Predict whether each entailment holds (`some true`) or not (`some false`).
+Then look at its table (the `#html` lines below the grader) to see why.
 
 1. The rule and `¬age65` entail `¬offer`. (Under 65, so no screening?)
 2. The rule and `¬offer` entail `¬(age65 ∧ diabetic)`. (Not offered, so not
@@ -336,25 +374,33 @@ then draw its table with `entailmentHtml` to see why.
 4. `diabetic` and `¬diabetic` entail `offer`.
 -/
 
+def argument1 : Argument := { premises := [rule, ml[ ¬age65 ]], conclusion := ml[ ¬offer ] }
+def argument2 : Argument :=
+  { premises := [rule, ml[ ¬offer ]], conclusion := ml[ ¬(age65 ∧ diabetic) ] }
+def argument3 : Argument := { premises := [rule, ml[ ¬diabetic ]], conclusion := ml[ ¬offer ] }
+def argument4 : Argument := { premises := [ml[ diabetic ], ml[ ¬diabetic ]], conclusion := ml[ offer ] }
+
 def follows1 : Option Bool := none
 def follows2 : Option Bool := none
 def follows3 : Option Bool := none
 def follows4 : Option Bool := none
 
-#eval [gradeYesNo 1 follows1 (entails classical [rule, ml[ ¬age65 ]] ml[ ¬offer ])
+#eval [gradeYesNo 1 follows1 (argument1.follows classical)
         "Think of Dee: under 65, and offered screening. Does she comply with the rule?",
-       gradeYesNo 2 follows2 (entails classical [rule, ml[ ¬offer ]] ml[ ¬(age65 ∧ diabetic) ])
+       gradeYesNo 2 follows2 (argument2.follows classical)
         "Suppose the patient were a 65+ diabetic. Then the rule says offer. But offer is false.",
-       gradeYesNo 3 follows3 (entails classical [rule, ml[ ¬diabetic ]] ml[ ¬offer ])
+       gradeYesNo 3 follows3 (argument3.follows classical)
         "The rule says nothing about patients without diabetes.",
-       gradeYesNo 4 follows4 (entails classical [ml[ diabetic ], ml[ ¬diabetic ]] ml[ offer ])
+       gradeYesNo 4 follows4 (argument4.follows classical)
         "Look for a row where both premises are true. Is there one?"]
 
-#html entailmentHtml classical [rule, ml[ ¬age65 ]] ml[ ¬offer ]
-#html entailmentHtml classical [ml[ diabetic ], ml[ ¬diabetic ]] ml[ offer ]
+#html argumentHtml classical argument1
+#html argumentHtml classical argument2
+#html argumentHtml classical argument3
+#html argumentHtml classical argument4
 
 /-!
-Number 1 has a name, **denying the antecedent**, and it is the third
+Number 1 is a form of **denying the antecedent**, and it is the third
 question from the top: the rule does not say to withhold screening from
 anyone. Number 2 is **modus tollens**, and it is valid.
 

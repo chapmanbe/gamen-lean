@@ -23,7 +23,8 @@ them. Quotes are verbatim.
 - **`is true`.** CQL Reference, Nullological Operators
   (<https://cql.hl7.org/09-b-cqlreference.html>): "If the argument
   evaluates to true, the result is true; otherwise, the result is false."
-  So `null is true` is false.
+  So `null is true` is false. `is null`: "If the argument evaluates to
+  null, the result is true; otherwise, the result is false."
 - **Comparison with null.** CQL Reference, Comparison Operators, `>`: "If
   either argument is null, the result is null."
 
@@ -56,7 +57,8 @@ them. Quotes are verbatim.
   Glycemic Status Assessment Greater Than 9%"; numerator: "Patients whose
   most recent glycemic status assessment (HbA1c or GMI) (performed during
   the measurement period) is >9.0% or is missing, or was not performed
-  during the measurement period".
+  during the measurement period". Improvement notation (same page, checked
+  2026-09-30): "Lower score indicates better quality".
 
 ## B&D Appendix C (the primer's citations)
 

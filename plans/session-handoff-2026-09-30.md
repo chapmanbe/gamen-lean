@@ -1,4 +1,5 @@
 # Implementation Plan: continue gamen-lean after the port (session handoff)
+*Superseded 2026-10-01 by `plans/session-handoff-2026-10-01.md`; kept as history.*
 *Written 2026-09-30 at the close of a long design and implementation session.
 Read this once; it indexes the detailed plans, which you read only for the
 thread you pick up. Supersedes `plans/porting-handoff-2026-09-28.md`, which

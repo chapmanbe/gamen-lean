@@ -34,6 +34,7 @@ import Tests.Completion
 import Tests.ManyValuedNotebooks
 import Tests.ValidateVersion
 import Tests.ProtocolFlat
+import Tests.DclegProofs
 
 /-!
 # Tests

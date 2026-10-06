@@ -1,0 +1,203 @@
+--- a/packages/cwyde-haskell-bridge/src/cwyde_haskell_bridge/discovery.py	2026-10-05 19:44:16
++++ b/packages/cwyde-haskell-bridge/src/cwyde_haskell_bridge/discovery.py	2026-10-05 19:44:36
+@@ -1,20 +1,19 @@
+ """
+ Binary discovery for gamen-validate.
+ 
+-Generalizes the proven pattern from:
+-  ~/Code/Julia/guideline-validation/extraction/src/guideline_extraction/detect_conflicts.py:180-205
++The binary is gamen-lean's `gamen-validate`; the gamen-hs cabal build is retired
++as a runtime dependency. Install it from gamen-lean with `tools/install.sh`, which
++prints the value to export.
+ 
+ Search order:
+   1. CWYDE_GAMEN_BIN env var
+   2. GAMEN_VALIDATE_BIN env var (compat with guideline-validation)
+   3. shutil.which("gamen-validate")
+-  4. cabal build output glob (~/.cabal or local dist-newstyle)
+-  5. importlib.resources bundled binary (v1.0; returns None in v0.1)
++  4. importlib.resources bundled binary (v1.0; returns None in v0.1)
+ """
+ 
+ from __future__ import annotations
+ 
+-import glob
+ import os
+ import shutil
+ from pathlib import Path
+@@ -46,22 +45,7 @@
+         return Path(which)
+     searched.append("PATH (not found)")
+ 
+-    # 4. Cabal dist-newstyle in known project locations
+-    cabal_globs = [
+-        # Local dist-newstyle build (package name may be gamen-hs-* or gamen-*)
+-        str(Path.home() / "Code" / "Haskell" / "gamen-hs" / "dist-newstyle" / "build" /
+-            "*" / "ghc-*" / "gamen-*" / "x" / "gamen-validate" / "build" / "gamen-validate" / "gamen-validate"),
+-        str(Path.home() / ".cabal" / "bin" / "gamen-validate"),
+-    ]
+-    for pattern in cabal_globs:
+-        matches = glob.glob(pattern)
+-        if matches:
+-            p = Path(sorted(matches)[-1])  # latest build
+-            if p.is_file() and os.access(p, os.X_OK):
+-                return p
+-        searched.append(f"glob:{pattern} (no match)")
+-
+-    # 5. Bundled binary (v1.0 — not yet implemented)
++    # 4. Bundled binary (v1.0 — not yet implemented)
+     # searched.append("bundled binary (v0.1: not available)")
+ 
+     return None
+@@ -69,9 +53,14 @@
+ 
+ def require_gamen_validate() -> Path:
+     """Return the gamen-validate path or raise GamenBinaryNotFound."""
+-    from cwyde_haskell_bridge.schema import searched_paths
+     path = find_gamen_validate()
+     if path is None:
+         from cwyde.exceptions import GamenBinaryNotFound
+-        raise GamenBinaryNotFound(searched=["See find_gamen_validate() for search order"])
++        raise GamenBinaryNotFound(searched=[
++            "$CWYDE_GAMEN_BIN",
++            "$GAMEN_VALIDATE_BIN",
++            "gamen-validate on PATH",
++            "install gamen-lean's gamen-validate with tools/install.sh "
++            "(it prints the value to export)",
++        ])
+     return path
+--- a/src/cwyde/formal/modal.py	2026-10-05 19:44:16
++++ b/src/cwyde/formal/modal.py	2026-10-05 19:44:24
+@@ -4,7 +4,8 @@
+ Implements the constructors needed for clinical assertion categories.
+ Stubbed constructors raise NotImplementedError to fail loudly rather than silently.
+ 
+-gamen-hs tree format reference: ~/Code/Haskell/gamen-hs/validate/Main.hs
++Tree format reference: gamen-lean's Gamen/Protocol.lean (kept byte-compatible with
++gamen-hs's validate/Main.hs for these request types)
+ """
+ 
+ from __future__ import annotations
+--- a/README.md	2026-10-05 19:44:16
++++ b/README.md	2026-10-05 19:44:24
+@@ -96,34 +96,26 @@
+ ### Optional: gamen-validate (formal consistency checking)
+ 
+ Notebook 05 and the `cwyde_consistency_checker` pipeline component require
+-the `gamen-validate` binary from [gamen-hs](https://github.com/chapmanbe/gamen-hs).
+-This is a **Haskell** binary — Python-only environments work fine without it
+-(the pipeline falls back to the YAML precedence table).
++the `gamen-validate` binary from [gamen-lean](https://github.com/chapmanbe/gamen-lean)
++(the Lean 4 implementation of the Gamen logics; it succeeded gamen-hs in
++2026-09 and answers the same JSON Lines protocol). Python-only environments
++work fine without it (the pipeline falls back to the YAML precedence table).
+ 
+-**Requires** GHC ≥ 9.6, installed via [ghcup](https://www.haskell.org/ghcup/).
++**Requires** [elan](https://github.com/leanprover/elan), which installs the
++Lean toolchain that gamen-lean pins.
+ 
+-ghcup installs `cabal` and `ghc` into `~/.ghcup/bin`, which is not always
+-on `PATH` by default. Add it explicitly:
+-
+ ```bash
+-export PATH="$HOME/.ghcup/bin:$PATH"   # one-off
+-# or to make it permanent:
+-echo 'export PATH="$HOME/.ghcup/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+-which cabal   # should resolve
+-```
++git clone https://github.com/chapmanbe/gamen-lean.git
++cd gamen-lean
++tools/install.sh          # builds, checks, and copies gamen-validate; does not touch PATH
+ 
+-```bash
+-# Clone and build — all cabal commands must run from the gamen-hs directory
+-git clone https://github.com/chapmanbe/gamen-hs.git
+-cd gamen-hs
+-cabal build gamen-validate
+-
+-# Capture the binary path (still inside gamen-hs/)
+-export CWYDE_GAMEN_BIN=$(cabal list-bin gamen-validate)
++# install.sh prints the value to export:
++export CWYDE_GAMEN_BIN="$HOME/.local/share/gamen-lean/gamen-validate"
+ ```
+ 
+-`find_gamen_validate()` also checks `GAMEN_VALIDATE_BIN` (compatibility with
+-`guideline-validation`) and common build output paths before giving up.
++`find_gamen_validate()` checks `CWYDE_GAMEN_BIN`, then `GAMEN_VALIDATE_BIN`
++(compatibility with `guideline-validation`), then `PATH`. It no longer looks for
++a gamen-hs cabal build.
+ 
+ ### PyPI install (library use, no notebooks)
+ 
+--- /dev/null	2026-10-05 19:45:26
++++ b/tests/unit/test_gamen_discovery.py	2026-10-05 19:45:22
+@@ -0,0 +1,69 @@
++"""Binary discovery for gamen-validate (gamen-lean's binary; no gamen-hs cabal fallback)."""
++
++import stat
++
++import pytest
++
++from cwyde.exceptions import GamenBinaryNotFound
++from cwyde_haskell_bridge import discovery
++
++
++def _exe(path):
++    path.write_text("#!/bin/sh\nexit 0\n")
++    path.chmod(path.stat().st_mode | stat.S_IXUSR)
++    return path
++
++
++@pytest.fixture
++def clean_env(monkeypatch, tmp_path):
++    """No env vars, and an empty PATH, so only what a test sets up is found."""
++    monkeypatch.delenv("CWYDE_GAMEN_BIN", raising=False)
++    monkeypatch.delenv("GAMEN_VALIDATE_BIN", raising=False)
++    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
++    return tmp_path
++
++
++def test_cwyde_variable_wins(clean_env, monkeypatch):
++    cwyde_bin = _exe(clean_env / "cwyde-gv")
++    other = _exe(clean_env / "other-gv")
++    monkeypatch.setenv("CWYDE_GAMEN_BIN", str(cwyde_bin))
++    monkeypatch.setenv("GAMEN_VALIDATE_BIN", str(other))
++    assert discovery.find_gamen_validate() == cwyde_bin
++
++
++def test_shared_variable_is_the_second_choice(clean_env, monkeypatch):
++    shared = _exe(clean_env / "shared-gv")
++    monkeypatch.setenv("CWYDE_GAMEN_BIN", str(clean_env / "missing"))
++    monkeypatch.setenv("GAMEN_VALIDATE_BIN", str(shared))
++    assert discovery.find_gamen_validate() == shared
++
++
++def test_path_is_the_third_choice(clean_env, monkeypatch):
++    bindir = clean_env / "bin"
++    bindir.mkdir()
++    exe = _exe(bindir / "gamen-validate")
++    monkeypatch.setenv("PATH", str(bindir))
++    assert discovery.find_gamen_validate() == exe
++
++
++def test_nothing_found_is_none(clean_env):
++    assert discovery.find_gamen_validate() is None
++
++
++def test_a_gamen_hs_cabal_build_is_not_picked_up(clean_env, monkeypatch):
++    home = clean_env / "home"
++    leaf = (home / "Code/Haskell/gamen-hs/dist-newstyle/build/aarch64-osx/ghc-9.8.4/"
++            "gamen-0.1.0.0/x/gamen-validate/build/gamen-validate")
++    leaf.mkdir(parents=True)
++    _exe(leaf / "gamen-validate")
++    (home / ".cabal/bin").mkdir(parents=True)
++    _exe(home / ".cabal/bin/gamen-validate")
++    monkeypatch.setattr(discovery.Path, "home", classmethod(lambda cls: home))
++    assert discovery.find_gamen_validate() is None
++
++
++def test_require_raises_with_the_install_hint(clean_env):
++    with pytest.raises(GamenBinaryNotFound) as err:
++        discovery.require_gamen_validate()
++    assert "tools/install.sh" in str(err.value)
++    assert "cabal" not in str(err.value)

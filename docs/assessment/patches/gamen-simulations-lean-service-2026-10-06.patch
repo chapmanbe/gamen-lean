@@ -1,0 +1,170 @@
+--- a/README.md	2026-10-06 13:19:05
++++ b/README.md	2026-10-06 13:19:05
+@@ -1,6 +1,6 @@
+ # gamen-simulations
+ 
+-Monte Carlo simulations whose per-iteration object is a structured modal-logic model rather than a numerical state. Built on [`gamen-hs`](https://github.com/chapmanbe/gamen-hs) via JSON Lines services.
++Monte Carlo simulations whose per-iteration object is a structured modal-logic model rather than a numerical state. Built on [`gamen-lean`](https://github.com/chapmanbe/gamen-lean) via JSON Lines services.
+ 
+ Initial focus: DCLEG-driven patient-facing clinical decisions where the deciding-self differs structurally from the affected-self (pediatric oncofertility, VUS reclassification, M&M counterfactual analysis). Secondary focus: Coalition Logic / ATL / ATEL simulations for multi-agent coordination (antimicrobial stewardship, sepsis-bundle teams, outbreak response).
+ 
+@@ -8,23 +8,25 @@
+ 
+ ## Quick start
+ 
+-Build the Haskell service once:
++Install the Lean service once (builds `dcleg-service` and copies it to `~/.local/share/gamen-lean/`; it does not touch `PATH`):
+ 
+ ```bash
+-cd ~/Projects/Logic/Haskell/gamen-hs && cabal build dcleg-service
++cd ~/Projects/Logic/gamen-lean && tools/install.sh
+ ```
+ 
+ Launch the notebook server (notebooks use their own environment in `notebooks/`):
+ 
+ ```bash
+-DCLEG_SERVICE=~/Projects/Logic/Haskell/gamen-hs/dist-newstyle/build/aarch64-osx/ghc-9.8.4/gamen-0.1.0.0/x/dcleg-service/build/dcleg-service/dcleg-service \
++DCLEG_SERVICE=~/.local/share/gamen-lean/dcleg-service \
+     julia --project=notebooks -e 'using Pluto; Pluto.run()'
+ ```
+ 
+ Then open `notebooks/mm-counterfactual.jl` in the Pluto browser UI.
+ 
+-The default `DCLEG_SERVICE` path above is for macOS (aarch64/GHC 9.8.4). Override the env
+-var if your binary is elsewhere.
++The notebooks default to `~/.local/share/gamen-lean/dcleg-service`; set `DCLEG_SERVICE`
++if your binary is elsewhere. (The Haskell `dcleg-service` from gamen-hs, frozen since 2026-09-29, still
++speaks the same protocol; see gamen-lean's `tools/compare/intentional-divergences.md` for the six
++listed differences.)
+ 
+ ## Status
+ 
+--- a/CLAUDE.md	2026-10-06 13:19:05
++++ b/CLAUDE.md	2026-10-06 13:19:05
+@@ -38,7 +38,8 @@
+ 
+ | Project | Path | Role |
+ |---------|------|------|
+-| **gamen-hs** | `~/Projects/Logic/Haskell/gamen-hs` | Provides `dcleg-service`, `gamen-validate`, and the formal logic core |
++| **gamen-lean** | `~/Projects/Logic/gamen-lean` | Provides `dcleg-service` (ported 2026-10-06), `gamen-validate`, and the formal logic core |
++| **gamen-hs** | `~/Projects/Logic/Haskell/gamen-hs` | Frozen since 2026-09-29; the reference build for `dcleg-service` side-by-side checks, and home of the protocol spec |
+ | **Gamen.jl** | `~/Projects/Logic/Julia/Gamen.jl` | Pedagogical modal logic for Pluto notebooks; not a runtime dep |
+ | **guideline-cds-simulation** | `~/Projects/Logic/Julia/guideline-cds-simulation` | Person-agent CDS simulation (LACA + guideline obligations); shares Synthea integration helpers; **may move some shared utilities here over time** |
+ | **guideline-validation** | `~/Projects/Logic/Julia/guideline-validation` | Extracted guideline corpus; consumed for clinical-context priors |
+@@ -57,13 +58,13 @@
+ │  │ trajectory sweeps, statistics, visualisation                  │  │
+ │  └────────────────────────┬──────────────────────────────────────┘  │
+ │  ┌────────────────────────▼──────────────────────────────────────┐  │
+-│  │ DclegClient.jl — wraps a long-lived gamen-hs subprocess,      │  │
++│  │ DclegClient.jl — wraps a long-lived gamen-lean subprocess,    │  │
+ │  │ encodes models/formulas to JSON, decodes results              │  │
+ │  └────────────────────────┬──────────────────────────────────────┘  │
+ └───────────────────────────┼─────────────────────────────────────────┘
+                             │  JSON Lines over stdin/stdout
+ ┌───────────────────────────▼─────────────────────────────────────────┐
+-│ Haskell: gamen-hs services (dcleg-service, gamen-validate, ...)     │
++│ Lean: gamen-lean services (dcleg-service, gamen-validate, ...)      │
+ │  - Model registry (handle → model)                                  │
+ │  - Operations: build / sat / counterfactual / axiom_check / ...     │
+ └─────────────────────────────────────────────────────────────────────┘
+@@ -101,7 +102,7 @@
+ 
+ ## Build / run
+ 
+-Julia 1.10+ with Pluto. The Haskell service is invoked as a subprocess; binary
++Julia 1.10+ with Pluto. The Lean service is invoked as a subprocess; binary
+ path is configured per-machine via env var `DCLEG_SERVICE` (or passed positionally
+ to `DclegClient(binary)`).
+ 
+@@ -112,16 +113,20 @@
+     julia --project=. -e 'using Pluto; Pluto.run()'
+ ```
+ 
+-Build the Haskell side once: `cd ~/Projects/Logic/Haskell/gamen-hs && cabal build dcleg-service`.
+-Default macOS (aarch64) path:
++Install the Lean side once: `cd ~/Projects/Logic/gamen-lean && tools/install.sh` (copies
++`dcleg-service` to `~/.local/share/gamen-lean/`; does not touch `PATH`). The notebooks
++default to that path:
+ ```
+-~/Projects/Logic/Haskell/gamen-hs/dist-newstyle/build/aarch64-osx/ghc-9.8.4/
+-    gamen-0.1.0.0/x/dcleg-service/build/dcleg-service/dcleg-service
++~/.local/share/gamen-lean/dcleg-service
+ ```
++Migrated 2026-10-06: the three notebooks sent identical requests to the Haskell and Lean
++services and got byte-identical responses (142 of 142). Divergences are listed in gamen-lean's
++`tools/compare/intentional-divergences.md`; `build` now rejects a model whose histories play a
++move that `moves` does not list (D3).
+ 
+ ## DclegClient reference
+ 
+-`src/DclegClient.jl` is the canonical Julia client for `gamen-hs/dcleg-service`,
++`src/DclegClient.jl` is the canonical Julia client for `dcleg-service` (gamen-lean's; gamen-hs's speaks the same protocol),
+ implementing the JSON Lines protocol documented in
+ `~/Projects/Logic/Haskell/gamen-hs/notes/dcleg-service-protocol.md`.
+ 
+--- a/src/GamenSimulations.jl	2026-10-06 13:19:05
++++ b/src/GamenSimulations.jl	2026-10-06 13:19:05
+@@ -1,7 +1,8 @@
+ module GamenSimulations
+ 
+ # DCLEG subprocess client — JSON Lines wrapper around `dcleg-service`.
+-# Protocol: see ~/Projects/Logic/Haskell/gamen-hs/notes/dcleg-service-protocol.md
++# Protocol: see ~/Projects/Logic/Haskell/gamen-hs/notes/dcleg-service-protocol.md (the spec;
++# the service is gamen-lean's dcleg-service, see its tools/compare/intentional-divergences.md)
+ include("DclegClient.jl")
+ 
+ # Client + error type
+--- a/notebooks/mm-counterfactual.jl	2026-10-06 13:19:05
++++ b/notebooks/mm-counterfactual.jl	2026-10-06 13:19:05
+@@ -33,8 +33,7 @@
+ # ╔═╡ 1a2b3c4d-1234-4abc-8001-000000000003
+ # Binary path for the dcleg-service. Set DCLEG_SERVICE in the environment to override.
+ const DCLEG_SERVICE = get(ENV, "DCLEG_SERVICE",
+-    expanduser("~/Projects/Logic/Haskell/gamen-hs/dist-newstyle/build/aarch64-osx/" *
+-               "ghc-9.8.4/gamen-0.1.0.0/x/dcleg-service/build/dcleg-service/dcleg-service"))
++    expanduser("~/.local/share/gamen-lean/dcleg-service"))
+ 
+ # ╔═╡ 1a2b3c4d-1234-4abc-8001-000000000004
+ md"""
+@@ -212,7 +211,7 @@
+ md"""
+ ## Premise-function transparency — Chapman 2026 §2.1
+ 
+-The model uses `"premises" => "auto"`, which invokes `withMovePremises` in `gamen-hs`.
++The model uses `"premises" => "auto"`, which invokes `withMovePremises` in gamen-lean's `Gamen.Dcleg`.
+ The premise function groups worlds by which move is taken at each decision vertex: for
+ counterfactual `φ □→ ψ` at vertex v with antecedent `φ = DFMove(m)`, the closest worlds
+ are those whose history includes move m at v.
+--- a/notebooks/suicide-disclosure.jl	2026-10-06 13:19:05
++++ b/notebooks/suicide-disclosure.jl	2026-10-06 13:19:05
+@@ -59,8 +59,7 @@
+ 
+ # ╔═╡ 2a3b4c5d-2345-4bcd-9002-000000000003
+ const DCLEG_SERVICE = get(ENV, "DCLEG_SERVICE",
+-    expanduser("~/Projects/Logic/Haskell/gamen-hs/dist-newstyle/build/aarch64-osx/" *
+-               "ghc-9.8.4/gamen-0.1.0.0/x/dcleg-service/build/dcleg-service/dcleg-service"))
++    expanduser("~/.local/share/gamen-lean/dcleg-service"))
+ 
+ # ╔═╡ 2a3b4c5d-2345-4bcd-9002-000000000004
+ begin
+@@ -337,7 +336,7 @@
+ ## Audit — Chapman 2026 §2.1
+ 
+ Verify `dcleg-service` connectivity on a known-good minimal model before the main analysis.
+-Protects against gamen-hs service drift. — CLAUDE.md "cross-cutting practices"
++Protects against dcleg-service drift. — CLAUDE.md "cross-cutting practices"
+ 
+ Expected: ⊤ satisfied everywhere; ⊥ satisfied nowhere; `L □→ p` true at (`gR`,`v0`);
+ `R □→ p` false at (`gL`,`v0`). Axiom check on the minimal model: all structural axioms
+--- a/notebooks/vus-counseling.jl	2026-10-06 13:19:05
++++ b/notebooks/vus-counseling.jl	2026-10-06 13:19:05
+@@ -56,8 +56,7 @@
+ 
+ # ╔═╡ 4a5b6c7d-4567-4def-8004-000000000003
+ const DCLEG_SERVICE = get(ENV, "DCLEG_SERVICE",
+-    expanduser("~/Projects/Logic/Haskell/gamen-hs/dist-newstyle/build/aarch64-osx/" *
+-               "ghc-9.8.4/gamen-0.1.0.0/x/dcleg-service/build/dcleg-service/dcleg-service"))
++    expanduser("~/.local/share/gamen-lean/dcleg-service"))
+ 
+ # ╔═╡ 4a5b6c7d-4567-4def-8004-000000000004
+ md"""

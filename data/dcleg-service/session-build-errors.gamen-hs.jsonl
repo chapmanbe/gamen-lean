@@ -1,0 +1,32 @@
+{"id":"\u0008\u000c\n\r\t\u001f\"\\","ok":true,"result":{"capabilities":["build","sat","true_in","counterfactual","axiom_check","drop","list"],"service":"dcleg-service","version":"0.1.0"}}
+{"error":{"code":"parse_error","message":"Error in $.id: parsing Text failed, expected String, but encountered Null"},"ok":false}
+{"error":{"code":"parse_error","message":"Error in $.op: parsing Text failed, expected String, but encountered Number"},"ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing strategic_structure failed, expected Object, but encountered Number"]},"message":"Model validation failed"},"id":"1","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing [] failed, expected Array, but encountered Object"]},"message":"Model validation failed"},"id":"2","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing (a, b) failed, expected Array, but encountered Number"]},"message":"Model validation failed"},"id":"3","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing [] failed, expected Array, but encountered String"]},"message":"Model validation failed"},"id":"4","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: cannot unpack array of length 2 into a tuple of length 3"]},"message":"Model validation failed"},"id":"5","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing history failed, expected Object, but encountered Number"]},"message":"Model validation failed"},"id":"6","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: key \"moves\" not found"]},"message":"Model validation failed"},"id":"7","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing [] failed, expected Array, but encountered Number"]},"message":"Model validation failed"},"id":"8","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing Int failed, expected Number, but encountered String"]},"message":"Model validation failed"},"id":"9","ok":false}
+{"id":"10","ok":true,"result":{"handle":"h-0","warnings":[]}}
+{"id":"11","ok":true,"result":{"handle":"h-1","warnings":[]}}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing Int failed, value is either floating or will cause over or underflow -5.0e-4"]},"message":"Model validation failed"},"id":"12","ok":false}
+{"error":{"code":"unsupported","details":{"note":"only the \"auto\" premises form is supported in v0.1; explicit premises are deferred to v0.2","received":[1.5,10000000000,1.0e-2,1.23456789e7,1.0e-2,-3,10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,0.1,1.0,100,true,null,"s",{"a":[],"b":1}]},"message":"Unsupported feature: premises"},"id":"13","ok":false}
+{"id":"14","ok":true,"result":{"handle":"h-2","warnings":[]}}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing Int failed, value is either floating or will cause over or underflow 9.223372036854775808e18"]},"message":"Model validation failed"},"id":"15","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: cannot unpack array of length 3 into a tuple of length 2"]},"message":"Model validation failed"},"id":"16","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: cannot unpack array of length 4 into a tuple of length 3"]},"message":"Model validation failed"},"id":"17","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing (a, b, c) failed, expected Array, but encountered Number"]},"message":"Model validation failed"},"id":"18","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: expected String, but encountered Null"]},"message":"Model validation failed"},"id":"19","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: expected String, but encountered Boolean"]},"message":"Model validation failed"},"id":"20","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing [] failed, expected Array, but encountered String"]},"message":"Model validation failed"},"id":"21","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing [] failed, expected Array, but encountered String"]},"message":"Model validation failed"},"id":"22","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: cannot unpack array of length 1 into a tuple of length 2"]},"message":"Model validation failed"},"id":"23","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: expected String, but encountered Number"]},"message":"Model validation failed"},"id":"24","ok":false}
+{"id":"25","ok":true,"result":{"handle":"h-3","warnings":[]}}
+{"id":"26","ok":true,"result":{"handle":"h-4","warnings":[]}}
+{"id":"27","ok":true,"result":{"capabilities":["build","sat","true_in","counterfactual","axiom_check","drop","list"],"service":"dcleg-service","version":"0.1.0"}}
+{"error":{"code":"model_invalid","details":{"violations":["player undefined at non-end node: a"]},"message":"Model validation failed"},"id":"28","ok":false}
+{"id":"29","ok":true,"result":{"handles":[{"handle":"h-0","vertices":0,"worlds":0},{"handle":"h-1","vertices":0,"worlds":0},{"handle":"h-2","vertices":0,"worlds":0},{"handle":"h-3","vertices":0,"worlds":0},{"handle":"h-4","vertices":0,"worlds":0}]}}

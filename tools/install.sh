@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Install gamen-lean's gamen-validate for downstream callers.
+# Install gamen-lean's gamen-validate and dcleg-service for downstream callers.
 #
-# Plan: plans/downstream-migration-2026-09-29.md, Phase 0b.
+# Plan: plans/downstream-migration-2026-09-29.md, Phases 0b and 0c.
 #
-#   tools/install.sh                 build, check, and copy the binary to
+#   tools/install.sh                 build, check, and copy both binaries to
 #                                    ~/.local/share/gamen-lean/ (not on PATH);
-#                                    print each caller's environment variable
+#                                    print how each caller selects them
 #   tools/install.sh --link          also symlink it into ~/.local/bin (on PATH)
 #   options: --bin-dir DIR           where --link puts the symlink
 #            --share-dir DIR         where the binary is copied
@@ -18,7 +18,8 @@
 # build, so --link switches every caller that is left: use it only once each
 # caller has been verified against the Lean binary.
 #
-# (Later: dcleg-service, once it is ported; migration Phase 0c.)
+# dcleg-service's one caller, gamen-simulations, passes the binary's path to
+# DclegClient, so --link links gamen-validate only.
 set -euo pipefail
 
 die() { echo "install.sh: $*" >&2; exit 1; }
@@ -35,7 +36,7 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] && [ -n "$2" ] && [ "${2#--}" = "$2" ] || die "$1 needs a directory"
       if [ "$1" = --bin-dir ]; then bin_dir="$2"; else share_dir="$2"; fi
       shift ;;
-    -h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
   shift
@@ -53,34 +54,43 @@ lake="$(command -v lake || true)"
 [ -n "$lake" ] || lake="$HOME/.elan/bin/lake"
 [ -x "$lake" ] || die "lake not found (install elan)"
 
-# Validate/BuildInfo.lean stamps the commit in at compile time, and Lake
-# reuses a build when no source changed. Removing its trace forces that one
-# module to recompile, so the stamp is taken now.
-rm -f .lake/build/lib/lean/Validate/BuildInfo.trace
-"$lake" build gamen-validate
-
-built="$repo/.lake/build/bin/gamen-validate"
-reply="$(printf '{"action":"version"}\n' | "$built")"
-echo "version: $reply"
-case "$reply" in
-  *'"implementation":"gamen-lean"'*) ;;
-  *) die "unexpected version reply" ;;
-esac
+# Validate/BuildInfo.lean and DclegService/BuildInfo.lean stamp the commit
+# in at compile time, and Lake reuses a build when no source changed.
+# Removing their traces forces those two modules to recompile, so the stamps
+# are taken now.
+rm -f .lake/build/lib/lean/Validate/BuildInfo.trace \
+      .lake/build/lib/lean/DclegService/BuildInfo.trace
+"$lake" build gamen-validate dcleg-service
 
 head="$(git rev-parse --short=12 HEAD)"
-case "$reply" in
-  *"\"commit\":\"$head\""*) ;;
-  *"\"commit\":\"$head-dirty\""*)
-    $allow_dirty || die "built with uncommitted source changes; commit them, or pass --allow-dirty" ;;
-  *) die "the binary's commit stamp doesn't match HEAD ($head)" ;;
-esac
-
-# Copy (not link) into the share directory, atomically.
 mkdir -p "$share_dir"
+
+# install_bin NAME VERSION-REQUEST: check the built binary's version reply
+# against HEAD, then copy (not link) it into the share directory, atomically.
+install_bin() {
+  local name="$1" request="$2" built reply target
+  built="$repo/.lake/build/bin/$name"
+  reply="$(printf '%s\n' "$request" | "$built")"
+  echo "$name version: $reply"
+  case "$reply" in
+    *'"implementation":"gamen-lean"'*) ;;
+    *) die "unexpected $name version reply" ;;
+  esac
+  case "$reply" in
+    *"\"commit\":\"$head\""*) ;;
+    *"\"commit\":\"$head-dirty\""*)
+      $allow_dirty || die "built with uncommitted source changes; commit them, or pass --allow-dirty" ;;
+    *) die "$name's commit stamp doesn't match HEAD ($head)" ;;
+  esac
+  target="$share_dir/$name"
+  cp "$built" "$target.tmp.$$"
+  mv -f "$target.tmp.$$" "$target"
+  echo "installed: $target"
+}
+
+install_bin gamen-validate '{"action":"version"}'
+install_bin dcleg-service '{"id":"version","op":"version"}'
 target="$share_dir/gamen-validate"
-cp "$built" "$target.tmp.$$"
-mv -f "$target.tmp.$$" "$target"
-echo "installed: $target"
 
 if ! $link; then
   cat <<EOF
@@ -88,6 +98,7 @@ if ! $link; then
 Not on PATH. To point one caller at it:
   guideline-validation:  export GAMEN_VALIDATE_BIN="$target"
   cwyde:                 export CWYDE_GAMEN_BIN="$target"
+  gamen-simulations:     DclegClient("$share_dir/dcleg-service")
 Once every caller is verified, run: tools/install.sh --link
 EOF
   exit 0

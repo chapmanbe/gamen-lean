@@ -39,6 +39,60 @@ Each entry records:
 - **Status:** intentional. PR #44 is still open on gamen-hs. If it merges,
   this divergence disappears against gamen-hs `main`.
 
+## dcleg-service (`compare_dcleg.py`)
+
+The Lean `dcleg-service` (`DclegService.lean`, `Gamen/Service/*`) is
+compared against gamen-hs's by `tools/compare/compare_dcleg.py`, which
+labels each of these divergences itself (`div:<name>`) and counts anything
+else as DISAGREE. Against gamen-hs `main` at `fd8b269` (its `dcleg-service`
+binary built 2026-09-29 19:06), seed 20261006, 2026-10-06: 299 sessions,
+3272 requests: 3109 identical, 5 equivalent (malformed-JSON messages), 22
+`crash`, 125 `premises`, 2 `build-premises`, 8 `max_violations`, 1
+`duplicate-key`, **0 DISAGREE**.
+
+- **D1 `crash`: library errors are replies, not a dead process.** Where
+  gamen-hs's evaluator calls `error` (`B_i` for an agent with no doxastic
+  map, in a `sat`/`true_in`/`counterfactual` formula, or in the
+  `self_awareness`/`intentional_awareness` checks for a turn-taker with no
+  doxastic map), the Haskell process dies with no reply and the session is
+  lost. Lean answers `{"code": "internal_error", "message": <the library's
+  message>}` (the protocol note's code for a server-side failure) and keeps
+  serving. Test: `extensionCases` in `Tests/DclegService.lean`.
+- **D2 `premises`: the default premise function.** `build` applies
+  `Gamen.Dcleg.withMovePremises`, which gamen-lean fixed on 2026-09-30
+  (singleton premise at single-move vertices; premises at outcome vertices;
+  `docs/dcleg-outcome-node-premises-2026-09-30.md`). Answers that depend on
+  F differ: `counterfactual` at an outcome vertex or a single-move vertex
+  reached by more than one world (gamen-hs answers every counterfactual at an
+  outcome vertex vacuously true), `sat`/`true_in` formulas containing a
+  counterfactual, and the `centering`, `contemporary_universality` and
+  `minimal_revision` axiom checks. The harness counts a `counterfactual`
+  disagreement anywhere else as DISAGREE.
+- **D3 `build-premises`: premise admissibility at `build`.** gamen-hs runs
+  `validateDclegModel` before premises are applied; Lean's
+  `validateDclegModel` also checks Centering and Contemporary Universality
+  of F, so it runs after `withMovePremises`. A model whose histories
+  disagree with the strategic structure (a world plays a move `moves` does
+  not list, or stops at a non-end vertex) is now `model_invalid` with those
+  violations; gamen-hs builds it. Test: `extensionCases`.
+- **D4 `max_violations`: a cap ≤ 0 no longer reads as satisfied.**
+  gamen-hs's `take maxV` leaves no violations, so it answers
+  `"satisfied": true` for any model. Lean decides `satisfied` from whether a
+  violation exists and caps only the list: `{"satisfied": false,
+  "violations": []}`. Test: `extensionCases`.
+- **D5 `duplicate-key`: repeated JSON keys.** aeson keeps the first of two
+  equal keys, Lean's `Json.parse` the last (`{"id":"a","id":"b",…}` echoes
+  `a` in gamen-hs, `b` here). Not fixed: it would take a JSON parser of our
+  own; no caller sends duplicate keys.
+
+Malformed JSON gets `parse_error` from both, with each JSON library's own
+message; the harness counts these as equivalent, as `compare.py` does.
+One known, unlisted edge: numbers are echoed only in a rejected `premises`
+value (`details.received`), and Lean.Json does not keep how a number was
+written, so an integer literal written out with more than 1024 trailing
+zeros is echoed in exponent form (`1.0e1025`), where aeson writes the digits
+(`Gamen.Service.encodeNumber`). Not in the harness corpus.
+
 ## Comparison log
 
 Notable `compare.py` runs that are not divergences, kept so a later count

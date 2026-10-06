@@ -6,6 +6,7 @@ web/lean4web/
 
 # output of tools/compare/compare.py (regenerate; dated baselines live in docs/assessment/)
 tools/compare/results/
+tools/compare/results-dcleg/
 
 __pycache__/
 .DS_Store

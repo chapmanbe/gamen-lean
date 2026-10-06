@@ -1,0 +1,40 @@
+{"id":"1","ok":true,"result":{"capabilities":["build","sat","true_in","counterfactual","axiom_check","drop","list"],"service":"dcleg-service","version":"0.1.0"}}
+{"error":{"code":"parse_error","message":"Error in $: parsing Request failed, expected Object, but encountered Array"},"ok":false}
+{"error":{"code":"parse_error","message":"Error in $: key \"id\" not found"},"ok":false}
+{"error":{"code":"parse_error","message":"Error in $.id: parsing Text failed, expected String, but encountered Number"},"ok":false}
+{"error":{"code":"parse_error","message":"Error in $: key \"op\" not found"},"ok":false}
+{"error":{"code":"unknown_op","message":"Unknown operation: nope"},"id":"3","ok":false}
+{"error":{"code":"missing_field","details":{"field":"handle"},"message":"Required field missing: handle"},"id":"4","ok":false}
+{"error":{"code":"handle_unknown","message":"Unknown handle: zz"},"id":"5","ok":false}
+{"error":{"code":"missing_field","details":{"field":"model"},"message":"Required field missing: model"},"id":"6","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: key \"strategic_structure\" not found"]},"message":"Model validation failed"},"id":"7","ok":false}
+{"id":"8","ok":true,"result":{"handle":"h-0","warnings":[]}}
+{"id":"9","ok":true,"result":{"handles":[{"handle":"h-0","vertices":0,"worlds":0}]}}
+{"id":"10","ok":true,"result":{"dropped":true}}
+{"id":"11","ok":true,"result":{"dropped":false}}
+{"error":{"code":"missing_field","details":{"field":"handle"},"message":"Required field missing: handle"},"id":"12","ok":false}
+{"error":{"code":"unsupported","details":{"note":"strict-mode validation is not implemented in v0.1"},"message":"Unsupported feature: strict"},"id":"13","ok":false}
+{"id":"14","ok":true,"result":{"handle":"h-1","warnings":[]}}
+{"error":{"code":"unsupported","details":{"note":"only the \"auto\" premises form is supported in v0.1; explicit premises are deferred to v0.2","received":["x"]},"message":"Unsupported feature: premises"},"id":"15","ok":false}
+{"id":"16","ok":true,"result":{"handle":"h-2","warnings":[]}}
+{"error":{"code":"handle_in_use","message":"Handle already in use: h-1"},"id":"17","ok":false}
+{"id":"18","ok":true,"result":{"handle":"h-3","warnings":[]}}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: expected String, but encountered Number"]},"message":"Model validation failed"},"id":"19","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: cannot unpack array of length 1 into a tuple of length 2"]},"message":"Model validation failed"},"id":"20","ok":false}
+{"error":{"code":"formula_invalid","message":"Unknown DclegFormula type: foo"},"id":"21","ok":false}
+{"error":{"code":"formula_invalid","message":"key \"name\" not found"},"id":"22","ok":false}
+{"error":{"code":"formula_invalid","message":"expected String, but encountered Number"},"id":"23","ok":false}
+{"id":"24","ok":true,"result":{"true_in_model":true}}
+{"error":{"code":"unknown_axiom","details":{"known":["presence","present_seriality","transitivity","euclideanness","self_awareness","intentional_awareness","centering","contemporary_universality","minimal_revision","expectational_continuity","recall"],"unknown":["foo","bar"]},"message":"Unknown axiom(s): foo, bar"},"id":"25","ok":false}
+{"id":"26","ok":true,"result":{"centering":{"satisfied":true},"contemporary_universality":{"satisfied":true},"euclideanness":{"satisfied":true},"expectational_continuity":{"satisfied":true},"intentional_awareness":{"satisfied":true},"minimal_revision":{"satisfied":true},"presence":{"satisfied":true},"present_seriality":{"satisfied":true},"recall":{"satisfied":true},"self_awareness":{"satisfied":true},"transitivity":{"satisfied":true}}}
+{"id":"27","ok":true,"result":{"handles":[{"handle":"h-1","vertices":0,"worlds":0},{"handle":"h-2","vertices":0,"worlds":0},{"handle":"h-3","vertices":0,"worlds":0}]}}
+{"error":{"code":"formula_invalid","message":"parsing DclegFormula failed, expected Object, but encountered Number"},"id":"28","ok":false}
+{"id":"29","ok":true,"result":{"handle":"h-4","warnings":[]}}
+{"id":"30","ok":true,"result":{"capabilities":["build","sat","true_in","counterfactual","axiom_check","drop","list"],"service":"dcleg-service","version":"0.1.0"}}
+{"id":"é\u0001<>& /","ok":true,"result":{"capabilities":["build","sat","true_in","counterfactual","axiom_check","drop","list"],"service":"dcleg-service","version":"0.1.0"}}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing Int failed, value is either floating or will cause over or underflow 1.5"]},"message":"Model validation failed"},"id":"31","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing Int failed, value is either floating or will cause over or underflow 9.9999999999999999999e19"]},"message":"Model validation failed"},"id":"32","ok":false}
+{"error":{"code":"model_invalid","details":{"violations":["JSON parse error: parsing model failed, expected Object, but encountered Number"]},"message":"Model validation failed"},"id":"33","ok":false}
+{"error":{"code":"formula_invalid","message":"parsing Int failed, value is either floating or will cause over or underflow 1.5"},"id":"34","ok":false}
+{"id":"35","ok":true,"result":{"centering":{"satisfied":true},"contemporary_universality":{"satisfied":true},"euclideanness":{"satisfied":true},"expectational_continuity":{"satisfied":true},"intentional_awareness":{"satisfied":true},"minimal_revision":{"satisfied":true},"presence":{"satisfied":true},"present_seriality":{"satisfied":true},"recall":{"satisfied":true},"self_awareness":{"satisfied":true},"transitivity":{"satisfied":true}}}
+{"id":"36","ok":true,"result":{}}

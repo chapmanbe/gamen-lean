@@ -30,6 +30,10 @@ import Gamen.Atl
 import Gamen.Atel
 import Gamen.Atl.ImperfectInfo
 import Gamen.Dcleg
+import Gamen.Service.Protocol
+import Gamen.Service.Formula
+import Gamen.Service.Model
+import Gamen.Service.Axioms
 import Gamen.Visualize
 import Gamen.ManyValued
 import Gamen.ManyValued.Completion

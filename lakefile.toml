@@ -1,6 +1,6 @@
 name = "gamen"
 version = "0.1.0"
-defaultTargets = ["Gamen", "Widgets", "Notebooks", "gamen-validate", "DclegProofs"]
+defaultTargets = ["Gamen", "Widgets", "Notebooks", "gamen-validate", "dcleg-service", "DclegProofs"]
 testDriver = "tests"
 # Never reuse artifacts from Lake's shared cache: `gamen-validate` stamps its
 # git commit in at compile time (`Validate/BuildInfo.lean`), and the cache is
@@ -54,12 +54,23 @@ name = "Tests"
 [[lean_lib]]
 name = "Validate"
 
+# `dcleg-service`'s non-`IO` core (`DclegService/Core.lean`), importable
+# from `Tests.Main` for the same reason as `Validate`.
+[[lean_lib]]
+name = "DclegService"
+
 # ── Executables ─────────────────────────────────────────────────────
 
 # JSON Lines service, wire-compatible with gamen-hs `gamen-validate`.
 [[lean_exe]]
 name = "gamen-validate"
 root = "Validate"
+
+# Stateful JSON Lines service for DCLEG models, wire-compatible with
+# gamen-hs `dcleg-service` (plans/dcleg-service-port-2026-10-05.md).
+[[lean_exe]]
+name = "dcleg-service"
+root = "DclegService"
 
 # `lake test`
 [[lean_exe]]

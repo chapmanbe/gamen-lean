@@ -1,0 +1,155 @@
+--- a/extraction/src/guideline_extraction/detect_conflicts.py	2026-10-05 19:40:03
++++ b/extraction/src/guideline_extraction/detect_conflicts.py	2026-10-05 19:40:11
+@@ -208,12 +208,14 @@
+ # ── gamen-validate invocation ────────────────────────────────────────
+ 
+ def find_gamen_validate() -> str:
+-    """Locate the gamen-validate binary.
++    """Locate the gamen-validate binary (gamen-lean's; the gamen-hs build is retired).
+ 
+     Precedence:
+       1. $GAMEN_VALIDATE_BIN environment variable
+       2. gamen-validate on PATH
+-      3. glob under ~/Projects/Logic/Haskell/gamen-hs/dist-newstyle/
++
++    Install the binary with `tools/install.sh` in gamen-lean; it prints the
++    value to export.
+     """
+     env_bin = os.environ.get("GAMEN_VALIDATE_BIN")
+     if env_bin and Path(env_bin).is_file():
+@@ -222,22 +224,11 @@
+     on_path = shutil.which("gamen-validate")
+     if on_path:
+         return on_path
+-
+-    # Both layouts are searched because the docstring, the error message below, and
+-    # this glob had drifted apart: the glob looked only under ~/Code/Haskell while the
+-    # repository lives at ~/Projects/Logic/Haskell, so the fallback never fired and the
+-    # error told you to build in a directory it was not looking at.
+-    pattern = "build/*/ghc-*/gamen-*/x/gamen-validate/build/gamen-validate/gamen-validate"
+-    for dist in (Path.home() / "Projects/Logic/Haskell/gamen-hs/dist-newstyle",
+-                 Path.home() / "Code/Haskell/gamen-hs/dist-newstyle"):
+-        matches = sorted(dist.glob(pattern))
+-        if matches:
+-            return str(matches[0])
+ 
+     raise FileNotFoundError(
+-        "gamen-validate binary not found. Set $GAMEN_VALIDATE_BIN, "
+-        "put it on PATH, or build with `cabal build gamen-validate` "
+-        "in ~/Projects/Logic/Haskell/gamen-hs."
++        "gamen-validate binary not found. Set $GAMEN_VALIDATE_BIN, or put it "
++        "on PATH. Install it from gamen-lean with `tools/install.sh`, which "
++        "prints the value to export."
+     )
+ 
+ 
+@@ -346,36 +337,26 @@
+ def prover_provenance(binary: str) -> str:
+     """Identify the gamen-validate build that just ran, for the sidecar.
+ 
+-    Records three independent facts rather than one convenient one. The repository
+-    HEAD alone would be a lie of a familiar kind: on 2026-08-11 the committed binary
+-    was eight days older than HEAD, so pinning HEAD would have named a commit that
+-    never produced it. The binary digest is what actually ran; HEAD and the dirty flag
+-    say whether that digest is attributable to a commit.
+-
+-    gamen-validate has no --version flag, so this is the available substitute.
++    Records two independent facts rather than one convenient one. The binary
++    digest is what actually ran. The commit is the build's own stamp, from
++    gamen-lean's `{"action": "version"}` request, so it is attributable without
++    guessing from a repository checkout next to the binary (an installed copy
++    has none). A binary that does not answer `version` is recorded as unknown.
+     """
+     import hashlib
+     b = Path(binary)
+     digest = hashlib.sha256(b.read_bytes()).hexdigest()[:16] if b.is_file() else "unknown"
+-    repo = b
+-    while repo != repo.parent and not (repo / ".git").exists():
+-        repo = repo.parent
+-    head, dirty = "unknown", "unknown"
+-    if (repo / ".git").exists():
+-        def git(*a):
+-            try:
+-                return subprocess.run(["git", "-C", str(repo), *a], capture_output=True,
+-                                      text=True, timeout=10).stdout.strip()
+-            except (OSError, subprocess.TimeoutExpired):
+-                return ""
+-        head = git("rev-parse", "--short", "HEAD") or "unknown"
+-        # Only source dirt matters; a modified README does not change the prover.
+-        src = [l for l in git("status", "--porcelain").splitlines()
+-               if l.strip().endswith((".hs", ".cabal")) or "cabal.project" in l]
+-        dirty = "yes" if src else "no"
+-    return (f"prover: gamen-validate binary sha256:{digest}; "
+-            f"gamen-hs repo {repo.name} HEAD {head}, source dirty: {dirty}. "
+-            f"The digest is what ran; HEAD is attributable only when source is clean.")
++    impl, commit = "unknown", "unknown"
++    try:
++        out = subprocess.run([binary], input='{"action": "version"}\n', capture_output=True,
++                             text=True, timeout=10).stdout
++        reply = json.loads(out.splitlines()[0])
++        if reply.get("ok"):
++            impl, commit = reply["result"]["implementation"], reply["result"]["commit"]
++    except (OSError, subprocess.TimeoutExpired, ValueError, IndexError, KeyError):
++        pass
++    return (f"prover: gamen-validate binary sha256:{digest}; {impl} commit {commit}. "
++            f"The digest is what ran; the commit is the build's own stamp.")
+ 
+ 
+ def main(argv: list[str] | None = None) -> None:
+--- /dev/null	2026-10-05 19:41:04
++++ b/extraction/tests/test_find_gamen_validate.py	2026-10-05 19:40:22
+@@ -0,0 +1,54 @@
++"""Binary discovery and prover provenance in detect_conflicts.py (gamen-lean's gamen-validate)."""
++import os
++import shutil
++import stat
++
++import pytest
++
++from guideline_extraction import detect_conflicts as dc
++
++
++def _fake_binary(path, reply):
++    path.write_text(f"#!/bin/sh\ncat >/dev/null\necho '{reply}'\n")
++    path.chmod(path.stat().st_mode | stat.S_IXUSR)
++    return str(path)
++
++
++def test_env_variable_wins_over_path(tmp_path, monkeypatch):
++    env_bin = _fake_binary(tmp_path / "env-gv", "{}")
++    other = tmp_path / "bin"
++    other.mkdir()
++    _fake_binary(other / "gamen-validate", "{}")
++    monkeypatch.setenv("GAMEN_VALIDATE_BIN", env_bin)
++    monkeypatch.setenv("PATH", str(other))
++    assert dc.find_gamen_validate() == env_bin
++
++
++def test_falls_back_to_path(tmp_path, monkeypatch):
++    on_path = tmp_path / "bin"
++    on_path.mkdir()
++    exe = _fake_binary(on_path / "gamen-validate", "{}")
++    monkeypatch.delenv("GAMEN_VALIDATE_BIN", raising=False)
++    monkeypatch.setenv("PATH", str(on_path))
++    assert dc.find_gamen_validate() == exe
++
++
++def test_no_gamen_hs_fallback_and_error_points_at_gamen_lean(tmp_path, monkeypatch):
++    monkeypatch.delenv("GAMEN_VALIDATE_BIN", raising=False)
++    monkeypatch.setenv("PATH", str(tmp_path))  # empty: nothing on PATH
++    with pytest.raises(FileNotFoundError) as err:
++        dc.find_gamen_validate()
++    assert "tools/install.sh" in str(err.value)
++    assert "cabal" not in str(err.value) and "gamen-hs" not in str(err.value)
++
++
++def test_provenance_uses_the_binarys_own_version_stamp(tmp_path):
++    reply = '{"ok":true,"result":{"commit":"abc123def456","implementation":"gamen-lean","protocol":1}}'
++    note = dc.prover_provenance(_fake_binary(tmp_path / "gv", reply))
++    assert "gamen-lean commit abc123def456" in note and "sha256:" in note
++    assert "gamen-hs repo" not in note
++
++
++def test_provenance_records_unknown_when_binary_has_no_version(tmp_path):
++    note = dc.prover_provenance(_fake_binary(tmp_path / "gv", '{"ok":false,"error":"unknown action"}'))
++    assert "unknown commit unknown" in note

@@ -84,6 +84,16 @@ binary built 2026-09-29 19:06), seed 20261006, 2026-10-06: 299 sessions,
   equal keys, Lean's `Json.parse` the last (`{"id":"a","id":"b",…}` echoes
   `a` in gamen-hs, `b` here). Not fixed: it would take a JSON parser of our
   own; no caller sends duplicate keys.
+- **D6 `invalid-utf8`: invalid UTF-8 and lone surrogate escapes in a
+  request.** A raw invalid byte (`{"id":"a\xff","op":"ping"}`) or a lone
+  surrogate escape (`"a\ud800"`) gets `parse_error` ("Cannot decode input:
+  …decodeUtf8: Invalid UTF-8 …", no `id`) from gamen-hs. Lean decodes the
+  line leniently, answers the request, and echoes U+FFFD in the id.
+  `gamen-validate` already behaves the same way, so this predates the
+  dcleg-service port. Not fixed: it would take our own UTF-8 and surrogate
+  validation, and no caller sends such input. Checked by hand against both
+  binaries on 2026-10-06; not in the harness corpus (it builds requests as
+  text).
 
 Malformed JSON gets `parse_error` from both, with each JSON library's own
 message; the harness counts these as equivalent, as `compare.py` does.

@@ -102,6 +102,15 @@ def has_conditional(f):
     return False
 
 
+def moves_vertex(f):
+    """Does the formula contain an operator that changes the evaluation vertex?"""
+    if isinstance(f, dict):
+        return f.get("type") in ("next", "yesterday") or any(moves_vertex(v) for v in f.values())
+    if isinstance(f, list):
+        return any(moves_vertex(v) for v in f)
+    return False
+
+
 # ── models ───────────────────────────────────────────────────────────
 
 class Game:
@@ -490,8 +499,16 @@ def classify(req_line, hs, ln, game, hs_crashed_here):
             return "div:premises"
     if op == "counterfactual" and game is not None and game.premise_divergent(r.get("vertex")):
         return "div:premises"
-    if op in ("sat", "true_in") and has_conditional(r.get("formula")):
-        return "div:premises"
+    if op in ("sat", "true_in") and game is not None and has_conditional(r.get("formula")):
+        # A conditional reads the premise function F only at the vertex it is evaluated
+        # at. `sat` without next/yesterday stays at the request's vertex; `true_in`, or a
+        # formula that moves the vertex, can reach any vertex of the game.
+        if op == "sat" and not moves_vertex(r.get("formula")):
+            divergent = game.premise_divergent(r.get("vertex"))
+        else:
+            divergent = any(game.premise_divergent(v) for v in game.nodes)
+        if divergent:
+            return "div:premises"
     if op == "build" and h.get("ok") and le.get("code") == "model_invalid":
         vs = le.get("details", {}).get("violations", [])
         if vs and all("Centering" in v or "Contemporary Universality" in v for v in vs):

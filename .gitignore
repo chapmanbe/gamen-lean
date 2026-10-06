@@ -13,3 +13,6 @@ __pycache__/
 
 # git worktrees created by Claude Code agent runs
 .claude/worktrees/
+
+# The DCLEG thesis PDF is Jeremiah's unpublished work: kept locally, never committed
+notes/dcleg-thesis-final.pdf

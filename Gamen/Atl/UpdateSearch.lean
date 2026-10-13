@@ -23,7 +23,11 @@ usually wants to bound. This module therefore solves a *finite, explicit* versio
   simultaneously (as `[π]+`/`[π]-`); brackets run in order.
 
 `notFound` therefore means "no sequence over this pool within the bound", never "no
-update exists". Updates that would be errors when evaluated (a grant enabling a joint
+update exists". The default pool has no *informed-only* clauses (`φ : α → ∅, {b}`); to search for those, pass
+a pool containing them. An error evaluating the goal at any visited model aborts the search
+(it is an error, never a guess), so a goal containing an update that is illegal in some
+intermediate model can make the answer depend on what was explored. Updates that would be
+errors when evaluated (a grant enabling a joint
 move with no stated successor, an update that breaks `∼`) are not legal moves; they are
 counted in `illegal`, not silently dropped.
 
@@ -94,6 +98,7 @@ def modelKey (m : DynModel) : String :=
 
 private structure Node where
   model : DynModel
+  key : String
   /-- Steps taken, most recent first. -/
   steps : List Step
 
@@ -101,22 +106,25 @@ private structure Node where
 def boundedUpdate (m : DynModel) (mode : IrMode) (v : String) (goal : DFormula) (n : Nat)
     (pool : List Candidate) (fuel : Nat) : Except String SearchReport := do
   unless m.cgs.cgsStates.contains v do throw s!"boundedUpdate: unknown state \"{v}\""
+  if n > 1000 then throw "boundedUpdate: the bound must be at most 1000"
   for c in pool do
     unless m.actions.contains c.action do throw s!"pool: unknown action \"{c.action}\""
     if let some a := (c.agents ++ c.informed).find? (fun a => !m.cgs.cgsAgents.contains a) then
       throw s!"pool: unknown agent \"{a}\""
   let mut layers : Array (List Node) := Array.replicate (n + 1) []
   let mut seen : Std.HashMap String Nat := {}
-  layers := layers.set! 0 [{ model := m, steps := [] }]
+  layers := layers.set! 0 [{ model := m, key := modelKey m, steps := [] }]
   seen := seen.insert (modelKey m) 0
   let mut explored := 0
   let mut illegal := 0
   for s in [0:n + 1] do
-    for node in layers[s]! do
+    -- a model first reached at a higher cost and later at a lower one is stale here
+    let current := (layers[s]!).filter fun node => seen.get? node.key == some s
+    for node in current do
       if (← dsat node.model mode goal).contains v then
         return { outcome := .found node.steps.reverse s, explored, illegal }
     if s < n then
-      for node in layers[s]! do
+      for node in current do
         for grant in [true, false] do
           let cands := pool.filter (·.grant == grant)
           let sets ← cands.mapM fun c => dsat node.model mode c.cond
@@ -138,7 +146,7 @@ def boundedUpdate (m : DynModel) (mode : IrMode) (v : String) (goal : DFormula) 
                   if old ≤ cost then continue
                 seen := seen.insert key cost
                 layers := layers.modify cost fun l =>
-                  { model := m', steps := { grant, clauses := combo.map (·.1) } :: node.steps } :: l
+                  { model := m', key, steps := { grant, clauses := combo.map (·.1) } :: node.steps } :: l
   return { outcome := .notFound, explored, illegal }
 
 end Atl.Dynamic

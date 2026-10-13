@@ -336,7 +336,43 @@ def cases : List (String × Bool) := [
       | .ok c => (sat c fEv.1).toOption != (sat m.cgs fEv.1).toOption
           || (sat c fSafe.1).toOption != (sat m.cgs fSafe.1).toOption
       | .error _ => false
-    | .error _ => false)
+    | .error _ => false),
+  ("review: an unknown agent in a coalition operator is an error, not a silent empty set",
+    errs modelDefault (.canNext ["r9"] atBob) && errs modelDefault (.canNext ["r1", "r9"] atBob)),
+  ("review: perfect semantics on a model with indistinguishable states is refused (semantics_mismatch); imperfect_subjective is accepted",
+    let f := "{\"type\":\"knowledge\",\"agent\":\"a\",\"operand\":{\"type\":\"atom\",\"name\":\"p\"}}"
+    let q (sem : String) := processLine ("{\"action\":\"atl_model_check\",\"dynamic\":true" ++ sem ++ ",\"model\":"
+      ++ epiModel ++ ",\"formulas\":[" ++ f ++ "]}") "t"
+    code (q "") == some "semantics_mismatch"
+      && code (q ",\"semantics\":\"imperfect_subjective\"") == none),
+  ("review: \"dynamic\" must be a boolean — \"true\" does not silently select the static reader",
+    ((processLine ("{\"action\":\"atl_model_check\",\"dynamic\":\"true\",\"model\":" ++ modelDefault
+      ++ ",\"formulas\":[]}") "t").compress.splitOn "must be true or false").length == 2),
+  ("review: an empty update list is rejected (Def 1: at least one clause)",
+    ((processLine ("{\"action\":\"atl_model_check\",\"dynamic\":true,\"model\":" ++ modelDefault
+      ++ ",\"formulas\":[{\"type\":\"grant\",\"updates\":[],\"operand\":{\"type\":\"bot\"}}]}") "t").compress.splitOn "at least one clause").length == 2),
+  ("review: default_next with both stay and state is malformed_spec; [[s0,s0]] is overlapping_classes",
+    code (processLine ("{\"action\":\"atl_model_check\",\"dynamic\":true,\"model\":"
+      ++ modelDefault.replace "\"default_next\":{\"stay\":true}" "\"default_next\":{\"stay\":true,\"state\":\"q0\"}"
+      ++ ",\"formulas\":[]}") "t") == some "malformed_spec"
+      && code (processLine ("{\"action\":\"atl_model_check\",\"dynamic\":true,\"semantics\":\"imperfect_subjective\",\"model\":"
+        ++ epiModel.replace "[[\"s0\",\"s1\"]]" "[[\"s0\",\"s0\"]]" ++ ",\"formulas\":[]}") "t") == some "overlapping_classes"),
+  ("review: the no-stated-successor failure is that error, not some other (message checked)",
+    match load modelNoDefault with
+    | .ok m => match dsat m .perfect (.grant grantRight (.has "r2" "right")) with
+      | .error msg => (msg.splitOn "no stated successor").length == 2
+      | .ok _ => false
+    | .error _ => false),
+  ("review: revoke, knowledge, can_release and a default_next state travel over the wire",
+    let model := epiModel.replace "\"default_next\":{\"stay\":true}" "\"default_next\":{\"state\":\"g\"}"
+    let fs := "{\"type\":\"revoke\",\"updates\":[{\"condition\":{\"type\":\"atom\",\"name\":\"p\"},\"action\":\"x\",\"agents\":[\"a\"],\"informed\":null}],\
+      \"operand\":{\"type\":\"can_release\",\"agents\":[],\"left\":{\"type\":\"atom\",\"name\":\"goal\"},\"right\":{\"type\":\"not\",\"operand\":{\"type\":\"bot\"}}}}"
+    let r := processLine ("{\"action\":\"atl_model_check\",\"dynamic\":true,\"semantics\":\"imperfect_subjective\",\"model\":"
+      ++ model ++ ",\"formulas\":[" ++ fs ++ "]}") "t"
+    (r.compress.splitOn "\"ok\":true").length == 2),
+  ("review: an empty indistinguishability class [[]] is malformed_spec in the CGS codec",
+    code (processLine ("{\"action\":\"atl_model_check\",\"dynamic\":true,\"semantics\":\"imperfect_subjective\",\"model\":"
+      ++ epiModel.replace "[[\"s0\",\"s1\"]]" "[[]]" ++ ",\"formulas\":[]}") "t") == some "malformed_spec")
 ]
 
 end AtlDynamicTests

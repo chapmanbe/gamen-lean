@@ -40,6 +40,9 @@ def verified (m : DynModel) (mode : IrMode) (v : String) (goal : DFormula)
           | .error _ => false)
   | _ => false
 
+def code (r : Lean.Json) : Option String :=
+  (r.getObjVal? "error_code").toOption >>= (·.getStr?.toOption)
+
 def reachJ : String :=
   "{\"type\":\"can_next\",\"agents\":[\"r1\",\"r2\"],\"operand\":{\"type\":\"atom\",\"name\":\"atBob\"}}"
 
@@ -134,7 +137,33 @@ def cases : List (String × Bool) := [
     (processLine ("{\"action\":\"atl_update_search\",\"model\":" ++ modelDefault ++ ",\"state\":\"q0\",\"goal\":" ++ reachJ ++ "}") "t").compress
       == "{\"error\":\"key \\\"bound\\\" not found\",\"ok\":false}"),
   ("combos: the 2-element sublists of [1,2,3]",
-    combos [1, 2, 3] 2 == [[1, 2], [1, 3], [2, 3]] && combos [1, 2] 0 == [[]] && combos [1] 2 == [])
+    combos [1, 2, 3] 2 == [[1, 2], [1, 3], [2, 3]] && combos [1, 2] 0 == [[]] && combos [1] 2 == []),
+  ("review: atl_update_search error codes — unknown_state, unknown_action, bound_too_large, search_failed only for the search itself",
+    code (wireWith reachJ 1 ",\"state\":\"zz\"") == some "unknown_state"
+      && code (wireWith reachJ 1 ",\"pool\":[{\"kind\":\"grant\",\"condition\":{\"type\":\"bot\"},\"action\":\"fly\",\"agents\":[\"r2\"]}]") == some "unknown_action"
+      && code (wire reachJ 5000) == some "bound_too_large"
+      && code (wireWith reachJ 1 ",\"fuel\":1") == some "search_failed"),
+  ("review: encodeDFormula and decodeDFormula round-trip on every constructor",
+    let fs : List DFormula :=
+      [.bot, .atom "p", .not (.atom "p"), .and (.atom "p") (.atom "q"), .or (.atom "p") (.atom "q"),
+       .implies (.atom "p") (.atom "q"), .iff (.atom "p") (.atom "q"), .has "r1" "left",
+       .knows "r1" (.atom "p"), .canNext ["r1"] (.atom "p"), .canAlways ["r1"] (.atom "p"),
+       .canEventually ["r1", "r2"] (.atom "p"), .canUntil ["r1"] (.atom "p") (.atom "q"),
+       .canRelease ["r1"] (.atom "p") (.atom "q"),
+       .grant (.cons (.atom "p") "x" ["r1"] ["r2"] (.cons (.not .bot) "y" ["r2"] [] .nil)) (.atom "q"),
+       .revoke (.cons (.atom "p") "x" ["r1"] [] .nil) (.has "r1" "x")]
+    fs.all fun f =>
+      match decodeDFormula (encodeDFormula f) with
+      | .ok g => encodeDFormula g == encodeDFormula f
+      | .error _ => false),
+  ("review: an unknown agent (in agents or in informed) in the pool is an error",
+    match tank with
+    | some m =>
+      (boundedUpdate m .perfect "q0" reach 1
+        [{ grant := true, cond := .not .bot, action := "right", agents := ["r9"] }] 100).isOk == false
+        && (boundedUpdate m .perfect "q0" reach 1
+          [{ grant := true, cond := .not .bot, action := "right", agents := ["r2"], informed := ["r9"] }] 100).isOk == false
+    | none => false)
 ]
 
 end UpdateSearchTests

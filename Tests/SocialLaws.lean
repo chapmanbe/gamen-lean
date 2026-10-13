@@ -38,7 +38,8 @@ def effective (m : DynModel) (η : Constraint) (φ : Formula) (v : String) : Opt
 
 /-- `G⁺, v ⊨ [π_η]− ⟨⟨∅⟩⟩Gφ`. -/
 def viaUpdate (m : DynModel) (η : Constraint) (φ : DFormula) (v : String) : Option Bool := do
-  let s ← (dsat m.withStateAtoms .perfect (.revoke (behaviouralUpdate η) (.canAlways [] φ))).toOption
+  let plus ← m.withStateAtoms.toOption
+  let s ← (dsat plus .perfect (.revoke (behaviouralUpdate η) (.canAlways [] φ))).toOption
   pure (s.contains v)
 
 def cases : List (String × Bool) :=
@@ -62,9 +63,12 @@ def cases : List (String × Bool) :=
     | some m =>
       let bad : Constraint := [("left", "r1", ["q0"]), ("right", "r1", ["q0"])]
       (implementConstraint m bad).isOk == false
-        && (match dsat m.withStateAtoms .perfect
-              (.revoke (behaviouralUpdate bad) (.and (.has "r1" "left") (.has "r1" "right"))) with
-            | .ok s => s.contains "q0"
+        && (match m.withStateAtoms with
+            | .ok plus =>
+              match dsat plus .perfect
+                (.revoke (behaviouralUpdate bad) (.and (.has "r1" "left") (.has "r1" "right"))) with
+              | .ok s => s.contains "q0"
+              | .error _ => false
             | .error _ => false)
     | none => false),
   ("implementConstraint: unknown action, agent or state is an error",
@@ -74,11 +78,28 @@ def cases : List (String × Bool) :=
         && (implementConstraint m [("left", "r9", ["q0"])]).isOk == false
         && (implementConstraint m [("left", "r1", ["q9"])]).isOk == false
     | none => false),
-  ("G⁺: every state satisfies exactly its own state atom",
+  ("G⁺: every state satisfies exactly its own state atom (all four states)",
     match tank with
-    | some m => (dsat m.withStateAtoms .perfect (.atom (stateAtom "q1"))).toOption.map (·.toList)
-        == some ["q1"]
-    | none => false)
+    | some m => match m.withStateAtoms with
+      | .ok plus => ["q0", "q1", "q2"].all fun v =>
+          (dsat plus .perfect (.atom (stateAtom v))).toOption.map (·.toList) == some [v]
+      | .error _ => false
+    | none => false),
+  ("G⁺ refuses a model that already uses a state atom (it would be true at two states)",
+    match load (modelDefault.replace "\"valuation\":{\"q1\":[\"atBob\"],\"q2\":[\"warm\"]}"
+        "\"valuation\":{\"q1\":[\"atBob\",\"state:q0\"],\"q2\":[\"warm\"]}") with
+    | .ok m => m.withStateAtoms.isOk == false
+    | .error _ => false),
+  ("Thm 3 on a second model, with a constraint on an agent other than r1 (a: x forbidden at s0)",
+    match load epiModel with
+    | .ok m =>
+      let η : Constraint := [("x", "a", ["s0"])]
+      [("not goal", (Formula.not (.atom "goal"), DFormula.not (.atom "goal"))),
+       ("p", (Formula.atom "p", DFormula.atom "p")),
+       ("goal or p", (Formula.or (.atom "goal") (.atom "p"), DFormula.or (.atom "goal") (.atom "p")))].all
+        fun (_, (φ, d)) => ["s0", "s1", "g"].all fun v =>
+          (effective m η φ v).isSome && effective m η φ v == viaUpdate m η d v
+    | .error _ => false)
 ]
 
 end SocialLawTests

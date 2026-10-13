@@ -175,7 +175,61 @@ def cases : List (String × Bool) := [
   ("eSatisfiesAfter: an unknown event or world is an error",
     match publicAnnouncement ["a", "b"] p with
     | .ok am => fails (eSatisfiesAfter m3 "s0" am "nope" p) && fails (eSatisfiesAfter m3 "zz" am "!" p)
-    | .error _ => false)
+    | .error _ => false),
+  ("review: a name collision involving a pair that FAILED its precondition is still an error (it would otherwise add a spurious edge)",
+    match mkActionModel ["b×c", "c"] ["i"] [("i", [("b×c", "c"), ("c", "c")])] [("c", p)] with
+    | .ok am =>
+      fails (productUpdate
+        (mkEpistemicModel
+          (mkEpistemicFrame ["a", "a×b"] [("i", full ["a", "a×b"])]) [("p", ["a"])]) am)
+    | .error _ => false),
+  ("review: a group member that is not an agent is an error in both builders (it would silently make nobody learn)",
+    fails (semiPrivateWhether ["a", "b"] ["z"] p) && fails (privateAnnouncement ["a", "b"] ["z"] p)),
+  ("an epistemic postcondition is read in the model before the update (p ← ¬K_i p)",
+    match mkActionModel ["a"] ["i"] [("i", [("a", "a")])] [] [("a", [("p", .not (kn "i" p))])] with
+    | .ok am =>
+      let m := mkEpistemicModel (mkEpistemicFrame ["w", "u"] [("i", [("w", "w"), ("u", "u")])]) [("p", ["w"])]
+      match productUpdate m am with
+      | .ok n => (n.eValuation.getD ⟨"p"⟩ ∅).toList == ["u×a"]
+      | .error _ => false
+    | .error _ => false),
+  ("review: mkActionModel refuses an agent with no relation entry, and accepts one that explicitly sees nothing",
+    fails (mkActionModel ["e"] ["a", "b"] [("a", [("e", "e")])])
+      && (mkActionModel ["e"] ["a", "b"] [("a", [("e", "e")]), ("b", [])]).isOk),
+  ("review: the public-announcement product keeps the restricted relations and the valuation, not just the worlds",
+    match publicAnnouncement ["a", "b"] p with
+    | .ok am => match productUpdate m2 am with
+      | .ok n =>
+        let rel (ag w : String) : List String := ((n.eFrame.eRelations.getD ag ∅).getD w ∅).toList
+        rel "a" "w1×!" == ["w1×!", "w2×!"] && rel "a" "w2×!" == ["w1×!", "w2×!"]
+          && rel "b" "w2×!" == ["w2×!"] && rel "b" "w1×!" == ["w1×!"]
+          && (n.eValuation.getD ⟨"p"⟩ ∅).toList == ["w1×!", "w2×!"]
+          && (n.eValuation.getD ⟨"q"⟩ ∅).toList == ["w2×!"]
+      | .error _ => false
+    | .error _ => false),
+  ("review: two-agent cross-check — informing only a (ATEL-D) agrees with a semi-private announcement to {a} on what a AND b know",
+    -- b is outside the group: b learns nothing about p but knows a learned whether p.
+    let json := "{\"states\":[\"s0\",\"s1\"],\"agents\":[\"a\",\"b\"],\"actions\":[\"x\",\"w\"],\
+      \"moves\":{\"s0\":{\"a\":[\"x\"],\"b\":[\"x\"]},\"s1\":{\"a\":[\"x\"],\"b\":[\"x\"]}},\
+      \"valuation\":{\"s0\":[\"p\"]},\"default_next\":{\"stay\":true},\"transitions\":[],\
+      \"indistinguishable\":{\"a\":[[\"s0\",\"s1\"]],\"b\":[[\"s0\",\"s1\"]]}}"
+    let epi := mkEpistemicModel
+      (mkEpistemicFrame ["s0", "s1"] [("a", full ["s0", "s1"]), ("b", full ["s0", "s1"])]) [("p", ["s0"])]
+    let aware : Formula := .or (kn "a" p) (kn "a" (.not p))
+    let probes : List (Formula × Gamen.Atl.Dynamic.DFormula) :=
+      [(kn "a" p, .knows "a" AtlDynamicTests.p), (kn "b" p, .knows "b" AtlDynamicTests.p),
+       (kn "b" (.not p), .knows "b" (.not AtlDynamicTests.p)),
+       (kn "b" aware, .knows "b" (.or (.knows "a" AtlDynamicTests.p) (.knows "a" (.not AtlDynamicTests.p))))]
+    match semiPrivateWhether ["a", "b"] ["a"] p, AtlDynamicTests.load json with
+    | .ok am, .ok dm =>
+      probes.all fun (f, d) =>
+        match Gamen.Atl.Dynamic.dsat dm .subjective
+            (.grant (AtlDynamicTests.informP [] ["a"]) d) with
+        | .ok set => ["s0", "s1"].all fun s =>
+            let ev := match eSatisfies epi s p with | .ok true => "φ" | _ => "¬φ"
+            holds (eSatisfiesBoxAfter epi s am ev f) (set.contains s)
+        | .error _ => false
+    | _, _ => false)
 ]
 
 end ActionModelTests

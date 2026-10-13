@@ -56,7 +56,11 @@ is offered for comparison. The reply's `semantics`
 carries a `_dynamic` suffix. The model may add `"actions": [...]` (the whole action universe)
 and `"default_next": {"stay":true}` or `{"state":"s"}` (the successor of every unlisted
 joint move). Without a default, an update that enables a joint move with no listed
-successor is a per-formula error. Extra error code: `unknown_action`.
+successor is a per-formula error, even if the operand never uses that move. Extra error codes:
+`unknown_action`, `semantics_mismatch`. `semantics: perfect` is refused (`semantics_mismatch`) on
+a model with indistinguishable states, since it would read `K_a` by them and `⟨⟨A⟩⟩` without them.
+`"dynamic"` must be a boolean. An update needs at least one clause. Coalitions naming an unknown
+agent are an error.
 Tests: `Tests/AtlDynamic.lean` (the paper's Example 1, plus ATEL-D).
 
 **`epistemic_check` (Lean-only, protocol 5; issue #3 item 3).** Evaluates epistemic formulas
@@ -71,10 +75,10 @@ otherwise the unique event executable at each world is used (two executable even
 `ambiguous_event`). Optional `worlds` restricts the report. Reply:
 `{"worlds", "updates", "results": [{"index","formula","satisfying","holds","not_executable"}
 | {"index","formula","error"}]}`; worlds are original names, `not_executable` lists where
-some update's event could not run (`holds` is false there), and an unsupported operator is a
+some update's event could not run (`holds` is `null` there), and an unsupported operator is a
 per-formula `error`. Error codes: `malformed_spec`, `unknown_world`, `unknown_agent`,
-`duplicate_world`, `duplicate_agent`, `invalid_formula`, `invalid_action_model`,
-`unknown_event`, `ambiguous_event`, `update_failed`. Tests: `Tests/ValidateEpistemic.lean`.
+`duplicate_world`, `duplicate_agent`, `overlapping_classes`, `invalid_formula`, `invalid_action_model`,
+`unknown_event`, `ambiguous_event`, `update_failed`. In `indistinguishable`, a world in no class is alone in its class. An action model is one builder or explicit fields, not a mix. A builder's `group` must be agents of the model. Repeated JSON object keys keep the last one, as everywhere in `gamen-validate` (`tools/compare/intentional-divergences.md`, D5). Tests: `Tests/ValidateEpistemic.lean`.
 
 **`atl_update_search` (Lean-only, protocol 6; issue #3 item 1).** The bounded update existence
 problem of the ATL-D paper (Def 7): is there a sequence of updates of at most `bound`
@@ -90,7 +94,10 @@ wrapped in the found updates, as a tree-format formula to pass to `atl_model_che
 `found:false` means no sequence over this pool within the bound, not that none exists.
 Updates that would be errors (a grant enabling a joint move with no listed successor, an
 update that breaks `∼`) are not legal moves and are counted in `illegal`. Budget exhaustion is
-`error_code: search_failed`. Tests: `Tests/UpdateSearch.lean`.
+`error_code: search_failed`; an unknown `state`, pool action or pool agent has its own code
+(`unknown_state`, `unknown_action`, `unknown_agent`), and `bound` above 1000 is `bound_too_large`.
+The default pool has no informed-only clauses; pass a pool for those. An error evaluating the goal
+at any visited model aborts the search. Tests: `Tests/UpdateSearch.lean`.
 
 **Backends.** gamen-hs dispatches consistency checks to two backends:
 the KDt tableau with its doxastic-D and ranking-theory rules (for

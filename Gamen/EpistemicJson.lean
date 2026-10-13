@@ -16,7 +16,8 @@ Lean-only. Every failure is an `EpiSpecError`: a stable `code` and a message.
       "valuation": { "w1": ["p"] } }                           -- world → true atoms
 
 An agent may use `relations`, `indistinguishable`, or both (edges are united); an
-agent in neither has no accessible worlds. Every agent must be listed in `agents`.
+agent in neither has no accessible worlds. In `indistinguishable`, a world in no class is
+alone in its class, and a world in two classes is an `overlapping_classes` error. Every agent must be listed in `agents`.
 
 ## Action model
 
@@ -95,10 +96,19 @@ def decodeModel (j : Json) : Except EpiSpecError EpistemicModel := do
   if let some r := optObj j "indistinguishable" then
     for (a, cls) in ← entries "indistinguishable" r do
       knownA "indistinguishable" a
+      let mut covered : List String := []
       for c in (← lift s!"indistinguishable[{a}]" cls.getArr?).toList do
         let ws ← strList s!"indistinguishable[{a}]" c
-        for w in ws do knownW s!"indistinguishable[{a}]" w
+        if ws.isEmpty then
+          throw ⟨"malformed_spec", s!"indistinguishable[{a}]: a class cannot be empty"⟩
+        for w in ws do
+          knownW s!"indistinguishable[{a}]" w
+          if covered.contains w then
+            throw ⟨"overlapping_classes", s!"indistinguishable[{a}]: world \"{w}\" is in more than one class"⟩
+          covered := covered ++ [w]
         edges := addEdges edges a (ws.flatMap fun x => ws.map fun y => (x, y))
+      -- a world in no class is alone in its class (as in the CGS spec), not unreachable
+      edges := addEdges edges a ((worlds.filter (!covered.contains ·)).map fun w => (w, w))
   let mut vals : List (String × List World) := []
   if let some v := optObj j "valuation" then
     for (w, atoms) in ← entries "valuation" v do
@@ -115,6 +125,12 @@ def decodeActionModel (agents : List String) (j : Json) :
     Except EpiSpecError (ActionModel × Option String) := do
   let wrap {α : Type} (r : Except String α) : Except EpiSpecError α :=
     r.mapError fun e => ⟨"invalid_action_model", e⟩
+  let builders := ["public_announcement", "semi_private_whether", "private_announcement"].filter
+    fun k => (optObj j k).isSome
+  let explicit := ["events", "relations", "pre", "post"].filter fun k => (optObj j k).isSome
+  if builders.length > 1 || (builders.length == 1 && !explicit.isEmpty) then
+    throw ⟨"malformed_spec",
+      s!"an action model is either one builder or explicit events/relations/pre/post, not a mix (got {builders ++ explicit})"⟩
   if let some f := optObj j "public_announcement" then
     return (← wrap (publicAnnouncement agents (← formula "public_announcement" f)), some "!")
   if let some b := optObj j "semi_private_whether" then
@@ -129,6 +145,8 @@ def decodeActionModel (agents : List String) (j : Json) :
   let mut rels : List (String × List (String × String)) := []
   if let some r := optObj j "relations" then
     for (a, es) in ← entries "relations" r do
+      unless agents.contains a do
+        throw ⟨"unknown_agent", s!"relations: unknown agent \"{a}\""⟩
       rels := rels ++ [(a, ← pairs s!"relations[{a}]" es)]
   -- an agent left out would silently see no events and so "know" everything
   if let some ag := agents.find? (fun ag => !rels.any (·.1 == ag)) then

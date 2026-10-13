@@ -131,7 +131,10 @@ def decodeDynBase (j : Json) : Except CgsSpecError Atl.Dynamic.DynModel := do
   let dflt : Option (Option String) ← match dfltJ with
     | none => pure none
     | some d => do
-      if (d.getObjVal? "stay").toOption == some (Json.bool true) then pure (some none)
+      let hasStay := (d.getObjVal? "stay").toOption == some (Json.bool true)
+      if hasStay && (d.getObjVal? "state").isOk then
+        throw ⟨"malformed_spec", "default_next: give either \"stay\" or \"state\", not both"⟩
+      if hasStay then pure (some none)
       else
         let st ← lift "default_next" (← getField d "state" "default_next").getStr?
         knownState "default_next" st
@@ -208,10 +211,12 @@ def decodeEpistemic (cgs : Cgs String String) (j : Json) :
         throw ⟨"unknown_agent", s!"indistinguishable: unknown agent \"{ag}\""⟩
       for cls in (← lift s!"indistinguishable[{ag}]" classes.getArr?).toList do
         let members ← strList s!"indistinguishable[{ag}]" cls
+        if members.isEmpty then
+          throw ⟨"malformed_spec", s!"indistinguishable[{ag}]: a class cannot be empty"⟩
         for st in members do
           unless cgs.cgsStates.contains st do
             throw ⟨"unknown_state", s!"indistinguishable[{ag}]: unknown state \"{st}\""⟩
-          if tbl.contains (ag, st) then
+          if tbl.contains (ag, st) || members.count st > 1 then
             throw ⟨"overlapping_classes", s!"indistinguishable[{ag}]: state \"{st}\" is in more than one class"⟩
         let clsSet := Std.TreeSet.ofList members
         for st in members do

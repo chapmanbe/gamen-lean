@@ -74,7 +74,8 @@ def parseRequest (j : Json) : Except String Request := do
     let fs ← match ← optField j "dynamic" with
       | some (.bool true) =>
         pure (AtlFormulas.dynamic (← (← (← field j "formulas").getArr?).toList.mapM decodeDFormula))
-      | _ => pure (AtlFormulas.static (← formulas))
+      | none | some (.bool false) => pure (AtlFormulas.static (← formulas))
+      | some _ => throw "\"dynamic\" must be true or false"
     return .atlModelCheck (← field j "model") fs states sem
   | other => throw s!"Unknown action: {other}"
 where

@@ -26,8 +26,8 @@ The belief-base half of that paper (ruby action models, Defs 10-11) is not porte
   function form; chain calls for nested dynamics.
 * A missing precondition is `⊤`; a missing postcondition for an atom leaves the
   atom unchanged (identity, `post(e, p) = p`).
-* Product worlds are named `w×e`. Two distinct pairs with the same name are an
-  error, never a silent merge.
+* Product worlds are named `w×e`. Two distinct world × event pairs with the same
+  name are an error, never a silent merge (checked over all pairs, dead ones included).
 * Errors, not defaults: an agent of the model with no relation in the action
   model, and a model with doxastic (`eDoxastic`) relations, are errors. The
   product updates the knowledge relations only, and silently dropping belief
@@ -49,8 +49,8 @@ structure ActionModel where
 
 /-- Build an action model, checking that it has an event and that every
 relation edge, precondition and postcondition names a known event. Every agent
-in `agents` gets a relation (possibly empty edge list), so `productUpdate` can
-tell "agent sees nothing" from "agent forgotten". -/
+in `agents` must appear in `rels` (with `[]` if it sees no event): a forgotten agent
+is an error, so that "sees nothing" is never confused with "forgotten". -/
 def mkActionModel (events : List String) (agents : List String)
     (rels : List (String × List (String × String)))
     (pre : List (String × Formula) := [])
@@ -63,6 +63,10 @@ def mkActionModel (events : List String) (agents : List String)
   for (ag, edges) in rels do
     unless agents.contains ag do throw s!"mkActionModel: relation for unknown agent \"{ag}\""
     for (e, e') in edges do known s!"relation of {ag}" e; known s!"relation of {ag}" e'
+  -- an agent left out of `rels` would silently see no events and so "know" everything;
+  -- one that sees nothing must say so with an empty edge list
+  if let some ag := agents.find? (fun ag => !rels.any (·.1 == ag)) then
+    throw s!"mkActionModel: agent \"{ag}\" has no relation (give [] if it sees no event)"
   for (e, _) in pre do known "precondition" e
   for (e, _) in post do known "postcondition" e
   let relMap := agents.foldl (init := (∅ : Std.TreeMap String (Std.TreeMap String (Std.TreeSet String))))
@@ -101,10 +105,13 @@ def productUpdate (m : EpistemicModel) (am : ActionModel) : Except String Episte
   for w in m.eFrame.eWorlds.toList do
     for e in am.events.toList do
       if ← am.executable m w e then pairs := pairs ++ [(w, e)]
-  -- distinct pairs must get distinct names
-  let names := pairs.map fun (w, e) => name w e
-  if let some n := names.find? (fun n => names.count n > 1) then
+  -- Distinct pairs must get distinct names, over *all* world × event pairs, not only the
+  -- survivors: a pair that failed its precondition would otherwise still match a live name
+  -- in the relation step below.
+  let everyName := m.eFrame.eWorlds.toList.flatMap fun w => am.events.toList.map fun e => name w e
+  if let some n := everyName.find? (fun n => everyName.count n > 1) then
     throw s!"productUpdate: two different (world, event) pairs are both named \"{n}\""
+  let names := pairs.map fun (w, e) => name w e
   let alive := Std.TreeSet.ofList names
   -- relations
   let mut rels : Std.TreeMap String (Std.TreeMap World (Std.TreeSet World)) := ∅
@@ -163,7 +170,9 @@ def publicAnnouncement (agents : List String) (φ : Formula) : Except String Act
 and `"¬φ"` (pre `¬φ`). Agents in `group` tell them apart; the others cannot, so
 they learn nothing, but they know the group learned whether `φ`. -/
 def semiPrivateWhether (agents group : List String) (φ : Formula) :
-    Except String ActionModel :=
+    Except String ActionModel := do
+  if let some g := group.find? (!agents.contains ·) then
+    throw s!"semiPrivateWhether: group member \"{g}\" is not an agent"
   let all := [("φ", "φ"), ("φ", "¬φ"), ("¬φ", "φ"), ("¬φ", "¬φ")]
   mkActionModel ["φ", "¬φ"] agents
     (agents.map fun a =>
@@ -174,7 +183,9 @@ def semiPrivateWhether (agents group : List String) (φ : Formula) :
 the announcement; every other agent believes nothing happened (event `"skip"`,
 pre `⊤`). The actual event is `"!"`. -/
 def privateAnnouncement (agents group : List String) (φ : Formula) :
-    Except String ActionModel :=
+    Except String ActionModel := do
+  if let some g := group.find? (!agents.contains ·) then
+    throw s!"privateAnnouncement: group member \"{g}\" is not an agent"
   mkActionModel ["!", "skip"] agents
     (agents.map fun a =>
       (a, if group.contains a then [("!", "!"), ("skip", "skip")]

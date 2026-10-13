@@ -75,6 +75,8 @@ def mkWModel (states : List String) (edges : List (Nat × Nat)) (cost : Nat → 
     (labels : Nat → List String := fun _ => []) : Except String WModel := do
   if states.isEmpty then throw "mkWModel: a model needs at least one state"
   let k := states.length
+  if let some n := states.find? (fun n => states.count n > 1) then
+    throw s!"mkWModel: duplicate state name \"{n}\""
   if let some (i, j) := edges.find? (fun (i, j) => i ≥ k || j ≥ k) then
     throw s!"mkWModel: edge {i} → {j} names a state outside 0..{k - 1}"
   for i in List.range k do
@@ -140,28 +142,43 @@ def kindsP : PFormula → List Kind
 end
 
 /-- Subsets of `items = (bit, cost)` of total cost at most `budget`, as masks (the empty
-set included). Costs are positive, so the cost bound prunes the search. -/
-def subsetsWithin : List (Nat × Nat) → Nat → List Nat
-  | [], _ => [0]
-  | (b, c) :: rest, budget =>
-    subsetsWithin rest budget
-      ++ (if c ≤ budget then (subsetsWithin rest (budget - c)).map (· ||| (1 <<< b)) else [])
+set included). Costs are positive, so the cost bound prunes the search. More than `cap`
+subsets is an error: the arena cap alone would only fire after this enumeration finished. -/
+def subsetsWithin (cap : Nat) : List (Nat × Nat) → Nat → Except String (List Nat)
+  | [], _ => pure [0]
+  | (b, c) :: rest, budget => do
+    let without ← subsetsWithin cap rest budget
+    let withIt ← if c ≤ budget then
+        (·.map (· ||| (1 <<< b))) <$> subsetsWithin cap rest (budget - c)
+      else pure []
+    if without.length + withIt.length > cap then
+      throw s!"too many edge sets within the cost budget (more than {cap}); lower the budget or raise the cap"
+    pure (without ++ withIt)
 
-/-- Models reachable from edge set `e` in one modifier move of kind `kind`. -/
-def movesFrom (m : WModel) (kind : Kind) (e : Nat) : List Nat :=
+/-- Models reachable from edge set `e` in one modifier move of kind `kind`. The demon's
+removals must leave a serial model *on their own* (the paper: "the demon cannot remove an
+edge if it is the only outgoing edge from a given state", footnote 2; Def 2 makes the
+`m`-submodel a model), even when the angel adds an edge in the same step. -/
+def movesFrom (m : WModel) (cap : Nat) (kind : Kind) (e : Nat) : Except String (List Nat) := do
   let k := m.k
   let pairs := (List.range k).flatMap fun i => (List.range k).map fun j => (i, j)
   let present := pairs.filter fun (i, j) => hasEdge k e i j
   let absent := pairs.filter fun (i, j) => !hasEdge k e i j
   let item (p : Nat × Nat) : Nat × Nat := (bit k p.1 p.2, m.cost p.1 p.2)
-  let removals (d : Nat) := subsetsWithin (present.map item) d
-  let additions (a : Nat) := subsetsWithin (absent.map item) a
-  let raw : List Nat := match kind with
-    | .demon n => (removals n).map fun b => e ^^^ b
-    | .angel n => (additions n).map fun a => e ||| a
-    | .both a d => (removals d).flatMap fun b => (additions a).map fun x => (e ^^^ b) ||| x
+  let removals (d : Nat) : Except String (List Nat) := do
+    pure ((← subsetsWithin cap (present.map item) d).filter fun b => serial k (e ^^^ b))
+  let additions (a : Nat) := subsetsWithin cap (absent.map item) a
+  let raw : List Nat ← match kind with
+    | .demon n => do pure ((← removals n).map fun b => e ^^^ b)
+    | .angel n => do pure ((← additions n).map fun a => e ||| a)
+    | .both a d => do
+      let rs ← removals d
+      let xs ← additions a
+      if rs.length * xs.length > cap then
+        throw s!"too many joint (removal, addition) pairs (more than {cap})"
+      pure (rs.flatMap fun b => xs.map fun x => (e ^^^ b) ||| x)
   let seen : Std.HashSet Nat := raw.foldl (fun s x => if serial k x then s.insert x else s) {}
-  seen.toList
+  pure seen.toList
 
 /-- The explicit arena: every model reachable from the initial one by the formula's moves. -/
 structure Arena where
@@ -181,7 +198,7 @@ def buildArena (m : WModel) (kinds : List Kind) (maxModels : Nat) : Except Strin
   while i < models.size do
     let e := models[i]!
     for kd in kinds do
-      let next := movesFrom m kd e
+      let next ← movesFrom m maxModels kd e
       for x in next do
         unless index.contains x do
           if models.size ≥ maxModels then
@@ -190,8 +207,15 @@ def buildArena (m : WModel) (kinds : List Kind) (maxModels : Nat) : Except Strin
           models := models.push x
       moveLists := moveLists.insert kd ((moveLists.getD kd #[]).push next)
     i := i + 1
-  let moves := moveLists.fold (init := ({} : Std.HashMap Kind (Array (Array Nat))))
-    fun acc kd ls => acc.insert kd (ls.map fun l => (l.map fun x => index.getD x 0).toArray)
+  -- every successor mask was added to `index` above; a missing one is a bug, not model 0
+  let moves ← moveLists.toList.foldlM (init := ({} : Std.HashMap Kind (Array (Array Nat))))
+    fun acc (kd, ls) => do
+      let rows ← ls.mapM fun l => do
+        let ids ← l.mapM fun x => match index.get? x with
+          | some i => pure i
+          | none => throw "buildArena: a reachable edge set is missing from the arena index"
+        pure ids.toArray
+      pure (acc.insert kd rows)
   pure { models, index, moves }
 
 private def succs (k mask s : Nat) : List Nat :=
@@ -278,7 +302,9 @@ def satStates (m : WModel) (f : SFormula) (maxModels : Nat := 20000) :
 
 /-- `(M, s) ⊨ f` at the initial model. -/
 def holdsAt (m : WModel) (f : SFormula) (s : String) (maxModels : Nat := 20000) :
-    Except String Bool := do pure ((← satStates m f maxModels).contains s)
+    Except String Bool := do
+  unless m.states.contains s do throw s!"holdsAt: unknown state \"{s}\""
+  pure ((← satStates m f maxModels).contains s)
 
 end AngelsDemons
 end Gamen

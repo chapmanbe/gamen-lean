@@ -90,6 +90,7 @@ where
     | some v => (← v.getArr?).toList.mapM (·.getStr?)
   updates : Except String UpdateList := do
     let items := (← (← field j "updates").getArr?).toList
+    if items.isEmpty then throw "an update needs at least one clause (Def 1)"
     items.foldrM (init := UpdateList.nil) fun u rest => do
       return .cons (← decodeDFormula (← field u "condition")) (← strField u "action")
         (← strListField u "agents")
@@ -115,6 +116,18 @@ def atlReply (sem : String) (check : List String) (results : List Json) : Json :
   Json.mkObj [("ok", true), ("result", Json.mkObj [
     ("semantics", toJson sem), ("states", toJson check),
     ("results", Json.arr results.toArray)])]
+
+/-- Perfect-information semantics on a model with indistinguishable states would read `K_a`
+by the classes (Def 11) and `⟨⟨A⟩⟩` without them (Def 4): a logic in neither paper. Refuse. -/
+def hybridSemantics (m : DynModel) (sem : AtlSemantics) : Option Json :=
+  match sem with
+  | .perfect =>
+    if m.cgs.cgsAgents.toList.any fun a =>
+        m.cgs.cgsStates.toList.any fun v => (m.epistemic a v).size > 1 then
+      some (atlErr "semantics_mismatch"
+        "the model has indistinguishable states but semantics is perfect (ATL-D): K_a would use them and <<A>> would not; use imperfect_subjective (ATEL-D)")
+    else none
+  | _ => none
 
 /-- Answer an `atl_model_check` request. `states = none` checks every state. -/
 def atlModelCheck (model : Json) (fs : AtlFormulas) (states : Option (List String))
@@ -142,6 +155,9 @@ def atlModelCheck (model : Json) (fs : AtlFormulas) (states : Option (List Strin
     | .ok m =>
       let all := m.cgs.cgsStates.toList
       let check := states.getD all
+      match hybridSemantics m sem with
+      | some e => e
+      | none =>
       match check.find? (fun st => !m.cgs.cgsStates.contains st) with
       | some st => atlErr "unknown_state" s!"states: unknown state \"{st}\""
       | none =>
@@ -211,7 +227,18 @@ def atlUpdateSearch (model : Json) (state : String) (goal : DFormula) (bound : N
   match CgsJson.decodeDyn model with
   | .error e => atlErr e.code e.message
   | .ok m =>
-    match boundedUpdate m sem.mode state goal bound (pool.getD (defaultPool m)) fuel with
+    -- name and size problems get their own codes; `search_failed` is for the search itself
+    let thePool := pool.getD (defaultPool m)
+    if let some e := hybridSemantics m sem then e
+    else if !m.cgs.cgsStates.contains state then atlErr "unknown_state" s!"state: unknown state \"{state}\""
+    else if bound > 1000 then atlErr "bound_too_large" "bound must be at most 1000"
+    else if let some c := thePool.find? (fun c => !m.actions.contains c.action) then
+      atlErr "unknown_action" s!"pool: unknown action \"{c.action}\""
+    else if let some a := (thePool.flatMap fun c => c.agents ++ c.informed).find?
+        (fun a => !m.cgs.cgsAgents.contains a) then
+      atlErr "unknown_agent" s!"pool: unknown agent \"{a}\""
+    else
+    match boundedUpdate m sem.mode state goal bound thePool fuel with
     | .error msg => atlErr "search_failed" msg
     | .ok r =>
       let common := [("explored", toJson r.explored), ("illegal", toJson r.illegal),

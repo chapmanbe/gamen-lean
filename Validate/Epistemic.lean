@@ -69,7 +69,7 @@ def epistemicCheck (model : Json) (updates : List Json) (formulas : List Formula
     | some w => epiErr "unknown_world" s!"worlds: unknown world \"{w}\""
     | none =>
       let run : Except EpiSpecError (EpistemicModel × Track) :=
-        updates.foldlM (fun (m, tr) u => applyUpdate m tr u) (m0, all.map fun w => (w, some w))
+        updates.foldlM (fun (m, tr) u => applyUpdate m tr u) (m0, report.map fun w => (w, some w))
       match run with
       | .error e => epiErr e.code e.message
       | .ok (m, tr) =>
@@ -85,7 +85,8 @@ def epistemicCheck (model : Json) (updates : List Json) (formulas : List Formula
           | .ok rs =>
             Json.mkObj (base ++ [
               ("satisfying", toJson (rs.filter (fun (_, _, h) => h) |>.map (·.1))),
-              ("holds", Json.mkObj (rs.map fun (w, _, h) => (w, toJson h))),
+              -- null where the update could not run: not "φ is false there"
+              ("holds", Json.mkObj (rs.map fun (w, ex, h) => (w, if ex then toJson h else Json.null))),
               ("not_executable", toJson (rs.filter (fun (_, ex, _) => !ex) |>.map (·.1)))])
         Json.mkObj [("ok", true), ("result", Json.mkObj [
           ("worlds", toJson report), ("updates", toJson updates.length),

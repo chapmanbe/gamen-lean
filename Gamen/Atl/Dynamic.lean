@@ -223,6 +223,10 @@ def coalitionSat (m : DynModel) (mode : IrMode) (as : List String)
     (step : Cgs String String → Std.TreeSet String → Except String (Std.TreeSet String)) :
     Except String (Std.TreeSet String) :=
   let c := Std.TreeSet.ofList as
+  -- an unknown agent has no moves, so it would silently yield ∅ (or make `¬⟨⟨a⟩⟩X⊥` true)
+  match as.find? (fun a => !m.cgs.cgsAgents.contains a) with
+  | some a => throw s!"coalition: unknown agent \"{a}\""
+  | none =>
   match mode with
   | .perfect => step m.cgs c
   | _ => uniformSat m mode c fun res => step res ∅

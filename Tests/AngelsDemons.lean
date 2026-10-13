@@ -68,7 +68,7 @@ def cases : List (String × Bool) := [
     sats m1 (.demon 1 (.always noAdmin)) == some ["s1"]),
   ("Example 2 as stated, ⟨⟨angel 1⟩⟩G(error → ◇¬error): holds at s0, s2, s3 but NOT at s1 — the paper says \"any state\", yet at step 0 the model is still 𝔐1, where s1 has no exit",
     sats m1 (.angel 1 (.always (imp err (.angelBox 0 (.next (.not err)))))) == some ["s0", "s2", "s3"]),
-  ("Example 2, the intended reading: after the angel's first move the property holds from every state (⟨⟨angel 1⟩⟩X(error → ◇¬error))",
+  ("Example 2, the intended reading — a one-step property, not the paper's G invariance: after the angel's first move the implication holds from every state (⟨⟨angel 1⟩⟩X(error → ◇¬error))",
     sats m1 (.angel 1 (.next (imp err (.angelBox 0 (.next (.not err))))))
       == some ["s0", "s1", "s2", "s3"]),
   ("Example 2: without the angel (budget 0) that goal fails at s1, whose only exit is missing",
@@ -78,15 +78,37 @@ def cases : List (String × Bool) := [
     (sats m3 (.angel 1 (.next (.not err)))).map (·.contains "s1") == some false),
   ("Example 3: ⟨[angel 2, demon 2]⟩F¬admin holds at s3 of 𝔐2 (cooperation empties the admin module)",
     (sats m2 (.update 2 2 (.eventually noAdmin))).map (·.contains "s3") == some true),
-  ("Example 3, contrapositives: the demon alone, or the angel alone, cannot (the traveller can stay)",
+  ("Example 3 (cooperative form), contrapositives: with the partner's budget 0, the demon alone or the angel alone cannot (the traveller can stay). The paper's own competitive statement ⟨[demon 2]⟩² is not implemented",
     (sats m2 (.update 0 2 (.eventually noAdmin))).map (·.contains "s3") == some false
       && (sats m2 (.update 2 0 (.eventually noAdmin))).map (·.contains "s3") == some false),
-  ("Example 3: one angelic edge (cost 1) plus the demon's self-loop removal (cost 2) suffice",
+  ("Example 3: one angelic edge (cost 1) and then the demon's self-loop removal (cost 2) suffice, over two steps",
     (sats m2 (.update 1 2 (.eventually noAdmin))).map (·.contains "s3") == some true),
+  ("SUL legality (review finding): the demon may not remove s3's last edge in the same step the angel adds a new one; so ⟨[angel 1, demon 2]⟩X¬admin fails at s3, as the paper's Example 3 narrative needs two steps",
+    (sats m2 (.update 1 2 (.next noAdmin))).map (·.contains "s3") == some false),
+  ("SUL: the same demon removal is fine once the angel's edge exists (𝔐2 plus s3→s2): ⟨[0,2]⟩X¬admin holds at s3",
+    (match mk ((e1.filter fun e => e != (2, 3) && e != (0, 3)) ++ [(3, 2)]) with
+     | .ok w => (satStates w (.update 0 2 (.next noAdmin))).toOption.map (·.contains "s3") == some true
+     | .error _ => false)),
+  ("nested strategic operators with non-zero budgets: ⟨⟨1⟩⟩X⟨⟨1⟩⟩X¬admin holds only at s1 (hand-derived from Defs 2, 3, 5)",
+    sats m1 (.demon 1 (.next (.demon 1 (.next noAdmin)))) == some ["s1"]),
+  ("nested, with different budgets: ⟨⟨2⟩⟩X⟨⟨1⟩⟩X¬admin holds at s0, s1, s2 (hand-derived)",
+    sats m1 (.demon 2 (.next (.demon 1 (.next noAdmin)))) == some ["s0", "s1", "s2"]),
+  ("holdsAt: an unknown state is an error, not false; duplicate state names are rejected",
+    (match m1 with | .ok w => (holdsAt w noAdmin "s9").isOk == false | .error _ => false)
+      && (mkWModel ["a", "a"] [(0, 0), (1, 1)] (fun _ _ => 1)).isOk == false),
+  ("a huge budget on a dense graph is an error quickly, not a hang (subset enumeration is capped)",
+    (match mkWModel ((List.range 10).map toString)
+        ((List.range 10).flatMap fun i => (List.range 10).map fun j => (i, j)) (fun _ _ => 1) with
+     | .ok w => (satStates w (.demon 20 (.next (.atom "p")))).isOk == false
+     | .error _ => false)),
   ("seriality: the demon cannot remove a state's last edge, so ⟨⟨9⟩⟩X¬q is false at a state whose only successor has q",
     (match mkWModel ["a", "b"] [(0, 1), (1, 1)] (fun _ _ => 1) (fun i => if i == 1 then ["q"] else []) with
      | .ok w => (satStates w (.demon 9 (.next (.not (.atom "q"))))).toOption == some []
      | .error _ => false)),
+  ("duality against hand-derived values, not against the code's own dual: [1]F admin = {s0,s2,s3}, [2]F admin = {s3}, [1]G¬admin = {s0,s1,s2}",
+    sats m1 (.demonBox 1 (.eventually admin)) == some ["s0", "s2", "s3"]
+      && sats m1 (.demonBox 2 (.eventually admin)) == some ["s3"]
+      && sats m1 (.demonBox 1 (.always noAdmin)) == some ["s0", "s1", "s2"]),
   ("duality: [n]F admin ≡ ¬⟨⟨n⟩⟩G¬admin, for n = 0, 1, 2",
     [0, 1, 2].all fun n =>
       sats m1 (.demonBox n (.eventually admin)) == sats m1 (.not (.demon n (.always noAdmin)))),
@@ -155,6 +177,8 @@ def ef (w : WModel) (p : List Nat) : List Nat := lfpL w fun z => (ids w).filter 
 def au (w : WModel) (p q : List Nat) : List Nat :=
   lfpL w fun z => (ids w).filter fun i => q.contains i || (p.contains i && (adj w i).all z.contains)
 
+def eg (w : WModel) (p : List Nat) : List Nat := gfpL w fun z => (ids w).filter fun i => p.contains i && (adj w i).any z.contains
+
 def named (w : WModel) (x : List Nat) : List String := x.map fun i => w.states[i]!
 
 def agrees (seed k : Nat) : Bool :=
@@ -165,7 +189,14 @@ def agrees (seed k : Nat) : Bool :=
     let q := holdsAtom w "q"
     let chk (f : S) (expect : List Nat) : Bool :=
       (satStates w f).toOption == some (named w expect)
-    chk (.demon 0 (.next (atom "p"))) (ax w p)
+    -- with a budget that covers every edge the modifier is unconstrained (up to seriality):
+    -- a big demon is the existential path quantifier, a big angel changes nothing for X
+    chk (.demon 100 (.next (atom "p"))) (ex w p)
+      && chk (.demon 100 (.eventually (atom "p"))) (ef w p)
+      && chk (.demon 100 (.always (atom "p"))) (eg w p)
+      -- (a big angel on 5 states has ~2^17 edge sets to add: past the arena cap, so an error)
+      && (w.k > 4 || chk (.angel 100 (.next (atom "p"))) (ax w p))
+      && chk (.demon 0 (.next (atom "p"))) (ax w p)
       && chk (.demon 0 (.always (atom "p"))) (ag w p)
       && chk (.demon 0 (.eventually (atom "p"))) (af w p)
       && chk (.demon 0 (.until (atom "p") (atom "q"))) (au w p q)
@@ -174,11 +205,11 @@ def agrees (seed k : Nat) : Bool :=
       && chk (.angel 0 (.always (atom "q"))) (ag w q)
 
 def randomCases : List (String × Bool) :=
-  [("⟨⟨0⟩⟩ and [0] agree with AX/AG/AF/AU/EF/EX on 24 pseudo-random graphs (3-5 states, demon and angel)",
+  [("⟨⟨0⟩⟩ and [0] agree with AX/AG/AF/AU/EF/EX, and a budget-100 demon with EX/EF/EG, on 24 pseudo-random graphs (3-5 states)",
     (List.range 24).all fun i => agrees (1000 + 7919 * i) (3 + i % 3)),
-   ("the random graphs are not all trivial (some state satisfies p and some does not)",
-    (List.range 24).any fun i => match randomModel (3 + i % 3) (1000 + 7919 * i) with
+   ("the random graphs are mostly non-trivial (some state satisfies p and some does not, in at least 18 of 24)",
+    ((List.range 24).filter fun i => match randomModel (3 + i % 3) (1000 + 7919 * i) with
       | .ok w => let p := holdsAtom w "p"; !p.isEmpty && p.length < w.k
-      | .error _ => false)]
+      | .error _ => false).length ≥ 18)]
 
 end AngelsDemonsTests

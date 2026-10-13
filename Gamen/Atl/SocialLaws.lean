@@ -39,9 +39,14 @@ abbrev Constraint := List (String × String × List String)
 /-- The atom naming state `v` in `G⁺`. It must not occur in the objective. -/
 def stateAtom (v : String) : String := "state:" ++ v
 
-/-- `G⁺`: every state `v` also satisfies its own atom `state:v`. -/
-def DynModel.withStateAtoms (m : DynModel) : DynModel :=
-  { m with cgs := { m.cgs with
+/-- `G⁺`: every state `v` also satisfies its own atom `state:v`, which must be *new*
+("a new proposition that is true only in `v`"): an error if the model already uses one of
+those atom names. (That the objective does not mention them is the caller's job.) -/
+def DynModel.withStateAtoms (m : DynModel) : Except String DynModel := do
+  for v in m.cgs.cgsStates.toList do
+    if m.cgs.cgsStates.toList.any fun w => (m.cgs.cgsLabeling w).contains (stateAtom v) then
+      throw s!"withStateAtoms: the atom \"{stateAtom v}\" already occurs in the model's labeling"
+  pure { m with cgs := { m.cgs with
       cgsLabeling := fun v => (m.cgs.cgsLabeling v).insert (stateAtom v) } }
 
 /-- `π_η`: one revoke clause `state:v : α → {a}` per forbidden `(α, a, v)`. -/
@@ -50,7 +55,14 @@ def behaviouralUpdate (η : Constraint) : UpdateList :=
     vs.foldr (fun v r => .cons (.atom (stateAtom v)) α [a] [] r) rest) .nil
 
 /-- `G † η` (vdHRW §4): remove every action `η` forbids. Errors if a name is unknown, or if
-`η` is not reasonable (some agent left with no action at some state). -/
+`η` is not reasonable (some agent left with no action at some state).
+
+This is the perfect-information ATL definition: `∼` is left untouched. On a model with
+indistinguishable states the result can break the uniformity `checkEpistemic` requires (an
+agent losing an action at one state of a class but not another), so call `checkEpistemic` on
+it before using imperfect-information semantics. (The ATL-D route, `[π_η]−`, informs the
+constrained agent of the state and so never has this problem; Theorem 3 is a statement about
+perfect-information ATL.) -/
 def implementConstraint (m : DynModel) (η : Constraint) : Except String DynModel := do
   for (α, a, vs) in η do
     unless m.actions.contains α do throw s!"constraint: unknown action \"{α}\""

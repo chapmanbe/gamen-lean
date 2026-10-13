@@ -115,7 +115,35 @@ def cases : List (String × Bool) := [
       && ((r.compress.splitOn "\"error\":").length == 2)),
   ("a model without `model` is a plain protocol error, as for atl_model_check",
     (run "{\"action\":\"epistemic_check\",\"formulas\":[]}").compress
-      == "{\"error\":\"key \\\"model\\\" not found\",\"ok\":false}")
+      == "{\"error\":\"key \\\"model\\\" not found\",\"ok\":false}"),
+  ("review: a world in no indistinguishability class is alone in its class, not unreachable (K_b ⊥ is false at w1)",
+    let part := m2.replace ",[\"w1\"]]},\"valuation\"" "]},\"valuation\""
+    sat (run (req part "" (knows "b" "{\"type\":\"bot\"}"))) == some []
+      && sat (run (req part "" (knows "b" pA))) == some ["w1"]),
+  ("review: a world in two classes is overlapping_classes",
+    code (run (req (m2.replace "[[\"w2\",\"w3\"],[\"w1\"]]" "[[\"w2\",\"w3\"],[\"w3\"]]") "" pA)) == some "overlapping_classes"),
+  ("review: mixing a builder with explicit events is malformed_spec; so is an unknown group member (invalid_action_model)",
+    code (run (req lorini "{\"public_announcement\":{\"type\":\"bot\"},\"events\":[\"e\"]}" pA)) == some "malformed_spec"
+      && code (run (req loriniAB ("{\"semi_private_whether\":{\"group\":[\"zz\"],\"formula\":" ++ pA ++ "}}") pA))
+        == some "invalid_action_model"),
+  ("review: holds is null (not false) where the update could not run",
+    let r := run (req lorini loriniA pA)
+    match (do
+        let res ← (r.getObjVal? "result").toOption
+        let rs ← (res.getObjVal? "results").toOption
+        let e ← (rs.getArrVal? 0).toOption
+        let h ← (e.getObjVal? "holds").toOption
+        pure (h.getObjVal? "u" |>.toOption, h.getObjVal? "w" |>.toOption) : Option _) with
+    | some (u, w) => u == some Lean.Json.null && w == some (Lean.Json.bool false)
+    | none => false),
+  ("review: an ambiguous event at a world the caller did not ask about is not an error",
+    let amb := "{\"events\":[\"e\",\"f\"],\"relations\":{\"i\":[[\"e\",\"e\"],[\"f\",\"f\"]],\"j\":[[\"e\",\"e\"],[\"f\",\"f\"]]},\"pre\":{\"e\":" ++ pA ++ "}}"
+    code (run (req lorini amb pA)) == some "ambiguous_event"
+      && code (run (req lorini amb pA ",\"worlds\":[\"u\"]")) == none),
+  ("review: an empty indistinguishability class is malformed_spec; an action model relation for an unknown agent is unknown_agent",
+    code (run (req (m2.replace "[[\"w2\",\"w3\"],[\"w1\"]]" "[[\"w2\",\"w3\"],[]]") "" pA)) == some "malformed_spec"
+      && code (run (req lorini "{\"events\":[\"e\"],\"relations\":{\"i\":[[\"e\",\"e\"]],\"j\":[[\"e\",\"e\"]],\"zz\":[[\"e\",\"e\"]]},\"event\":\"e\"}" pA))
+        == some "unknown_agent")
 ]
 
 end ValidateEpistemicTests

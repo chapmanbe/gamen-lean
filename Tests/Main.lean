@@ -34,6 +34,7 @@ import Tests.Completion
 import Tests.ManyValuedNotebooks
 import Tests.ValidateVersion
 import Tests.ValidateAtl
+import Tests.AtlDynamic
 import Tests.ProtocolFlat
 import Tests.DclegProofs
 import Tests.DclegService
@@ -6125,7 +6126,7 @@ def main : IO UInt32 := do
   let specCases ← ManyValuedTests.specTableCases
   let dclegServiceCases ← DclegServiceTests.cases
   for (name, ok) in ManyValuedTests.cases ++ specCases ++ CompletionTests.cases
-      ++ ManyValuedNotebookTests.cases ++ ValidateVersionTests.cases ++ ValidateAtlTests.cases
+      ++ ManyValuedNotebookTests.cases ++ ValidateVersionTests.cases ++ ValidateAtlTests.cases ++ AtlDynamicTests.cases
       ++ ProtocolFlatTests.cases ++ dclegServiceCases do
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
@@ -6152,7 +6153,7 @@ def main : IO UInt32 := do
     + dclegCases.length + dclegPaperCorrespondenceCases.length + dclegRegressionCases.length
     + visualizeCases.length
     + ManyValuedTests.cases.length + specCases.length + CompletionTests.cases.length
-    + ManyValuedNotebookTests.cases.length + ValidateVersionTests.cases.length + ValidateAtlTests.cases.length
+    + ManyValuedNotebookTests.cases.length + ValidateVersionTests.cases.length + ValidateAtlTests.cases.length + AtlDynamicTests.cases.length
     + ProtocolFlatTests.cases.length + dclegServiceCases.length
     + properties.length
   IO.println s!"{total - failures}/{total} passed"

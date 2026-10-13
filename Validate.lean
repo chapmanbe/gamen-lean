@@ -40,6 +40,18 @@ per-formula `error`. A bad model or `states` entry fails the whole request with
 `duplicate_state`, `duplicate_agent`, `invalid_cgs`, `overlapping_classes`,
 `invalid_indistinguishability`. Tests: `Tests/ValidateAtl.lean`.
 
+**ATL-D (Lean-only, protocol 3; issue #3).** `"dynamic": true` makes `atl_model_check`
+read its formulas as ATL-D (`Gamen.Atl.Dynamic`; Galimullin, Grosinger & Mittelmann,
+KR 2026): tree format plus `{"type":"has","agent","action"}`,
+`{"type":"grant"|"revoke","updates":[{"condition":F,"action","agents"}],"operand":F}`
+and `can_release` (`left`, `right`). Perfect information only (`semantics` other than
+`perfect` is `unsupported_semantics`); the reply's `semantics` is `perfect_dynamic`.
+The model may add `"actions": [...]` (the whole action universe) and
+`"default_next": {"stay":true}` or `{"state":"s"}` (the successor of every unlisted
+joint move). Without a default, an update that enables a joint move with no listed
+successor is a per-formula error. Extra error code: `unknown_action`.
+Tests: `Tests/AtlDynamic.lean` (the paper's Example 1).
+
 **Backends.** gamen-hs dispatches consistency checks to two backends:
 the KDt tableau with its doxastic-D and ranking-theory rules (for
 `belief`/`ranked_belief`), and the deontic-STIT prover G3DS (for agent

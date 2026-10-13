@@ -25,7 +25,7 @@ inductive Request where
   | validateFormula (raw : Json)
   | validateAgent (raw : Json) (agent : String)
   | checkPairwise (formulas : List Formula)
-  | atlModelCheck (model : Json) (formulas : List Formula) (states : Option (List String))
+  | atlModelCheck (model : Json) (formulas : AtlFormulas) (states : Option (List String))
       (sem : AtlSemantics)
 
 def parseRequest (j : Json) : Except String Request := do
@@ -44,7 +44,11 @@ def parseRequest (j : Json) : Except String Request := do
     let sem ← match ← optStr j "semantics" with
       | none => pure AtlSemantics.perfect
       | some s => AtlSemantics.parse s
-    return .atlModelCheck (← field j "model") (← formulas) states sem
+    let fs ← match ← optField j "dynamic" with
+      | some (.bool true) =>
+        pure (AtlFormulas.dynamic (← (← (← field j "formulas").getArr?).toList.mapM decodeDFormula))
+      | _ => pure (AtlFormulas.static (← formulas))
+    return .atlModelCheck (← field j "model") fs states sem
   | other => throw s!"Unknown action: {other}"
 where
   formulas : Except String (List Formula) := do

@@ -12,6 +12,7 @@ Port of `gamen-hs/validate/Main.hs`: a JSON Lines service on stdin/stdout.
     {"action": "validate_agent", "formula": {...}, "agent": "clinician"}
     {"action": "check_pairwise", "formulas": [...]}
     {"action": "atl_model_check", "model": {...}, "formulas": [...]}   (Lean-only; see below)
+    {"action": "epistemic_check", "model": {...}, "updates": [...], "formulas": [...]}   (Lean-only)
 
 Responses are `{"ok": true, "result": ...}` or `{"ok": false, "error": "..."}`.
 
@@ -56,6 +57,23 @@ and `"default_next": {"stay":true}` or `{"state":"s"}` (the successor of every u
 joint move). Without a default, an update that enables a joint move with no listed
 successor is a per-formula error. Extra error code: `unknown_action`.
 Tests: `Tests/AtlDynamic.lean` (the paper's Example 1, plus ATEL-D).
+
+**`epistemic_check` (Lean-only, protocol 5; issue #3 item 3).** Evaluates epistemic formulas
+(tree format: `knowledge`, `announce`, connectives, atoms) on a model given as JSON
+(`Gamen.EpistemicJson`: `worlds`, `agents`, `relations` edges and/or `indistinguishable`
+classes, `valuation` world → atoms), after an optional sequence of DEL updates
+(`Gamen.ActionModel`; Lorini, Perrotin & Schwarzentruber, KR 2022). Each update is an
+explicit action model (`events`, `relations` with an entry for every agent, `pre`, `post`)
+or a builder (`public_announcement`, `semi_private_whether`, `private_announcement`), plus
+an optional `"event"`. Without `"event"`, public and private announcements run `!`, and
+otherwise the unique event executable at each world is used (two executable events:
+`ambiguous_event`). Optional `worlds` restricts the report. Reply:
+`{"worlds", "updates", "results": [{"index","formula","satisfying","holds","not_executable"}
+| {"index","formula","error"}]}`; worlds are original names, `not_executable` lists where
+some update's event could not run (`holds` is false there), and an unsupported operator is a
+per-formula `error`. Error codes: `malformed_spec`, `unknown_world`, `unknown_agent`,
+`duplicate_world`, `duplicate_agent`, `invalid_formula`, `invalid_action_model`,
+`unknown_event`, `ambiguous_event`, `update_failed`. Tests: `Tests/ValidateEpistemic.lean`.
 
 **Backends.** gamen-hs dispatches consistency checks to two backends:
 the KDt tableau with its doxastic-D and ranking-theory rules (for

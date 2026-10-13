@@ -6,6 +6,7 @@ import Gamen.Doxastic
 import Gamen.RankingTheory
 import Gamen.DeonticStit.Prove
 import Validate.Atl
+import Validate.Epistemic
 
 /-!
 # Validate.Core
@@ -25,6 +26,8 @@ inductive Request where
   | validateFormula (raw : Json)
   | validateAgent (raw : Json) (agent : String)
   | checkPairwise (formulas : List Formula)
+  | epistemicCheck (model : Json) (updates : List Json) (formulas : List Formula)
+      (worlds : Option (List String))
   | atlModelCheck (model : Json) (formulas : AtlFormulas) (states : Option (List String))
       (sem : AtlSemantics)
 
@@ -37,6 +40,14 @@ def parseRequest (j : Json) : Except String Request := do
   | "validate_formula" => return .validateFormula (← field j "formula")
   | "validate_agent" => return .validateAgent (← field j "formula") (← strField j "agent")
   | "check_pairwise" => return .checkPairwise (← formulas)
+  | "epistemic_check" =>
+    let worlds ← match ← optField j "worlds" with
+      | none => pure none
+      | some v => pure (some (← (← v.getArr?).toList.mapM (·.getStr?)))
+    let updates ← match ← optField j "updates" with
+      | none => pure []
+      | some v => pure (← v.getArr?).toList
+    return .epistemicCheck (← field j "model") updates (← formulas) worlds
   | "atl_model_check" =>
     let states ← match ← optField j "states" with
       | none => pure none
@@ -188,6 +199,7 @@ def handleRequest (commit : String) : Request → Json
            Consider 'joint' or 'patient'." else Json.null)])
     | .error msg => okResult (Json.mkObj [("valid", false), ("parse_error", msg)])
   | .atlModelCheck model fs states sem => atlModelCheck model fs states sem
+  | .epistemicCheck model us fs ws => epistemicCheck model us fs ws
   | .checkPairwise fs =>
     let indexed := (List.range fs.length).zip fs
     let pairs := indexed.flatMap fun (i, fi) =>

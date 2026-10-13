@@ -118,6 +118,80 @@ def p : DFormula := .atom "p"
 /-- `[p : w → A, B]+`. -/
 def informP (granted informed : List String) : UpdateList := .cons p "w" granted informed .nil
 
+/-! ## ATEL-D Example 2 (extended version, Fig. 5)
+
+The oxygen-tank model with partial observation: r2 tells the balcony (q2) from the
+inside rooms, r1 tells Bob's room (q1) from the rest. The extended version's text
+states "no uniform strategy … from all states the robots consider indistinguishable",
+which is the subjective reading. -/
+
+def modelImp : String :=
+  (modelDefault.dropEnd 1).toString
+    ++ ",\"indistinguishable\":{\"r1\":[[\"q0\",\"q2\"],[\"q1\"]],\"r2\":[[\"q0\",\"q1\"],[\"q2\"]]}}"
+
+def satImp (f : DFormula) : Option (List String) :=
+  match load modelImp with
+  | .ok m => match dsat m .subjective f with | .ok r => some r.toList | .error _ => none
+  | .error _ => none
+
+def holdsQ0 (f : DFormula) : Option Bool := (satImp f).map (·.contains "q0")
+
+def xAtBob : DFormula := .canNext team atBob
+def warmP : DFormula := .atom "warm"
+/-- `[¬atBob ∧ ¬warm : right → {r2}, {r1}]+`. -/
+def sharpUpd : UpdateList :=
+  .cons (.and (.not atBob) (.not warmP)) "right" ["r2"] ["r1"] .nil
+
+/-! ## Social laws (Galimullin & Kuijer 2024, SLAM; ATL-D paper Theorem 4)
+
+An atomic law `ζ(α, a) = φ` allows `a` to take `α` exactly where `φ` holds in the
+current model; if that would forbid everything an agent has at a state, the law does
+not apply there. Theorem 4: `[ζ]ψ` is `[¬φ1 : α1 → {a1}, …]− ψ`. The law-restricted
+model below is built straight from the SLAM definition, not from `updateModel`. -/
+
+abbrev Law := String × String × Formula × DFormula   -- action, agent, condition (both forms)
+
+def lawModel (m : DynModel) (laws : List Law) : Except String (Cgs String String) := do
+  let mut allowed : List (String × String × Std.TreeSet String) := []
+  for (α, a, c, _) in laws do
+    allowed := (α, a, ← sat m.cgs c) :: allowed
+  let moves : String → String → Std.TreeSet String := fun v a =>
+    let d := m.cgs.cgsMoves v a
+    let ok := d.filter fun α =>
+      allowed.all fun (α', a', s) => !(α' == α && a' == a) || s.contains v
+    if ok.isEmpty then d else ok
+  pure { m.cgs with cgsMoves := moves }
+
+def lawUpdate (laws : List Law) : UpdateList :=
+  laws.foldr (fun (α, a, _, d) rest => .cons (.not d) α [a] [] rest) .nil
+
+/-- `[ζ]ψ` (restricted model) and `[π_ζ]−ψ` agree, for ψ given in both forms. -/
+def theorem4 (modelJson : String) (laws : List Law) (ψ : Formula × DFormula) : Bool :=
+  match load modelJson with
+  | .ok m =>
+    match lawModel m laws, sat (match lawModel m laws with | .ok c => c | .error _ => m.cgs) ψ.1,
+        dsat m .perfect (.revoke (lawUpdate laws) ψ.2) with
+    | .ok _, .ok a, .ok b => a == b
+    | _, _, _ => false
+  | .error _ => false
+
+def atomF (n : String) : Formula × DFormula := (.atom n, .atom n)
+def fEv : Formula × DFormula :=
+  (.canEventually ["r1", "r2"] (.atom "atBob"), .canEventually team atBob)
+def fSafe : Formula × DFormula :=
+  (.canAlways [] (.not (.atom "warm")), .canAlways [] (.not warmP))
+def fNext : Formula × DFormula :=
+  (.canNext ["r1"] (.atom "atBob"), .canNext ["r1"] atBob)
+def fUntil : Formula × DFormula :=
+  (.canUntil ["r1", "r2"] (.not (.atom "warm")) (.atom "atBob"), .canUntil team (.not warmP) atBob)
+
+def lawsA : List Law := [("left", "r1", .atom "atBob", atBob)]
+def lawsB : List Law := [("right", "r1", .not (.atom "warm"), .not warmP),
+                         ("left", "r1", .atom "atBob", atBob)]
+/-- An ATL condition, and a law forbidding all of r2's actions at the non-`atBob` states. -/
+def lawsC : List Law := [("left", "r1", .canNext ["r1", "r2"] (.atom "atBob"), xAtBob),
+                         ("left", "r2", .atom "atBob", atBob)]
+
 def cases : List (String × Bool) := [
   ("ATL-D Example 1: ⟨⟨r1,r2⟩⟩F atBob holds at q0 (left twice)",
     (sats modelDefault (.canEventually team atBob)).map (·.contains "q0") == some true),
@@ -234,7 +308,35 @@ def cases : List (String × Bool) := [
         \"action\":\"w\",\"agents\":[],\"informed\":[\"a\"]}],\"operand\":{\"type\":\"can_next\",\"agents\":[\"a\"],\
         \"operand\":{\"type\":\"atom\",\"name\":\"goal\"}}}]}") "t"
     (r.compress.splitOn "\"satisfying\":[\"g\",\"s0\",\"s1\"]").length == 2
-      && (r.compress.splitOn "imperfect_subjective_dynamic").length == 2)
+      && (r.compress.splitOn "imperfect_subjective_dynamic").length == 2),
+  ("ATEL-D Example 2: at q0 the robots cannot reach Bob in one step, and both know it",
+    holdsQ0 (.and (.not xAtBob) (.and (.knows "r1" (.not xAtBob)) (.knows "r2" (.not xAtBob)))) == some true),
+  ("ATEL-D Example 2: granting right to r2 everywhere and informing everyone does not help",
+    holdsQ0 (.grant (.cons (.not .bot) "right" ["r2"] ["r1", "r2"] .nil) xAtBob) == some false),
+  ("ATEL-D Example 2: granting right to r2 outside Bob's room, informing only r2, does not help (r1 is unsure)",
+    holdsQ0 (.grant (.cons (.not atBob) "right" ["r2"] [] .nil) xAtBob) == some false),
+  ("ATEL-D Example 2: [¬atBob ∧ ¬warm : right → {r2}, {r1}]+ ⟨⟨r1,r2⟩⟩X atBob holds at every state",
+    satImp (.grant sharpUpd xAtBob) == some all3),
+  ("ATEL-D Example 2: each robot knows it cannot reach Bob now but could after that update",
+    ["r1", "r2"].all fun r =>
+      holdsQ0 (.and (.knows r (.not xAtBob)) (.knows r (.grant sharpUpd xAtBob))) == some true),
+  ("ATEL-D: [φ : α → ∅, Ag]+ is a public announcement of φ (everyone then knows φ's truth value)",
+    satImp (.grant (.cons atBob "left" [] ["r1", "r2"] .nil) (.or (.knows "r2" atBob) (.knows "r2" (.not atBob))))
+      == some all3),
+  ("SLAM/Thm 4: [ζ]ψ agrees with [π_ζ]−ψ (one law, four formulas)",
+    [fEv, fSafe, fNext, fUntil].all (theorem4 modelDefault lawsA)),
+  ("SLAM/Thm 4: two laws on one agent",
+    [fEv, fSafe, fNext, fUntil].all (theorem4 modelDefault lawsB)),
+  ("SLAM/Thm 4: an ATL condition, and a law that forbids all of r2's actions (reasonableness)",
+    [fEv, fSafe, fNext, fUntil].all (theorem4 modelDefault lawsC)),
+  ("SLAM/Thm 4: the laws actually change something (so the agreement is not vacuous)",
+    match load modelDefault with
+    | .ok m =>
+      match lawModel m lawsB with
+      | .ok c => (sat c fEv.1).toOption != (sat m.cgs fEv.1).toOption
+          || (sat c fSafe.1).toOption != (sat m.cgs fSafe.1).toOption
+      | .error _ => false
+    | .error _ => false)
 ]
 
 end AtlDynamicTests

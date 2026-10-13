@@ -48,8 +48,9 @@ Grosinger & Mittelmann, KR 2026): tree format plus `{"type":"has","agent","actio
 and `can_release` (`left`, `right`). `informed` (optional) lists agents who learn the
 condition without gaining or losing the action. `semantics` picks how `⟨⟨A⟩⟩` quantifies:
 `perfect` (default; ATL-D), `imperfect_subjective` or `imperfect_objective` (memoryless
-uniform strategies over the model's `indistinguishable` classes). The paper does not say
-which of the last two ATEL-D means; subjective matches `atlirSat`. The reply's `semantics`
+uniform strategies over the model's `indistinguishable` classes). ATEL-D means
+`imperfect_subjective` (the extended paper's Example 2; it matches `atlirSat`); objective
+is offered for comparison. The reply's `semantics`
 carries a `_dynamic` suffix. The model may add `"actions": [...]` (the whole action universe)
 and `"default_next": {"stay":true}` or `{"state":"s"}` (the successor of every unlisted
 joint move). Without a default, an update that enables a joint move with no listed

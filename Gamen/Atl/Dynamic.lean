@@ -34,12 +34,15 @@ classes, since an agent whose moves change is in `A` and is refined by the
 same condition; `checkEpistemic` re-checks this with `mkAtelModel` after
 every update rather than assuming it.
 
-The paper does not spell out `⟨⟨A⟩⟩` for ATEL-D. It says only that strategies
-are memoryless and uniform (Defs 8-9) and that Algorithm 2 guesses a uniform
-strategy with respect to the updated relation. `IrMode` therefore offers the
-perfect-information reading (ATL-D), and ATLir under `subjective` (the default
-for imperfect information, as `Gamen.Atl.ImperfectInfo.atlirSat`) or `objective`
-requirements. Whether the authors intend subjective or objective is not stated.
+The conference paper does not spell out `⟨⟨A⟩⟩` for ATEL-D: strategies are
+memoryless and uniform (Defs 8-9), and Algorithm 2 guesses a uniform strategy with
+respect to the updated relation. The extended version's Example 2 settles it: "no
+uniform strategy to force the outcome … from all states the robots consider
+indistinguishable", i.e. the *subjective* reading, as
+`Gamen.Atl.ImperfectInfo.atlirSat`. `IrMode` offers that (`subjective`), the
+perfect-information reading (`perfect`, ATL-D), and `objective` (only the current
+state need be covered), which no source asks for. `Tests/AtlDynamic.lean` rebuilds
+Example 2; replacing `subjective` by `objective` fails four of its cases.
 
 ## Disabled transitions
 

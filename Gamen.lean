@@ -32,6 +32,7 @@ import Gamen.Atl.ImperfectInfo
 import Gamen.CgsJson
 import Gamen.Atl.UpdateSearch
 import Gamen.Atl.SocialLaws
+import Gamen.AngelsDemons
 import Gamen.ActionModel
 import Gamen.EpistemicJson
 import Gamen.Dcleg

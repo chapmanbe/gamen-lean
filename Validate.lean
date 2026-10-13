@@ -40,17 +40,21 @@ per-formula `error`. A bad model or `states` entry fails the whole request with
 `duplicate_state`, `duplicate_agent`, `invalid_cgs`, `overlapping_classes`,
 `invalid_indistinguishability`. Tests: `Tests/ValidateAtl.lean`.
 
-**ATL-D (Lean-only, protocol 3; issue #3).** `"dynamic": true` makes `atl_model_check`
-read its formulas as ATL-D (`Gamen.Atl.Dynamic`; Galimullin, Grosinger & Mittelmann,
-KR 2026): tree format plus `{"type":"has","agent","action"}`,
-`{"type":"grant"|"revoke","updates":[{"condition":F,"action","agents"}],"operand":F}`
-and `can_release` (`left`, `right`). Perfect information only (`semantics` other than
-`perfect` is `unsupported_semantics`); the reply's `semantics` is `perfect_dynamic`.
-The model may add `"actions": [...]` (the whole action universe) and
-`"default_next": {"stay":true}` or `{"state":"s"}` (the successor of every unlisted
+**ATL-D and ATEL-D (Lean-only, protocols 3 and 4; issue #3).** `"dynamic": true` makes
+`atl_model_check` read its formulas as ATL-D/ATEL-D (`Gamen.Atl.Dynamic`; Galimullin,
+Grosinger & Mittelmann, KR 2026): tree format plus `{"type":"has","agent","action"}`,
+`{"type":"knowledge","agent","operand"}`,
+`{"type":"grant"|"revoke","updates":[{"condition":F,"action","agents","informed"?}],"operand":F}`
+and `can_release` (`left`, `right`). `informed` (optional) lists agents who learn the
+condition without gaining or losing the action. `semantics` picks how `⟨⟨A⟩⟩` quantifies:
+`perfect` (default; ATL-D), `imperfect_subjective` or `imperfect_objective` (memoryless
+uniform strategies over the model's `indistinguishable` classes). The paper does not say
+which of the last two ATEL-D means; subjective matches `atlirSat`. The reply's `semantics`
+carries a `_dynamic` suffix. The model may add `"actions": [...]` (the whole action universe)
+and `"default_next": {"stay":true}` or `{"state":"s"}` (the successor of every unlisted
 joint move). Without a default, an update that enables a joint move with no listed
 successor is a per-formula error. Extra error code: `unknown_action`.
-Tests: `Tests/AtlDynamic.lean` (the paper's Example 1).
+Tests: `Tests/AtlDynamic.lean` (the paper's Example 1, plus ATEL-D).
 
 **Backends.** gamen-hs dispatches consistency checks to two backends:
 the KDt tableau with its doxastic-D and ranking-theory rules (for

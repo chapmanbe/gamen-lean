@@ -1,15 +1,16 @@
 import Gamen.Atl.ModelCheck
+import Gamen.Atl.ImperfectInfo
 import Gamen.Cgs
 import Std.Data.HashMap
 
 /-!
 # Gamen.Atl.Dynamic
 
-ATL-D: ATL with dynamic actions (perfect information). Lean-only; gamen-hs
-has no counterpart. Source: Galimullin, Grosinger & Mittelmann, *I Would If
+ATL-D and ATEL-D: ATL with dynamic actions, with and without imperfect
+information. Lean-only; gamen-hs has no counterpart. Source: Galimullin, Grosinger & Mittelmann, *I Would If
 I Could: Reasoning about Dynamics of Actions in Multi-Agent Systems*, KR 2026,
-doi:10.24963/kr.2026/31 (Defs 1-4 and Algorithm 1). Plan:
-`plans/atl-d-2026-10-13.md`. ATEL-D (informed agents, `K_a`) is a later phase.
+doi:10.24963/kr.2026/31 (Defs 1-4 and Algorithm 1 for ATL-D; Defs 8-11 for
+ATEL-D). Plan: `plans/atl-d-2026-10-13.md`.
 
 ## What it adds to ATL
 
@@ -22,6 +23,23 @@ doi:10.24963/kr.2026/31 (Defs 1-4 and Algorithm 1). Plan:
   `a` keeps all of `d(a, v)` there. The transition function is unchanged.
   `ψ` is then checked in the updated model (Algorithm 1).
 * The release operator `⟨⟨A⟩⟩φRψ` (Def 4); `⟨⟨A⟩⟩Gφ = ⟨⟨A⟩⟩⊥Rφ`.
+
+## ATEL-D
+
+`knows a φ` is `K_a φ` over the model's indistinguishability relation. An update
+clause `φ : α → A, B` also *informs* `A ∪ B`: each such agent's relation is
+refined to `∼_a ∩ ∼φ` (`∼φ` is the φ/¬φ partition of the model *before* the
+update), by every clause that names it. Moves stay uniform on the refined
+classes, since an agent whose moves change is in `A` and is refined by the
+same condition; `checkEpistemic` re-checks this with `mkAtelModel` after
+every update rather than assuming it.
+
+The paper does not spell out `⟨⟨A⟩⟩` for ATEL-D. It says only that strategies
+are memoryless and uniform (Defs 8-9) and that Algorithm 2 guesses a uniform
+strategy with respect to the updated relation. `IrMode` therefore offers the
+perfect-information reading (ATL-D), and ATLir under `subjective` (the default
+for imperfect information, as `Gamen.Atl.ImperfectInfo.atlirSat`) or `objective`
+requirements. Whether the authors intend subjective or objective is not stated.
 
 ## Disabled transitions
 
@@ -48,6 +66,19 @@ structure DynModel where
   actions : Std.TreeSet String
   /-- Whether the joint move at the state has a stated successor. -/
   specified : String → Std.TreeMap String String → Bool
+  /-- `∼_a`: agent → state → its class. Singletons give perfect information. -/
+  epistemic : String → String → Std.TreeSet String
+
+/-- How `⟨⟨A⟩⟩` quantifies over strategies. -/
+inductive IrMode where
+  /-- Perfect information (ATL-D). -/
+  | perfect
+  /-- Memoryless uniform strategies; must succeed at every state the coalition
+  cannot tell from the current one (as `atlirSat`). -/
+  | subjective
+  /-- Memoryless uniform strategies; need succeed only at the current state. -/
+  | objective
+  deriving BEq
 
 mutual
 /-- ATL-D formulas (Def 1). `UpdateList` is a separate inductive so that the
@@ -61,6 +92,7 @@ inductive DFormula where
   | implies (l r : DFormula)
   | iff (l r : DFormula)
   | has (agent action : String)
+  | knows (agent : String) (f : DFormula)
   | canNext (agents : List String) (f : DFormula)
   | canAlways (agents : List String) (f : DFormula)
   | canEventually (agents : List String) (f : DFormula)
@@ -69,13 +101,16 @@ inductive DFormula where
   | grant (updates : UpdateList) (f : DFormula)
   | revoke (updates : UpdateList) (f : DFormula)
 
-/-- `φ1 : α1 → A1, …, φk : αk → Ak`. -/
+/-- `φ1 : α1 → A1, B1, …, φk : αk → Ak, Bk` (`Bi` are only informed). -/
 inductive UpdateList where
   | nil
-  | cons (cond : DFormula) (action : String) (agents : List String) (rest : UpdateList)
+  | cons (cond : DFormula) (action : String) (agents informed : List String) (rest : UpdateList)
 end
 
 namespace DFormula
+
+private def informedStr (bs : List String) : String :=
+  if bs.isEmpty then "" else ",{" ++ ",".intercalate bs ++ "}"
 
 mutual
 protected def toString : DFormula → String
@@ -87,6 +122,7 @@ protected def toString : DFormula → String
   | .implies l r => "(" ++ l.toString ++ " → " ++ r.toString ++ ")"
   | .iff l r => "(" ++ l.toString ++ " ↔ " ++ r.toString ++ ")"
   | .has a α => s!"has({a},{α})"
+  | .knows a f => s!"K_{a}" ++ f.toString
   | .canNext as f => s!"⟨⟨{",".intercalate as}⟩⟩X" ++ f.toString
   | .canAlways as f => s!"⟨⟨{",".intercalate as}⟩⟩G" ++ f.toString
   | .canEventually as f => s!"⟨⟨{",".intercalate as}⟩⟩F" ++ f.toString
@@ -97,9 +133,11 @@ protected def toString : DFormula → String
 
 protected def updatesToString : UpdateList → String
   | .nil => ""
-  | .cons c α as .nil => c.toString ++ ":" ++ α ++ "→{" ++ ",".intercalate as ++ "}"
-  | .cons c α as rest =>
-      c.toString ++ ":" ++ α ++ "→{" ++ ",".intercalate as ++ "}, " ++ DFormula.updatesToString rest
+  | .cons c α as bs .nil =>
+      c.toString ++ ":" ++ α ++ "→{" ++ ",".intercalate as ++ "}" ++ informedStr bs
+  | .cons c α as bs rest =>
+      c.toString ++ ":" ++ α ++ "→{" ++ ",".intercalate as ++ "}" ++ informedStr bs ++ ", "
+        ++ DFormula.updatesToString rest
 end
 
 instance : ToString DFormula := ⟨DFormula.toString⟩
@@ -108,18 +146,20 @@ end DFormula
 
 /-- A resolved update clause: the states where its condition holds, the action,
 the agents. -/
-abbrev Clause := Std.TreeSet String × String × List String
+abbrev Clause := Std.TreeSet String × String × List String × List String
 
 /-- The model after granting (`grant = true`) or revoking the clauses' actions.
 `d'(a, v) = d(a, v) ∪ X(a, v)` or, for revocation, `d(a, v) \ X(a, v)` unless
-that leaves `a` with nothing at `v` (Def 4, Algorithm 1 lines 13-21). -/
+that leaves `a` with nothing at `v` (Def 4, Algorithm 1 lines 13-21). Every
+agent in a clause's `A ∪ B` also has `∼_a` refined by that clause's condition
+(Def 11, Algorithm 2 lines 18-22). -/
 def updateModel (m : DynModel) (grant : Bool) (clauses : List Clause) : DynModel :=
   let cgs := m.cgs
   let newMoves : Std.HashMap (String × String) (Std.TreeSet String) :=
     cgs.cgsStates.toList.foldl (init := {}) fun acc v =>
       cgs.cgsAgents.toList.foldl (init := acc) fun acc a =>
         let x : Std.TreeSet String := Std.TreeSet.ofList
-          (clauses.filterMap fun (sv, α, as) => if sv.contains v && as.contains a then some α else none)
+          (clauses.filterMap fun (sv, α, as, _) => if sv.contains v && as.contains a then some α else none)
         let d := cgs.cgsMoves v a
         let d' :=
           if grant then d ∪ x
@@ -127,7 +167,20 @@ def updateModel (m : DynModel) (grant : Bool) (clauses : List Clause) : DynModel
             let rest := d \ x
             if rest.isEmpty then d else rest
         acc.insert (v, a) d'
-  { m with cgs := { cgs with cgsMoves := fun v a => (newMoves.get? (v, a)).getD (cgs.cgsMoves v a) } }
+  let epistemic : String → String → Std.TreeSet String := fun a v =>
+    clauses.foldl (init := m.epistemic a v) fun acc (sv, _, as, bs) =>
+      if as.contains a || bs.contains a then
+        acc.filter fun w => sv.contains v == sv.contains w
+      else acc
+  { m with
+    cgs := { cgs with cgsMoves := fun v a => (newMoves.get? (v, a)).getD (cgs.cgsMoves v a) }
+    epistemic }
+
+/-- `∼` is still an equivalence and moves are uniform on its classes. -/
+def checkEpistemic (m : DynModel) : Except String Unit :=
+  match mkAtelModel m.cgs m.epistemic with
+  | .ok _ => pure ()
+  | .error e => throw s!"an update broke the epistemic relation: {e}"
 
 /-- Every joint move available in `m` has a stated successor. -/
 def checkSpecified (m : DynModel) : Except String Unit :=
@@ -143,65 +196,103 @@ def checkSpecified (m : DynModel) : Except String Unit :=
 /-- Fuel for the fixpoints, as in `Gamen.Atl.sat`: `|states| + 1`. -/
 private def fuelOf (m : DynModel) : Nat := m.cgs.cgsStates.size + 1
 
+/-- `⟨⟨C⟩⟩` under uniform strategies (Defs 8-9): `w res` is the witnessing set
+in the residual CGS `res` (the coalition's profile fixed, opponents free). A state
+satisfies it iff some profile's witnessing set covers its requirement set
+(`subjectiveClass` or the state itself). Mirrors `atlirSatWith`'s `objSat`, but
+over `DFormula`. -/
+def uniformSat (m : DynModel) (mode : IrMode) (coalition : Std.TreeSet String)
+    (w : Cgs String String → Except String (Std.TreeSet String)) :
+    Except String (Std.TreeSet String) :=
+  let am : AtelModel String String := { atelCgs := m.cgs, atelEpistemic := m.epistemic }
+  let req (st : String) : Std.TreeSet String :=
+    if mode == .subjective then subjectiveClass am coalition st else Std.TreeSet.ofList [st]
+  if m.cgs.cgsStates.isEmpty then pure ∅
+  else do
+    let profiles ← allUniformProfiles am coalition
+    let witnesses ← profiles.mapM fun prof => w (residualCgs am prof coalition)
+    pure (m.cgs.cgsStates.filter fun st => witnesses.any fun ws => (req st).all ws.contains)
+
+/-- `⟨⟨C⟩⟩` step: `step cgs coalition` computes the operator's set on `cgs`
+treating `coalition` as the choosing agents (all of `C` on the model itself in
+perfect information, none on the residual CGS under a fixed profile). -/
+def coalitionSat (m : DynModel) (mode : IrMode) (as : List String)
+    (step : Cgs String String → Std.TreeSet String → Except String (Std.TreeSet String)) :
+    Except String (Std.TreeSet String) :=
+  let c := Std.TreeSet.ofList as
+  match mode with
+  | .perfect => step m.cgs c
+  | _ => uniformSat m mode c fun res => step res ∅
+
 mutual
-/-- `{v | M, v ⊨ f}` (Def 4, Algorithm 1). -/
-def dsat (m : DynModel) : DFormula → Except String (Std.TreeSet String)
+/-- `{v | M, v ⊨ f}` (Def 4, Algorithm 1; Def 11 for `K_a` and informing). -/
+def dsat (m : DynModel) (mode : IrMode) : DFormula → Except String (Std.TreeSet String)
   | .bot => pure ∅
   | .atom n => pure (m.cgs.cgsStates.filter fun v => (m.cgs.cgsLabeling v).contains n)
-  | .not f => do pure (m.cgs.cgsStates \ (← dsat m f))
-  | .and l r => do pure ((← dsat m l) ∩ (← dsat m r))
-  | .or l r => do pure ((← dsat m l) ∪ (← dsat m r))
-  | .implies l r => do pure ((m.cgs.cgsStates \ (← dsat m l)) ∪ (← dsat m r))
+  | .not f => do pure (m.cgs.cgsStates \ (← dsat m mode f))
+  | .and l r => do pure ((← dsat m mode l) ∩ (← dsat m mode r))
+  | .or l r => do pure ((← dsat m mode l) ∪ (← dsat m mode r))
+  | .implies l r => do pure ((m.cgs.cgsStates \ (← dsat m mode l)) ∪ (← dsat m mode r))
   | .iff l r => do
-      let sl ← dsat m l
-      let sr ← dsat m r
+      let sl ← dsat m mode l
+      let sr ← dsat m mode r
       pure ((sl ∩ sr) ∪ (m.cgs.cgsStates \ (sl ∪ sr)))
   | .has a α => do
       unless m.cgs.cgsAgents.contains a do throw s!"has: unknown agent \"{a}\""
       unless m.actions.contains α do throw s!"has: unknown action \"{α}\""
       pure (m.cgs.cgsStates.filter fun v => (m.cgs.cgsMoves v a).contains α)
+  | .knows a f => do
+      unless m.cgs.cgsAgents.contains a do throw s!"knows: unknown agent \"{a}\""
+      let sf ← dsat m mode f
+      pure (m.cgs.cgsStates.filter fun v => (m.epistemic a v).all sf.contains)
   | .canNext as f => do
-      pure (preC m.cgs (Std.TreeSet.ofList as) (← dsat m f))
+      let sf ← dsat m mode f
+      coalitionSat m mode as fun res c => pure (preC res c sf)
   | .canAlways as f => do
-      let sf ← dsat m f
-      gfp m.cgs.cgsStates (fun x => sf ∩ preC m.cgs (Std.TreeSet.ofList as) x) (fuelOf m)
+      let sf ← dsat m mode f
+      coalitionSat m mode as fun res c =>
+        gfp m.cgs.cgsStates (fun x => sf ∩ preC res c x) (fuelOf m)
   | .canEventually as f => do
-      let sf ← dsat m f
-      lfp (fun x => sf ∪ preC m.cgs (Std.TreeSet.ofList as) x) (fuelOf m)
+      let sf ← dsat m mode f
+      coalitionSat m mode as fun res c => lfp (fun x => sf ∪ preC res c x) (fuelOf m)
   | .canUntil as l r => do
-      let sl ← dsat m l
-      let sr ← dsat m r
-      lfp (fun x => sr ∪ (sl ∩ preC m.cgs (Std.TreeSet.ofList as) x)) (fuelOf m)
+      let sl ← dsat m mode l
+      let sr ← dsat m mode r
+      coalitionSat m mode as fun res c =>
+        lfp (fun x => sr ∪ (sl ∩ preC res c x)) (fuelOf m)
   | .canRelease as l r => do
       -- νX. ψ ∩ (φ ∪ preC(X)); `⟨⟨A⟩⟩Gφ = ⟨⟨A⟩⟩⊥Rφ` (Def 4).
-      let sl ← dsat m l
-      let sr ← dsat m r
-      gfp m.cgs.cgsStates
-        (fun x => sr ∩ (sl ∪ preC m.cgs (Std.TreeSet.ofList as) x)) (fuelOf m)
+      let sl ← dsat m mode l
+      let sr ← dsat m mode r
+      coalitionSat m mode as fun res c =>
+        gfp m.cgs.cgsStates (fun x => sr ∩ (sl ∪ preC res c x)) (fuelOf m)
   | .grant us f => do
-      let clauses ← dclauses m us
+      let clauses ← dclauses m mode us
       let m' := updateModel m true clauses
       checkSpecified m'
-      dsat m' f
+      checkEpistemic m'
+      dsat m' mode f
   | .revoke us f => do
-      let clauses ← dclauses m us
-      dsat (updateModel m false clauses) f
+      let clauses ← dclauses m mode us
+      let m' := updateModel m false clauses
+      checkEpistemic m'
+      dsat m' mode f
 
 /-- Evaluate every condition in the *current* model `m` (simultaneity), and
 check the named agents and actions exist. -/
-def dclauses (m : DynModel) : UpdateList → Except String (List Clause)
+def dclauses (m : DynModel) (mode : IrMode) : UpdateList → Except String (List Clause)
   | .nil => pure []
-  | .cons c α as rest => do
+  | .cons c α as bs rest => do
       unless m.actions.contains α do throw s!"update: unknown action \"{α}\""
-      if let some a := as.find? (fun a => !m.cgs.cgsAgents.contains a) then
+      if let some a := (as ++ bs).find? (fun a => !m.cgs.cgsAgents.contains a) then
         throw s!"update: unknown agent \"{a}\""
-      let sc ← dsat m c
-      pure ((sc, α, as) :: (← dclauses m rest))
+      let sc ← dsat m mode c
+      pure ((sc, α, as, bs) :: (← dclauses m mode rest))
 end
 
 /-- Is `f` true at every state? -/
-def dIsTrueIn (m : DynModel) (f : DFormula) : Except String Bool := do
-  pure ((← dsat m f) == m.cgs.cgsStates)
+def dIsTrueIn (m : DynModel) (mode : IrMode) (f : DFormula) : Except String Bool := do
+  pure ((← dsat m mode f) == m.cgs.cgsStates)
 
 end Atl.Dynamic
 end Gamen

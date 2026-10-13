@@ -30,6 +30,11 @@ def AtlSemantics.name : AtlSemantics → String
   | .subjective => "imperfect_subjective"
   | .objective => "imperfect_objective"
 
+def AtlSemantics.mode : AtlSemantics → IrMode
+  | .perfect => .perfect
+  | .subjective => .subjective
+  | .objective => .objective
+
 def AtlSemantics.parse : String → Except String AtlSemantics
   | "perfect" => .ok .perfect
   | "imperfect_subjective" => .ok .subjective
@@ -48,8 +53,10 @@ open Lean in
 keys as `decodeFormula`; the additions are
 
     {"type":"has","agent":"a","action":"x"}
+    {"type":"knowledge","agent":"a","operand":F}
     {"type":"grant" | "revoke",
-     "updates":[{"condition":F,"action":"x","agents":["a"]}, ...], "operand":F}
+     "updates":[{"condition":F,"action":"x","agents":["a"],"informed":["b"]}, ...],
+     "operand":F}                       -- "informed" is optional (ATEL-D)
     {"type":"can_release","agents":[...],"left":F,"right":F}
 
 `partial` for the reason `decodeFormula` is: recursion goes through field
@@ -66,6 +73,7 @@ partial def decodeDFormula (j : Json) : Except String DFormula := do
   | "implies" => return .implies (← sub "left") (← sub "right")
   | "iff" => return .iff (← sub "left") (← sub "right")
   | "has" => return .has (← strField j "agent") (← strField j "action")
+  | "knowledge" => return .knows (← strField j "agent") (← sub "operand")
   | "can_next" | "coalition" => return .canNext (← agents) (← sub "operand")
   | "can_always" => return .canAlways (← agents) (← sub "operand")
   | "can_eventually" => return .canEventually (← agents) (← sub "operand")
@@ -75,11 +83,16 @@ partial def decodeDFormula (j : Json) : Except String DFormula := do
   | "revoke" => return .revoke (← updates) (← sub "operand")
   | other => throw s!"Unknown formula type: {other}"
 where
+  informed (u : Json) : Except String (List String) := do
+    match ← optField u "informed" with
+    | none => pure []
+    | some v => (← v.getArr?).toList.mapM (·.getStr?)
   updates : Except String UpdateList := do
     let items := (← (← field j "updates").getArr?).toList
     items.foldrM (init := UpdateList.nil) fun u rest => do
       return .cons (← decodeDFormula (← field u "condition")) (← strField u "action")
-        (← strListField u "agents") rest
+        (← strListField u "agents")
+        (← informed u) rest
 
 /-- An `atl_model_check` error carries a stable `error_code` beside the message. -/
 def atlErr (code msg : String) : Json :=
@@ -123,16 +136,13 @@ def atlModelCheck (model : Json) (fs : AtlFormulas) (states : Option (List Strin
         atlReply sem.name check <| formulas.zipIdx.map fun (f, i) =>
           atlItem all check i (toString f) (satSet f)
   | .dynamic formulas =>
-    match sem with
-    | .perfect =>
-      match CgsJson.decodeDyn model with
-      | .error e => atlErr e.code e.message
-      | .ok m =>
-        let all := m.cgs.cgsStates.toList
-        let check := states.getD all
-        match check.find? (fun st => !m.cgs.cgsStates.contains st) with
-        | some st => atlErr "unknown_state" s!"states: unknown state \"{st}\""
-        | none =>
-          atlReply "perfect_dynamic" check <| formulas.zipIdx.map fun (f, i) =>
-            atlItem all check i (toString f) (dsat m f)
-    | _ => atlErr "unsupported_semantics" "dynamic formulas support only perfect information"
+    match CgsJson.decodeDyn model with
+    | .error e => atlErr e.code e.message
+    | .ok m =>
+      let all := m.cgs.cgsStates.toList
+      let check := states.getD all
+      match check.find? (fun st => !m.cgs.cgsStates.contains st) with
+      | some st => atlErr "unknown_state" s!"states: unknown state \"{st}\""
+      | none =>
+        atlReply (sem.name ++ "_dynamic") check <| formulas.zipIdx.map fun (f, i) =>
+          atlItem all check i (toString f) (dsat m sem.mode f)

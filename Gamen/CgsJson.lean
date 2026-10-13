@@ -87,7 +87,7 @@ private abbrev JointKey := String × List (String × String)
 /-- Decode the CGS part of a spec (everything but `indistinguishable`), with
 the data ATL-D updates need: the action universe and which joint moves have a
 stated successor. See the module docstring for `actions` and `default_next`. -/
-def decodeDyn (j : Json) : Except CgsSpecError Atl.Dynamic.DynModel := do
+def decodeDynBase (j : Json) : Except CgsSpecError Atl.Dynamic.DynModel := do
   let _ ← lift "model" j.getObj?
   let statesL ← strList "states" (← getField j "states" "model")
   let agentsL ← strList "agents" (← getField j "agents" "model")
@@ -186,12 +186,13 @@ def decodeDyn (j : Json) : Except CgsSpecError Atl.Dynamic.DynModel := do
   match mkCgs states agents moves trans label with
   | .ok cgs =>
     pure { cgs, actions := actionSet,
-           specified := fun v jm => dflt.isSome || transTbl.contains (v, jm.toList) }
+           specified := fun v jm => dflt.isSome || transTbl.contains (v, jm.toList),
+           epistemic := fun _ st => Std.TreeSet.ofList [st] }
   | .error msg => err "invalid_cgs" msg
 
 /-- Decode the CGS part of a spec. -/
 def decodeCgs (j : Json) : Except CgsSpecError (Cgs String String) :=
-  (·.cgs) <$> decodeDyn j
+  (·.cgs) <$> decodeDynBase j
 
 /-- Decode the optional `indistinguishable` field into an epistemic relation
 over `cgs`'s states: agent → state → class. -/
@@ -216,6 +217,15 @@ def decodeEpistemic (cgs : Cgs String String) (j : Json) :
         for st in members do
           tbl := tbl.insert (ag, st) clsSet
   pure fun ag st => (tbl.get? (ag, st)).getD (Std.TreeSet.ofList [st])
+
+/-- Decode a spec for ATL-D/ATEL-D: the dynamic model with its `indistinguishable`
+relation (singletons when absent). -/
+def decodeDyn (j : Json) : Except CgsSpecError Atl.Dynamic.DynModel := do
+  let base ← decodeDynBase j
+  let epi ← decodeEpistemic base.cgs j
+  match mkAtelModel base.cgs epi with
+  | .ok _ => pure { base with epistemic := epi }
+  | .error msg => err "invalid_indistinguishability" msg
 
 /-- Decode a whole spec: the CGS and its imperfect-information model. -/
 def decode (j : Json) : Except CgsSpecError Decoded := do

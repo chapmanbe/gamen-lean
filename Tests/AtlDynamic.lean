@@ -56,17 +56,17 @@ def load (s : String) : Except String DynModel :=
 open DFormula in
 def atBob : DFormula := .atom "atBob"
 def team : List String := ["r1", "r2"]
-def grantRight : UpdateList := .cons (.not .bot) "right" ["r2"] .nil
-def revokeLeftR1 : UpdateList := .cons (.not (.atom "atBob")) "left" ["r1"] .nil
+def grantRight : UpdateList := .cons (.not .bot) "right" ["r2"] [] .nil
+def revokeLeftR1 : UpdateList := .cons (.not (.atom "atBob")) "left" ["r1"] [] .nil
 
 def sats (s : String) (f : DFormula) : Option (List String) :=
   match load s with
-  | .ok m => match dsat m f with | .ok r => some r.toList | .error _ => none
+  | .ok m => match dsat m .perfect f with | .ok r => some r.toList | .error _ => none
   | .error _ => none
 
 def errs (s : String) (f : DFormula) : Bool :=
   match load s with
-  | .ok m => match dsat m f with | .error _ => true | .ok _ => false
+  | .ok m => match dsat m .perfect f with | .error _ => true | .ok _ => false
   | .error _ => false
 
 /-- The paper's first formula. -/
@@ -92,6 +92,32 @@ def req (formula : String) (model : String := modelDefault) : String :=
 def code (r : Json) : Option String :=
   (r.getObjVal? "error_code").toOption >>= (·.getStr?.toOption)
 
+/-! ## ATEL-D
+
+`a` cannot tell s0 (`p`) from s1. At s0 action `x` reaches the goal `g`, at s1 action
+`y` does; `w` exists but nobody has it. -/
+
+def epiModel : String :=
+  "{\"states\":[\"s0\",\"s1\",\"g\"],\"agents\":[\"a\"],\"actions\":[\"x\",\"y\",\"w\"],\
+    \"moves\":{\"s0\":{\"a\":[\"x\",\"y\"]},\"s1\":{\"a\":[\"x\",\"y\"]},\"g\":{\"a\":[\"x\",\"y\"]}},\
+    \"valuation\":{\"s0\":[\"p\"],\"g\":[\"goal\"]},\"default_next\":{\"stay\":true},\
+    \"transitions\":[\
+      {\"state\":\"s0\",\"moves\":{\"a\":\"x\"},\"next\":\"g\"},\
+      {\"state\":\"s1\",\"moves\":{\"a\":\"y\"},\"next\":\"g\"},\
+      {\"state\":\"g\",\"moves\":{\"a\":\"x\"},\"next\":\"g\"},\
+      {\"state\":\"g\",\"moves\":{\"a\":\"y\"},\"next\":\"g\"}],\
+    \"indistinguishable\":{\"a\":[[\"s0\",\"s1\"]]}}"
+
+def satMode (mode : IrMode) (f : DFormula) : Option (List String) :=
+  match load epiModel with
+  | .ok m => match dsat m mode f with | .ok r => some r.toList | .error _ => none
+  | .error _ => none
+
+def goalNext : DFormula := .canNext ["a"] (.atom "goal")
+def p : DFormula := .atom "p"
+/-- `[p : w → A, B]+`. -/
+def informP (granted informed : List String) : UpdateList := .cons p "w" granted informed .nil
+
 def cases : List (String × Bool) := [
   ("ATL-D Example 1: ⟨⟨r1,r2⟩⟩F atBob holds at q0 (left twice)",
     (sats modelDefault (.canEventually team atBob)).map (·.contains "q0") == some true),
@@ -107,20 +133,20 @@ def cases : List (String × Bool) := [
     sats modelDefault (.has "r1" "left") == some all3
       && sats modelDefault (.revoke revokeLeftR1 (.has "r1" "left")) == some ["q1"]),
   ("ATL-D: reasonableness — revoking r2's only action leaves r2 with it",
-    sats modelDefault (.revoke (.cons (.not .bot) "left" ["r2"] .nil) (.has "r2" "left")) == some all3),
+    sats modelDefault (.revoke (.cons (.not .bot) "left" ["r2"] [] .nil) (.has "r2" "left")) == some all3),
   ("ATL-D: revoking everything r1 has leaves r1 with left and right (reasonableness)",
     sats modelDefault
-      (.revoke (.cons (.not .bot) "left" ["r1"] (.cons (.not .bot) "right" ["r1"] .nil))
+      (.revoke (.cons (.not .bot) "left" ["r1"] [] (.cons (.not .bot) "right" ["r1"] [] .nil))
         (.and (.has "r1" "left") (.has "r1" "right"))) == some all3),
   ("ATL-D: an update is simultaneous — the second condition is read before the first clause applies",
     -- `jump` exists but nobody has it. Clause 1 grants r2 `right`; clause 2 grants r1 `jump`
     -- where r2 has `right`. Read in the *current* model r2 lacks `right` everywhere, so r1 gets
     -- nothing; a chained update would grant `jump` everywhere.
     let withJump := modelDefault.replace "\"actions\":[\"left\",\"right\"]" "\"actions\":[\"left\",\"right\",\"jump\"]"
-    let simult := UpdateList.cons (.not .bot) "right" ["r2"] (.cons (.has "r2" "right") "jump" ["r1"] .nil)
-    let chained := (UpdateList.cons (.not .bot) "right" ["r2"] .nil)
+    let simult := UpdateList.cons (.not .bot) "right" ["r2"] [] (.cons (.has "r2" "right") "jump" ["r1"] [] .nil)
+    let chained := (UpdateList.cons (.not .bot) "right" ["r2"] [] .nil)
     sats withJump (.grant simult (.has "r1" "jump")) == some []
-      && sats withJump (.grant chained (.grant (.cons (.has "r2" "right") "jump" ["r1"] .nil) (.has "r1" "jump")))
+      && sats withJump (.grant chained (.grant (.cons (.has "r2" "right") "jump" ["r1"] [] .nil) (.has "r1" "jump")))
         == some all3),
   ("ATL-D: grant is idempotent",
     sats modelDefault (.grant grantRight (.grant grantRight (.has "r2" "right")))
@@ -137,7 +163,7 @@ def cases : List (String × Bool) := [
        (.canUntil team (.not (.atom "warm")) atBob, .canUntil team (.not (.atom "warm")) (.atom "atBob")),
        (.canNext [] (.or atBob (.atom "warm")), .canNext [] (.or (.atom "atBob") (.atom "warm"))),
        (.implies atBob (.atom "warm"), .implies (.atom "atBob") (.atom "warm"))].all fun (d, f) =>
-        match dsat m d, sat m.cgs f with
+        match dsat m .perfect d, sat m.cgs f with
         | .ok a, .ok b => a == b
         | _, _ => false
     | .error _ => false),
@@ -148,9 +174,9 @@ def cases : List (String × Bool) := [
   ("ATL-D: unknown action in has is an error",
     errs modelDefault (.has "r2" "fly")),
   ("ATL-D: unknown agent in an update is an error",
-    errs modelDefault (.grant (.cons (.not .bot) "right" ["r9"] .nil) .bot)),
+    errs modelDefault (.grant (.cons (.not .bot) "right" ["r9"] [] .nil) .bot)),
   ("ATL-D: unknown action in an update is an error",
-    errs modelDefault (.grant (.cons (.not .bot) "fly" ["r2"] .nil) .bot)),
+    errs modelDefault (.grant (.cons (.not .bot) "fly" ["r2"] [] .nil) .bot)),
   ("atl_model_check dynamic: Example 1's first formula over the wire",
     let r := processLine (req
       ("{\"type\":\"and\",\"left\":{\"type\":\"not\",\"operand\":{\"type\":\"has\",\"agent\":\"r2\",\"action\":\"right\"}},\
@@ -159,17 +185,56 @@ def cases : List (String × Bool) := [
         \"left\":{\"type\":\"has\",\"agent\":\"r2\",\"action\":\"right\"},\
         \"right\":{\"type\":\"can_next\",\"agents\":[\"r1\",\"r2\"],\"operand\":{\"type\":\"atom\",\"name\":\"atBob\"}}}}}")) "t"
     (r.compress.splitOn "\"satisfying\":[\"q0\",\"q1\",\"q2\"]").length == 2),
-  ("atl_model_check dynamic: imperfect semantics are rejected with a code",
-    code (processLine
-      ("{\"action\":\"atl_model_check\",\"dynamic\":true,\"semantics\":\"imperfect_subjective\",\"model\":"
-        ++ modelDefault ++ ",\"formulas\":[]}") "t") == some "unsupported_semantics"),
   ("atl_model_check dynamic: an undeclared available action is an unknown_action error",
     code (processLine (req "{\"type\":\"bot\"}"
       ((modelDefault.replace "\"actions\":[\"left\",\"right\"]" "\"actions\":[\"left\"]"))) "t")
       == some "unknown_action"),
   ("atl_model_check: a transition using a granted action is accepted only with `actions`",
     code (processLine (req "{\"type\":\"bot\"}"
-      (modelDefault.replace "\"actions\":[\"left\",\"right\"]," "")) "t") == some "unknown_move")
+      (modelDefault.replace "\"actions\":[\"left\",\"right\"]," "")) "t") == some "unknown_move"),
+  ("ATEL-D: ⟨⟨a⟩⟩X goal under perfect information holds everywhere",
+    satMode .perfect goalNext == some ["g", "s0", "s1"]),
+  ("ATEL-D: subjectively a cannot (it must choose one action for s0 and s1)",
+    satMode .subjective goalNext == some ["g"]),
+  ("ATEL-D: objectively a can at s0 and s1 (a different uniform strategy for each)",
+    satMode .objective goalNext == some ["g", "s0", "s1"]),
+  ("ATEL-D: K_a p fails where a cannot tell p from ¬p; K_a ¬p holds only at g",
+    satMode .subjective (.knows "a" p) == some []
+      && satMode .subjective (.knows "a" (.not p)) == some ["g"]),
+  ("ATEL-D: informing a of p (B = {a}) lets a tell s0 from s1: K_a p ∨ K_a ¬p everywhere",
+    satMode .subjective (.grant (informP [] ["a"]) (.or (.knows "a" p) (.knows "a" (.not p))))
+      == some ["g", "s0", "s1"]),
+  ("ATEL-D: an update that informs nobody leaves a's knowledge alone",
+    satMode .subjective (.grant (informP [] []) (.or (.knows "a" p) (.knows "a" (.not p))))
+      == some ["g"]),
+  ("ATEL-D: granting w to a at p-states informs a too (a ∈ A), and K_a p then holds at s0",
+    satMode .subjective (.grant (informP ["a"] []) (.knows "a" p)) == some ["s0"]),
+  ("ATEL-D: after the informing update a can subjectively reach the goal everywhere",
+    satMode .subjective (.grant (informP [] ["a"]) goalNext) == some ["g", "s0", "s1"]),
+  ("ATEL-D: the same update without informing does not help",
+    satMode .subjective (.grant (informP [] []) goalNext) == some ["g"]),
+  ("ATEL-D: a revoke that informs also refines (revoke y from a at p-states, a informed)",
+    satMode .subjective
+      (.revoke (.cons p "y" [] ["a"] .nil) (.or (.knows "a" p) (.knows "a" (.not p))))
+      == some ["g", "s0", "s1"]),
+  ("ATEL-D: refinement keeps ∼ an equivalence with uniform moves (mkAtelModel accepts it)",
+    match load epiModel with
+    | .ok m =>
+      match (dclauses m .subjective (informP ["a"] [])) with
+      | .ok cl => (mkAtelModel (updateModel m true cl).cgs (updateModel m true cl).epistemic).isOk
+      | .error _ => false
+    | .error _ => false),
+  ("ATEL-D: unknown agent in `informed` is an error",
+    (match load epiModel with
+     | .ok m => (dsat m .subjective (.grant (informP [] ["z"]) .bot)).isOk == false
+     | .error _ => false)),
+  ("atl_model_check dynamic: subjective semantics over the wire, with informed",
+    let r := processLine ("{\"action\":\"atl_model_check\",\"dynamic\":true,\"semantics\":\"imperfect_subjective\",\"model\":"
+      ++ epiModel ++ ",\"formulas\":[{\"type\":\"grant\",\"updates\":[{\"condition\":{\"type\":\"atom\",\"name\":\"p\"},\
+        \"action\":\"w\",\"agents\":[],\"informed\":[\"a\"]}],\"operand\":{\"type\":\"can_next\",\"agents\":[\"a\"],\
+        \"operand\":{\"type\":\"atom\",\"name\":\"goal\"}}}]}") "t"
+    (r.compress.splitOn "\"satisfying\":[\"g\",\"s0\",\"s1\"]").length == 2
+      && (r.compress.splitOn "imperfect_subjective_dynamic").length == 2)
 ]
 
 end AtlDynamicTests

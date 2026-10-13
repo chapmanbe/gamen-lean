@@ -11,6 +11,7 @@ Port of `gamen-hs/validate/Main.hs`: a JSON Lines service on stdin/stdout.
     {"action": "validate_formula", "formula": {...}}
     {"action": "validate_agent", "formula": {...}, "agent": "clinician"}
     {"action": "check_pairwise", "formulas": [...]}
+    {"action": "atl_model_check", "model": {...}, "formulas": [...]}   (Lean-only; see below)
 
 Responses are `{"ok": true, "result": ...}` or `{"ok": false, "error": "..."}`.
 
@@ -22,6 +23,22 @@ same `"pong"`, and gamen-hs answers `version` with
 `{"error":"Error in $: Unknown action: version","ok":false}` (checked
 against gamen-hs's binary, 2026-09-30). The other five actions
 are unchanged. Plan: `plans/downstream-migration-2026-09-29.md`, Phase 0a.
+
+**`atl_model_check` (Lean-only, protocol 2; issue #2).** Model-checks ATL
+formulas (tree format: `can_next`, `can_always`, `can_eventually`, `can_until`,
+`coalition`, plus propositional) on a concurrent game structure given as JSON.
+Model spec and validation: `Gamen/CgsJson.lean`. Optional fields: `states`
+(states to report; default all) and `semantics` (`perfect`, the default,
+`imperfect_subjective` or `imperfect_objective`; the latter two use the model's
+`indistinguishable` classes, singletons by default). Reply result:
+`{"semantics", "states", "results": [{"index", "formula", "satisfying", "holds",
+"true_in_model"} | {"index", "formula", "error"}]}`; an unsupported operator is a
+per-formula `error`. A bad model or `states` entry fails the whole request with
+`{"ok":false,"error":msg,"error_code":code}`; codes: `malformed_spec`,
+`unknown_state`, `unknown_agent`, `unknown_move`, `empty_moves`, `missing_moves`,
+`incomplete_joint_move`, `duplicate_transition`, `missing_transition`,
+`duplicate_state`, `duplicate_agent`, `invalid_cgs`, `overlapping_classes`,
+`invalid_indistinguishability`. Tests: `Tests/ValidateAtl.lean`.
 
 **Backends.** gamen-hs dispatches consistency checks to two backends:
 the KDt tableau with its doxastic-D and ranking-theory rules (for

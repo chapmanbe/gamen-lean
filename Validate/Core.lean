@@ -5,6 +5,7 @@ import Gamen.Fragment
 import Gamen.Doxastic
 import Gamen.RankingTheory
 import Gamen.DeonticStit.Prove
+import Validate.Atl
 
 /-!
 # Validate.Core
@@ -24,6 +25,8 @@ inductive Request where
   | validateFormula (raw : Json)
   | validateAgent (raw : Json) (agent : String)
   | checkPairwise (formulas : List Formula)
+  | atlModelCheck (model : Json) (formulas : List Formula) (states : Option (List String))
+      (sem : AtlSemantics)
 
 def parseRequest (j : Json) : Except String Request := do
   let .obj _ := j | throw "expected Object"
@@ -34,6 +37,14 @@ def parseRequest (j : Json) : Except String Request := do
   | "validate_formula" => return .validateFormula (← field j "formula")
   | "validate_agent" => return .validateAgent (← field j "formula") (← strField j "agent")
   | "check_pairwise" => return .checkPairwise (← formulas)
+  | "atl_model_check" =>
+    let states ← match ← optField j "states" with
+      | none => pure none
+      | some v => pure (some (← (← v.getArr?).toList.mapM (·.getStr?)))
+    let sem ← match ← optStr j "semantics" with
+      | none => pure AtlSemantics.perfect
+      | some s => AtlSemantics.parse s
+    return .atlModelCheck (← field j "model") (← formulas) states sem
   | other => throw s!"Unknown action: {other}"
 where
   formulas : Except String (List Formula) := do
@@ -172,6 +183,7 @@ def handleRequest (commit : String) : Request → Json
           "Formula contains patient-controlled atoms but is attributed to clinician. \
            Consider 'joint' or 'patient'." else Json.null)])
     | .error msg => okResult (Json.mkObj [("valid", false), ("parse_error", msg)])
+  | .atlModelCheck model fs states sem => atlModelCheck model fs states sem
   | .checkPairwise fs =>
     let indexed := (List.range fs.length).zip fs
     let pairs := indexed.flatMap fun (i, fi) =>

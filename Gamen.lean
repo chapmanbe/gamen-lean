@@ -29,6 +29,7 @@ import Gamen.Atl.Strategy
 import Gamen.Atl
 import Gamen.Atel
 import Gamen.Atl.ImperfectInfo
+import Gamen.CgsJson
 import Gamen.Dcleg
 import Gamen.Service.Protocol
 import Gamen.Service.Formula

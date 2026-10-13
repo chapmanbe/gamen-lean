@@ -3,6 +3,7 @@ import Gamen.CgsJson
 import Gamen.Atl
 import Gamen.Atl.ImperfectInfo
 import Gamen.Atl.Dynamic
+import Gamen.Atl.UpdateSearch
 
 /-!
 # Validate.Atl
@@ -146,3 +147,81 @@ def atlModelCheck (model : Json) (fs : AtlFormulas) (states : Option (List Strin
       | none =>
         atlReply (sem.name ++ "_dynamic") check <| formulas.zipIdx.map fun (f, i) =>
           atlItem all check i (toString f) (dsat m sem.mode f)
+
+-- ── atl_update_search (bounded update existence) ─────────────────────────
+
+mutual
+/-- The inverse of `decodeDFormula`. -/
+def encodeDFormula : DFormula → Json
+  | .bot => Json.mkObj [("type", "bot")]
+  | .atom n => Json.mkObj [("type", "atom"), ("name", toJson n)]
+  | .not f => Json.mkObj [("type", "not"), ("operand", encodeDFormula f)]
+  | .and l r => Json.mkObj [("type", "and"), ("left", encodeDFormula l), ("right", encodeDFormula r)]
+  | .or l r => Json.mkObj [("type", "or"), ("left", encodeDFormula l), ("right", encodeDFormula r)]
+  | .implies l r =>
+      Json.mkObj [("type", "implies"), ("left", encodeDFormula l), ("right", encodeDFormula r)]
+  | .iff l r => Json.mkObj [("type", "iff"), ("left", encodeDFormula l), ("right", encodeDFormula r)]
+  | .has a x => Json.mkObj [("type", "has"), ("agent", toJson a), ("action", toJson x)]
+  | .knows a f => Json.mkObj [("type", "knowledge"), ("agent", toJson a), ("operand", encodeDFormula f)]
+  | .canNext as f => Json.mkObj [("type", "can_next"), ("agents", toJson as), ("operand", encodeDFormula f)]
+  | .canAlways as f =>
+      Json.mkObj [("type", "can_always"), ("agents", toJson as), ("operand", encodeDFormula f)]
+  | .canEventually as f =>
+      Json.mkObj [("type", "can_eventually"), ("agents", toJson as), ("operand", encodeDFormula f)]
+  | .canUntil as l r =>
+      Json.mkObj [("type", "can_until"), ("agents", toJson as),
+        ("left", encodeDFormula l), ("right", encodeDFormula r)]
+  | .canRelease as l r =>
+      Json.mkObj [("type", "can_release"), ("agents", toJson as),
+        ("left", encodeDFormula l), ("right", encodeDFormula r)]
+  | .grant us f => Json.mkObj [("type", "grant"), ("updates", encodeUpdates us), ("operand", encodeDFormula f)]
+  | .revoke us f => Json.mkObj [("type", "revoke"), ("updates", encodeUpdates us), ("operand", encodeDFormula f)]
+
+def encodeUpdates : UpdateList → Json
+  | .nil => Json.arr #[]
+  | .cons c a as bs rest =>
+      Json.arr (#[Json.mkObj [("condition", encodeDFormula c), ("action", toJson a),
+        ("agents", toJson as), ("informed", toJson bs)]]
+        ++ (match encodeUpdates rest with | .arr xs => xs | _ => #[]))
+end
+
+/-- Decode `"pool"`: `[{"kind":"grant"|"revoke","condition":F,"action","agents","informed"?}]`. -/
+def decodePool (j : Json) : Except String (List Candidate) := do
+  (← j.getArr?).toList.mapM fun c => do
+    let grant ← match ← strField c "kind" with
+      | "grant" => pure true
+      | "revoke" => pure false
+      | other => throw s!"pool: unknown kind {other} (expected grant or revoke)"
+    let informed ← match ← optField c "informed" with
+      | none => pure []
+      | some v => (← v.getArr?).toList.mapM (·.getStr?)
+    return { grant, cond := ← decodeDFormula (← field c "condition"),
+             action := ← strField c "action", agents := ← strListField c "agents", informed }
+
+def encodeStep (st : Step) : Json :=
+  Json.mkObj [("kind", if st.grant then "grant" else "revoke"),
+    ("clauses", Json.arr (st.clauses.map fun c =>
+      Json.mkObj [("condition", encodeDFormula c.cond), ("action", toJson c.action),
+        ("agents", toJson c.agents), ("informed", toJson c.informed)]).toArray)]
+
+/-- Answer an `atl_update_search` request: is there a sequence of at most `bound`
+clauses (over `pool`, default `defaultPool`) after which `goal` holds at `state`? -/
+def atlUpdateSearch (model : Json) (state : String) (goal : DFormula) (bound : Nat)
+    (pool : Option (List Candidate)) (fuel : Nat) (sem : AtlSemantics) : Json :=
+  match CgsJson.decodeDyn model with
+  | .error e => atlErr e.code e.message
+  | .ok m =>
+    match boundedUpdate m sem.mode state goal bound (pool.getD (defaultPool m)) fuel with
+    | .error msg => atlErr "search_failed" msg
+    | .ok r =>
+      let common := [("explored", toJson r.explored), ("illegal", toJson r.illegal),
+        ("semantics", toJson (sem.name ++ "_dynamic")),
+        ("complete_for", toJson "the candidate pool within the clause bound")]
+      match r.outcome with
+      | .notFound => Json.mkObj [("ok", true), ("result", Json.mkObj (("found", toJson false) :: common))]
+      | .found steps k =>
+        let w := stepsFormula steps goal
+        Json.mkObj [("ok", true), ("result", Json.mkObj (
+          [("found", toJson true), ("size", toJson k),
+           ("updates", Json.arr (steps.map encodeStep).toArray),
+           ("formula", toJson (toString w)), ("witness", encodeDFormula w)] ++ common))]

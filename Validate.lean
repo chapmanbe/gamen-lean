@@ -13,6 +13,7 @@ Port of `gamen-hs/validate/Main.hs`: a JSON Lines service on stdin/stdout.
     {"action": "check_pairwise", "formulas": [...]}
     {"action": "atl_model_check", "model": {...}, "formulas": [...]}   (Lean-only; see below)
     {"action": "epistemic_check", "model": {...}, "updates": [...], "formulas": [...]}   (Lean-only)
+    {"action": "atl_update_search", "model": {...}, "state": "q0", "goal": {...}, "bound": 2}   (Lean-only)
 
 Responses are `{"ok": true, "result": ...}` or `{"ok": false, "error": "..."}`.
 
@@ -74,6 +75,22 @@ some update's event could not run (`holds` is false there), and an unsupported o
 per-formula `error`. Error codes: `malformed_spec`, `unknown_world`, `unknown_agent`,
 `duplicate_world`, `duplicate_agent`, `invalid_formula`, `invalid_action_model`,
 `unknown_event`, `ambiguous_event`, `update_failed`. Tests: `Tests/ValidateEpistemic.lean`.
+
+**`atl_update_search` (Lean-only, protocol 6; issue #3 item 1).** The bounded update existence
+problem of the ATL-D paper (Def 7): is there a sequence of updates of at most `bound`
+clauses after which the ATL-D/ATEL-D `goal` holds at `state`? `model` and `semantics` as
+for `atl_model_check` with `"dynamic": true`. The search is over a finite candidate `pool`,
+not over every possible condition formula: `pool` is optional (default: every `⊤`/atom/`¬atom`
+condition × action × single agent × grant/revoke) and is
+`[{"kind":"grant"|"revoke","condition":F,"action","agents","informed"?}]`; the size of a
+sequence is its number of clauses. `fuel` (default 100000) caps the clause sets tried. Reply:
+`{"found":false,"explored","illegal","semantics","complete_for"}` or `{"found":true,"size",
+"updates":[{"kind","clauses":[...]}],"formula","witness",…}`, where `witness` is the goal
+wrapped in the found updates, as a tree-format formula to pass to `atl_model_check`. A
+`found:false` means no sequence over this pool within the bound, not that none exists.
+Updates that would be errors (a grant enabling a joint move with no listed successor, an
+update that breaks `∼`) are not legal moves and are counted in `illegal`. Budget exhaustion is
+`error_code: search_failed`. Tests: `Tests/UpdateSearch.lean`.
 
 **Backends.** gamen-hs dispatches consistency checks to two backends:
 the KDt tableau with its doxastic-D and ranking-theory rules (for

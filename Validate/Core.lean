@@ -18,6 +18,7 @@ without the two executables' `main` declarations colliding. See
 -/
 open Lean (Json toJson)
 open Gamen Gamen.Protocol
+open Gamen.Atl.Dynamic (DFormula Candidate)
 
 inductive Request where
   | ping
@@ -26,6 +27,8 @@ inductive Request where
   | validateFormula (raw : Json)
   | validateAgent (raw : Json) (agent : String)
   | checkPairwise (formulas : List Formula)
+  | atlUpdateSearch (model : Json) (state : String) (goal : DFormula) (bound : Nat)
+      (pool : Option (List Candidate)) (fuel : Nat) (sem : AtlSemantics)
   | epistemicCheck (model : Json) (updates : List Json) (formulas : List Formula)
       (worlds : Option (List String))
   | atlModelCheck (model : Json) (formulas : AtlFormulas) (states : Option (List String))
@@ -40,6 +43,19 @@ def parseRequest (j : Json) : Except String Request := do
   | "validate_formula" => return .validateFormula (← field j "formula")
   | "validate_agent" => return .validateAgent (← field j "formula") (← strField j "agent")
   | "check_pairwise" => return .checkPairwise (← formulas)
+  | "atl_update_search" =>
+    let sem ← match ← optStr j "semantics" with
+      | none => pure AtlSemantics.perfect
+      | some s => AtlSemantics.parse s
+    let pool ← match ← optField j "pool" with
+      | none => pure none
+      | some v => pure (some (← decodePool v))
+    let bound ← (← field j "bound").getNat?
+    let fuel ← match ← optField j "fuel" with
+      | none => pure 100000
+      | some v => v.getNat?
+    return .atlUpdateSearch (← field j "model") (← strField j "state")
+      (← decodeDFormula (← field j "goal")) bound pool fuel sem
   | "epistemic_check" =>
     let worlds ← match ← optField j "worlds" with
       | none => pure none
@@ -200,6 +216,7 @@ def handleRequest (commit : String) : Request → Json
     | .error msg => okResult (Json.mkObj [("valid", false), ("parse_error", msg)])
   | .atlModelCheck model fs states sem => atlModelCheck model fs states sem
   | .epistemicCheck model us fs ws => epistemicCheck model us fs ws
+  | .atlUpdateSearch model st g b pool fuel sem => atlUpdateSearch model st g b pool fuel sem
   | .checkPairwise fs =>
     let indexed := (List.range fs.length).zip fs
     let pairs := indexed.flatMap fun (i, fi) =>

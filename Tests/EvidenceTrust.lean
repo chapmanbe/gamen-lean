@@ -106,6 +106,144 @@ def movieCases : List (String × Bool) := [
   ("T implies E after an announcement by that source, but not for a source the chatbot does not trust",
     valid? (movie 2) (.announce 3 p (.evidence 0 3 p)) == some false)]
 
-def cases : List (String × Bool) := constructorCases ++ movieCases
+/-! ## Pseudo-random ESMs -/
+def lcg (x : Nat) : Nat := (x * 1103515245 + 12345) % 2147483648
+def next : StateM Nat Nat := modifyGet fun x => let x' := lcg x; (x' / 65536, x')
+
+def quotas : List Rat := [1 / 2, 2 / 3, 1]
+
+/-- A random ESM with 3 worlds and 3 agents; every agent has two classes by a random labelling. -/
+def randomESM (seed : Nat) : ESM :=
+  let act : StateM Nat ESM := do
+    let n := 3
+    let ags := 3
+    let mut labels : Array (Array Nat) := #[]
+    for _ in List.range ags do
+      let mut ls : Array Nat := #[]
+      for _ in List.range n do ls := ls.push ((← next) % 2)
+      labels := labels.push ls
+    let classOf (i w : Nat) : Mask :=
+      (List.range n).foldl (fun acc v => if labels[i]![v]! == labels[i]![w]! then acc ||| (1 <<< v) else acc) 0
+    -- one random draw per (agent, class); the first world of each class decides
+    let mut dTab : Array (Array Mask) := #[]
+    let mut tTab : Array (Array (Nat × Rat)) := #[]
+    let mut sTab : Array (Array (Array Sets)) := #[]
+    let mut cTab : Array (Array (Array Sets)) := #[]
+    for i in List.range ags do
+      let mut dRow : Array Mask := #[]
+      let mut tRow : Array (Nat × Rat) := #[]
+      let mut dByClass : List (Mask × Mask) := []
+      let mut tByClass : List (Mask × (Nat × Rat)) := []
+      for w in List.range n do
+        let k := classOf i w
+        if (dByClass.find? (·.1 == k)).isNone then
+          let r ← next
+          let d := (r % (k + 1)) &&& k
+          dByClass := (k, if d == 0 then k else d) :: dByClass
+          let r2 ← next
+          tByClass := (k, (r2 % (ags + 1), quotas[(r2 / 7) % 3]!)) :: tByClass
+        dRow := dRow.push ((dByClass.find? (·.1 == k)).get!.2)
+        tRow := tRow.push ((tByClass.find? (·.1 == k)).get!.2)
+      dTab := dTab.push dRow
+      tTab := tTab.push tRow
+      let mut sRow : Array (Array Sets) := #[]
+      let mut cRow : Array (Array Sets) := #[]
+      for _ in List.range ags do
+        let mut byClass : List (Mask × (Sets × Sets)) := []
+        let mut sCol : Array Sets := #[]
+        let mut cCol : Array Sets := #[]
+        for w in List.range n do
+          let k := classOf i w
+          if (byClass.find? (·.1 == k)).isNone then
+            let mut cs : Sets := []
+            let mut ss : Sets := []
+            for X in List.range (1 <<< n) do
+              if X != 0 && Mask.subset X k then
+                let r ← next
+                if r % 3 == 0 then
+                  cs := Sets.ins X cs
+                  if (r / 3) % 2 == 0 then ss := Sets.ins X ss
+            byClass := (k, (ss, cs)) :: byClass
+          let (ss, cs) := (byClass.find? (·.1 == k)).get!.2
+          sCol := sCol.push ss
+          cCol := cCol.push cs
+        sRow := sRow.push sCol
+        cRow := cRow.push cCol
+      sTab := sTab.push sRow
+      cTab := cTab.push cRow
+    let mut val : Array (List String) := #[]
+    for _ in List.range n do
+      let r ← next
+      val := val.push ((if r % 2 == 0 then ["p"] else []) ++ (if (r / 2) % 2 == 0 then ["q"] else []))
+    pure { n := n, agents := #["a0", "a1", "a2"], valuation := val,
+           E := (List.range ags).toArray.map fun i => (List.range n).toArray.map fun w => classOf i w,
+           D := dTab, S := sTab, C := cTab, T := tTab }
+  (act.run seed).1
+
+def seeds : List Nat := (List.range 120).map fun i => 1000 + 7919 * i
+def props : List F := [p, neg p, q, conj p q]
+def ids : List Nat := [0, 1, 2]
+
+def forAllModels (check : ESM → Bool) : Bool := seeds.all fun s => check (randomESM s)
+def validAll (m : ESM) (f : F) : Bool := (valid? m f) == some true
+
+def randomCases : List (String × Bool) := [
+  ("the generator builds ESMs (C1-C10 hold on all 120 seeds)",
+    forAllModels fun m => ok m.validate),
+  ("the random models are not degenerate: some have evidence, some have beliefs narrower than knowledge",
+    (seeds.filter fun s => let m := randomESM s; m.agentIds.any fun i => m.agentIds.any fun j =>
+        m.worlds.any fun w => !(m.s i j w).isEmpty).length > 60
+      && (seeds.filter fun s => let m := randomESM s; m.agentIds.any fun i => m.worlds.any fun w =>
+        m.d i w != m.e i w).length > 60),
+  ("(1) T_{i,j}φ → K̂_iφ  (2) E_{i,j}φ → K̂_iφ  (3) R_iφ → K̂_iφ  (4) ¬(R_iφ ∧ R_i¬φ), on 120 random ESMs",
+    forAllModels fun m => ids.all fun i => props.all fun f =>
+      validAll m (.not (conj (.reason i f) (.reason i (neg f))))
+        && validAll m (.implies (.reason i f) (.hatK i f))
+        && ids.all fun j => validAll m (.implies (.trust i j f) (.hatK i f))
+          && validAll m (.implies (.evidence i j f) (.hatK i f))),
+  ("(5) T_{i,j}φ → [!_jφ]E_{i,j}φ  (6) [−_{i,j}φ](¬E_{i,j}φ ∧ ¬T_{i,j}φ)  (7) K̂_iφ → [+_{i,j}φ]T_{i,j}φ",
+    forAllModels fun m => ids.all fun i => ids.all fun j => props.all fun f =>
+      validAll m (.implies (.trust i j f) (.announce j f (.evidence i j f)))
+        && validAll m (.loseTrust i j f (conj (neg (.evidence i j f)) (neg (.trust i j f))))
+        && validAll m (.implies (.hatK i f) (.relyOn i j f (.trust i j f)))),
+  ("(8) R_iφ → [?_iφ]B_iφ  (9) R_i¬φ → [?_iφ]B_i¬φ",
+    forAllModels fun m => ids.all fun i => props.all fun f =>
+      validAll m (.implies (.reason i f) (.assess i f (.believes i f)))
+        && validAll m (.implies (.reason i (neg f)) (.assess i f (.believes i (neg f))))),
+  ("(10) sufficient reason plus K_i(φ → ψ) gives B_iψ after ?_iφ",
+    forAllModels fun m => ids.all fun i => props.all fun f => props.all fun g =>
+      validAll m (.implies
+        (.or (conj (.reason i f) (.knows i (.implies f g))) (conj (.reason i (neg f)) (.knows i (.implies (neg f) g))))
+        (.assess i f (.believes i g)))),
+  ("(11) conservative expansion: an existing belief ψ survives ?_iφ when i expands",
+    forAllModels fun m => ids.all fun i => props.all fun f => props.all fun g =>
+      validAll m (.implies
+        (.or (conj (conj (.reason i f) (neg (.believes i (neg f)))) (.believes i g))
+             (conj (conj (.reason i (neg f)) (neg (.believes i f))) (.believes i g)))
+        (.assess i f (.believes i g)))),
+  ("Proposition 1: every update of a random ESM is again an ESM (C1-C10)",
+    forAllModels fun m => ids.all fun i => props.all fun f =>
+      match sat m f with
+      | .error _ => false
+      | .ok fm =>
+        ok (announceModel m i fm).validate && ok (assessModel m i fm).validate
+          && ids.all fun j => ok (loseTrustModel m i j fm).validate && ok (relyOnModel m i j fm).validate),
+  ("R_i φ read directly equals the paper's literal disjunction over Evd × Evd × Evd × Qt, on 40 random ESMs",
+    (seeds.take 40).all fun s => let m := randomESM s; ids.all fun i => props.all fun f =>
+      (sat m (.reason i f)).toOption == (sat m (reasonLiteral m quotas i f)).toOption
+        && (sat m (.reason i f)).isOk),
+  ("(8) is not valid for a Moore-like φ = p ∧ ¬B_i p: the paper's stated counterexample",
+    (let moore : F := conj p (neg (.believes 0 p))
+     let m : ESM := { base with
+       valuation := #[["p"], []],
+       E := #[#[3, 3], #[3, 3]], D := #[#[3, 3], #[3, 3]],
+       S := #[#[#[[], []], #[[1], [1]]], #[#[[], []], #[[], []]]],
+       C := #[#[#[[], []], #[[1], [1]]], #[#[[], []], #[[], []]]],
+       T := #[#[(1, 1), (1, 1)], #[(0, 1), (0, 1)]] }
+     ok m.validate
+       && valid? m (.implies (.reason 0 moore) (.assess 0 moore (.believes 0 moore))) == some false
+       && valid? m (.implies (.reason 0 p) (.assess 0 p (.believes 0 p))) == some true))]
+
+def cases : List (String × Bool) := constructorCases ++ movieCases ++ randomCases
 
 end EvidenceTrustTests

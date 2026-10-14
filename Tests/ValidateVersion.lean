@@ -16,16 +16,16 @@ namespace ValidateVersionTests
 open Lean (Json)
 
 def cases : List (String × Bool) := [
-  ("version: reply names gamen-lean, the commit, and protocol 7 (exact bytes)",
+  ("version: reply names gamen-lean, the commit, and protocol 8 (exact bytes)",
     (processLine "{\"action\":\"version\"}" "abc123").compress
-      == "{\"ok\":true,\"result\":{\"commit\":\"abc123\",\"implementation\":\"gamen-lean\",\"protocol\":7}}"),
+      == "{\"ok\":true,\"result\":{\"commit\":\"abc123\",\"implementation\":\"gamen-lean\",\"protocol\":8}}"),
   ("version: extra fields are ignored, as for ping",
     (processLine "{\"action\":\"version\",\"extra\":1}" "abc123").compress
       == (processLine "{\"action\":\"version\"}" "abc123").compress),
   ("version: the commit defaults to unknown",
     ((processLine "{\"action\":\"version\"}").compress.splitOn "\"commit\":\"unknown\"").length == 2),
-  ("version: the protocol number is Gamen.Protocol.protocolVersion = 7",
-    Gamen.Protocol.protocolVersion == 7),
+  ("version: the protocol number is Gamen.Protocol.protocolVersion = 8",
+    Gamen.Protocol.protocolVersion == 8),
   ("ping is unchanged by the version action (gamen-hs's exact reply)",
     (processLine "{\"action\":\"ping\"}" "abc123").compress == "{\"ok\":true,\"result\":\"pong\"}"),
   ("an unknown action is still an error",

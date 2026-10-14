@@ -38,6 +38,7 @@ import Tests.AtlDynamic
 import Tests.ActionModel
 import Tests.ValidateEpistemic
 import Tests.EvidenceTrust
+import Tests.ValidateEvidenceTrust
 import Tests.ValidateAngelsDemons
 import Tests.UpdateSearch
 import Tests.SocialLaws
@@ -6133,7 +6134,7 @@ def main : IO UInt32 := do
   let specCases ← ManyValuedTests.specTableCases
   let dclegServiceCases ← DclegServiceTests.cases
   for (name, ok) in ManyValuedTests.cases ++ specCases ++ CompletionTests.cases
-      ++ ManyValuedNotebookTests.cases ++ ValidateVersionTests.cases ++ ValidateAtlTests.cases ++ AtlDynamicTests.cases ++ ActionModelTests.cases ++ ValidateEpistemicTests.cases ++ ValidateAngelsDemonsTests.cases ++ UpdateSearchTests.cases ++ SocialLawTests.cases ++ AngelsDemonsTests.cases ++ AngelsDemonsTests.randomCases ++ EvidenceTrustTests.cases
+      ++ ManyValuedNotebookTests.cases ++ ValidateVersionTests.cases ++ ValidateAtlTests.cases ++ AtlDynamicTests.cases ++ ActionModelTests.cases ++ ValidateEpistemicTests.cases ++ ValidateAngelsDemonsTests.cases ++ UpdateSearchTests.cases ++ SocialLawTests.cases ++ AngelsDemonsTests.cases ++ AngelsDemonsTests.randomCases ++ EvidenceTrustTests.cases ++ ValidateEvidenceTrustTests.cases
       ++ ProtocolFlatTests.cases ++ dclegServiceCases do
     IO.println s!"  {if ok then "✓" else "✗"} {name}"
     unless ok do failures := failures + 1
@@ -6160,7 +6161,7 @@ def main : IO UInt32 := do
     + dclegCases.length + dclegPaperCorrespondenceCases.length + dclegRegressionCases.length
     + visualizeCases.length
     + ManyValuedTests.cases.length + specCases.length + CompletionTests.cases.length
-    + ManyValuedNotebookTests.cases.length + ValidateVersionTests.cases.length + ValidateAtlTests.cases.length + AtlDynamicTests.cases.length + ActionModelTests.cases.length + ValidateEpistemicTests.cases.length + ValidateAngelsDemonsTests.cases.length + UpdateSearchTests.cases.length + SocialLawTests.cases.length + AngelsDemonsTests.cases.length + AngelsDemonsTests.randomCases.length + EvidenceTrustTests.cases.length
+    + ManyValuedNotebookTests.cases.length + ValidateVersionTests.cases.length + ValidateAtlTests.cases.length + AtlDynamicTests.cases.length + ActionModelTests.cases.length + ValidateEpistemicTests.cases.length + ValidateAngelsDemonsTests.cases.length + UpdateSearchTests.cases.length + SocialLawTests.cases.length + AngelsDemonsTests.cases.length + AngelsDemonsTests.randomCases.length + EvidenceTrustTests.cases.length + ValidateEvidenceTrustTests.cases.length
     + ProtocolFlatTests.cases.length + dclegServiceCases.length
     + properties.length
   IO.println s!"{total - failures}/{total} passed"

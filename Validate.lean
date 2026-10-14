@@ -15,6 +15,7 @@ Port of `gamen-hs/validate/Main.hs`: a JSON Lines service on stdin/stdout.
     {"action": "epistemic_check", "model": {...}, "updates": [...], "formulas": [...]}   (Lean-only)
     {"action": "atl_update_search", "model": {...}, "state": "q0", "goal": {...}, "bound": 2}   (Lean-only)
     {"action": "angels_demons_check", "model": {...}, "formulas": [...]}   (Lean-only)
+    {"action": "evidence_trust_check", "model": {...}, "formulas": [...]}   (Lean-only)
 
 Responses are `{"ok": true, "result": ...}` or `{"ok": false, "error": "..."}`.
 
@@ -116,6 +117,31 @@ default 20000, from 1 to 1000000 or `bad_max_models`; exceeding it is a per-form
 Request errors carry `error_code`: `malformed_spec`, `unknown_state`, `duplicate_state`,
 `invalid_model`, `bad_max_models`; per-formula `check_failed` is an arena cap or an explosion in a move set.
 Tests: `Tests/ValidateAngelsDemons.lean`.
+
+**`evidence_trust_check` (Lean-only, protocol 8; issue #3 item 4).** Model-checks DL-BET formulas
+(`Gamen.EvidenceTrust`; Liu & Lorini, PRIMA 2017) on an evidence source model: agents who know,
+believe, hold evidence from sources and trust those sources, and who update on announcements,
+losing or gaining trust, and assessing whether they have sufficient reason to believe a claim.
+`model`: `worlds`, `agents` (at most 20 worlds and 8 agents, else `bad_size`), `valuation`
+(world → atoms), `knowledge` (agent → list of classes, each a list of worlds; a world in no class
+is alone), `belief` (agent → `[{"class": w, "worlds": [...]}]`, **required** for every class of
+every agent, no default), `evidence` and `trust` (agent → source → `[{"class": w, "sets":
+[[worlds], ...]}]`; a class not listed has none), `types` (agent → `[x, "y"]`: cautiousness `x`
+and quota `y`, an exact rational `"n"` or `"n/d"` in [1/2, 1]; one type per agent, a restriction
+of this wire format only). A class is named by any world in it. `formulas` are objects with a
+`type`: `atom` (`name`), `bot`, `top`, `not` (`operand`), `and`/`or`/`implies` (`left`, `right`),
+`type` (`agent`, `x`, `y`), `knowledge`/`belief`/`reason` (`agent`, `operand`; `reason` is `R_i`,
+"sufficient reason to believe"), `evidence`/`trust` (`agent`, `source`, `operand`), and the
+updates `announce`/`assess` (`agent`, `operand`, `then`) and `lose_trust`/`rely_on` (`agent`,
+`source`, `operand`, `then`), where `then` is the formula evaluated after the update. Unknown keys
+in the model, a formula or an entry are `malformed_spec`. Optional `worlds` restricts the report.
+Reply: `{"worlds","results":[{"index","satisfying","holds","true_in_model"} |
+{"index","error","error_code"}]}`. Request errors carry `error_code`: `malformed_spec`,
+`unknown_world`, `unknown_agent`, `duplicate_world`, `duplicate_agent`, `overlapping_classes`,
+`bad_rational`, `bad_size`, `bad_type`, and `violates_C2`/`C3`/`C7`/`C8`/`C9` for the conditions
+of Def 1 that the class format does not guarantee; per-formula `unknown_agent` and `check_failed`.
+An announcement has no truth precondition (Def 3): an agent may announce a falsehood. Tests:
+`Tests/EvidenceTrust.lean`, `Tests/ValidateEvidenceTrust.lean`.
 
 **Backends.** gamen-hs dispatches consistency checks to two backends:
 the KDt tableau with its doxastic-D and ranking-theory rules (for

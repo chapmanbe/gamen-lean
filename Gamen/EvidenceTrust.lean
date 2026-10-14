@@ -2,7 +2,32 @@
 # Gamen.EvidenceTrust
 
 DL-BET: the dynamic logic of belief, evidence and trust of Liu & Lorini, *Reasoning About
-Belief, Evidence and Trust in a Multi-agent Setting*, PRIMA 2017. Lean-only. Issue #3, item 4.
+Belief, Evidence and Trust in a Multi-agent Setting*, PRIMA 2017 (local copy
+`~/Projects/Logic/Bergen/Bergen/lit/pdfs/liu2017belief.pdf`). Lean-only. Issue #3, item 4.
+
+Agents receive evidence from sources they trust (`E_{i,j}φ`, `T_{i,j}φ`), judge whether they have
+*sufficient reason* to believe a claim (`R_iφ`: more source agents for `φ` than for `¬φ`, the ratio
+at least their quota, and at least their cautiousness many), and revise or expand their beliefs
+when they assess it (`?_iφ`). Discordant sources leave the agent suspending judgment: the paper's
+Amazon-versus-RT example (§2.4) is a test.
+
+Definitions are checked against the PDF pages, not the text extract, which loses overlines and
+slashes: Def 1 (ESM, p. 6; C1-C10, p. 7), Def 2 (truth, p. 8), Defs 3-6 (the four updates, p. 9), the
+abbreviations `E_i^{≥x}`, `E_i^x`, `R_i` (p. 6), validities (1)-(11) (p. 11).
+Two points where the extract was wrong: **C8 is `∅ ∉ C(i,j,v)`**, and **Def 5's guard is `K̂_iφ`**.
+
+* A set of worlds is a bitmask; `‖φ‖_{i,w} = ⟦φ⟧ ∩ E_i(w)` is how evidence and trust sets are
+  identified, so equality of masks is equality of evidence.
+* An update evaluates its formula `φ` in the model *before* the update (Defs 3-6), then the
+  continuation in the updated model; each update is a pure model transformer given `⟦φ⟧`.
+* `R_iφ` is evaluated directly (`reasonAt`), counting source agents `j ∈ Agt`, `i` included;
+  `reasonLiteral` builds the paper's disjunction over `Evd × Evd × Evd × Qt` for a cross-check test.
+* An announcement has no truth precondition, unlike public announcement: `i` may announce a falsehood.
+
+Not covered: the axiomatization and its completeness proofs (Theorems 1-2) were not read; group
+announcements and trust (Perrotin et al. 2019) and trust-based belief revision (Hunter) are other
+components. Tests: `Tests/EvidenceTrust.lean` (constructor, the §2.4 example, validities (1)-(11),
+Proposition 1 on random models).
 -/
 namespace Gamen
 namespace EvidenceTrust

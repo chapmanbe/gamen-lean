@@ -14,6 +14,7 @@ Port of `gamen-hs/validate/Main.hs`: a JSON Lines service on stdin/stdout.
     {"action": "atl_model_check", "model": {...}, "formulas": [...]}   (Lean-only; see below)
     {"action": "epistemic_check", "model": {...}, "updates": [...], "formulas": [...]}   (Lean-only)
     {"action": "atl_update_search", "model": {...}, "state": "q0", "goal": {...}, "bound": 2}   (Lean-only)
+    {"action": "angels_demons_check", "model": {...}, "formulas": [...]}   (Lean-only)
 
 Responses are `{"ok": true, "result": ...}` or `{"ok": false, "error": "..."}`.
 
@@ -98,6 +99,23 @@ update that breaks `∼`) are not legal moves and are counted in `illegal`. Budg
 (`unknown_state`, `unknown_action`, `unknown_agent`), and `bound` above 1000 is `bound_too_large`.
 The default pool has no informed-only clauses; pass a pool for those. An error evaluating the goal
 at any visited model aborts the search. Tests: `Tests/UpdateSearch.lean`.
+
+**`angels_demons_check` (Lean-only, protocol 7; issue #3 item 2).** Model-checks SDL/SCL/SUL
+formulas (`Gamen.AngelsDemons`; Catta, Galimullin & Mittelmann, AAMAS 2026) on a weighted graph.
+`model`: `{"states":[..],"edges":[[from,to],..],"costs":[[from,to,n],..],"default_cost":1,
+"valuation":{"s":[atoms]}}`; every ordered pair needs a positive cost (`costs` overrides
+`default_cost`, default 1; a pair named twice is an error) and the graph must be serial. `formulas` are objects with a `type`:
+`atom` (`name`), `top`, `bot`, `not` (`operand`), `and`/`or`/`implies` (`left`, `right`), and `demon`/`demon_box`/`angel`/`angel_box`
+(`bound`, `path`) or `update`/`update_box` (`angel_bound`, `demon_bound`, `path`), where `path`
+is `next` (`operand`), `until`/`release` (`left`, `right`) or `eventually`/`always` (`operand`).
+`update` is the cooperative `⟨[angel a, demon d]⟩`; the competitive coalitions of Def 10 are not
+implemented. The bound limits the change to the graph *per step*, not over the play. Optional
+`states` (states to report; default all) and `max_models` (cap on the arena of pointed models,
+default 20000, from 1 to 1000000 or `bad_max_models`; exceeding it is a per-formula error, never a partial answer). Unknown keys in `model`, a formula or a path are `malformed_spec`, as are a pair named twice in `costs` and a state listed twice in `states`. Reply:
+`{"states","results":[{"index","satisfying","holds","true_in_model"} | {"index","error","error_code"}]}`.
+Request errors carry `error_code`: `malformed_spec`, `unknown_state`, `duplicate_state`,
+`invalid_model`, `bad_max_models`; per-formula `check_failed` is an arena cap or an explosion in a move set.
+Tests: `Tests/ValidateAngelsDemons.lean`.
 
 **Backends.** gamen-hs dispatches consistency checks to two backends:
 the KDt tableau with its doxastic-D and ranking-theory rules (for

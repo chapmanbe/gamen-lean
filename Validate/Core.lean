@@ -7,6 +7,7 @@ import Gamen.RankingTheory
 import Gamen.DeonticStit.Prove
 import Validate.Atl
 import Validate.Epistemic
+import Validate.AngelsDemons
 
 /-!
 # Validate.Core
@@ -31,6 +32,8 @@ inductive Request where
       (pool : Option (List Candidate)) (fuel : Nat) (sem : AtlSemantics)
   | epistemicCheck (model : Json) (updates : List Json) (formulas : List Formula)
       (worlds : Option (List String))
+  | angelsDemonsCheck (model : Json) (formulas : List Json) (states : Option (List String))
+      (maxModels : Nat)
   | atlModelCheck (model : Json) (formulas : AtlFormulas) (states : Option (List String))
       (sem : AtlSemantics)
 
@@ -64,6 +67,15 @@ def parseRequest (j : Json) : Except String Request := do
       | none => pure []
       | some v => pure (← v.getArr?).toList
     return .epistemicCheck (← field j "model") updates (← formulas) worlds
+  | "angels_demons_check" =>
+    let states ← match ← optField j "states" with
+      | none => pure none
+      | some v => pure (some (← (← v.getArr?).toList.mapM (·.getStr?)))
+    let maxModels ← match ← optField j "max_models" with
+      | none => pure 20000
+      | some v => v.getNat?
+    return .angelsDemonsCheck (← field j "model") (← (← field j "formulas").getArr?).toList
+      states maxModels
   | "atl_model_check" =>
     let states ← match ← optField j "states" with
       | none => pure none
@@ -216,6 +228,7 @@ def handleRequest (commit : String) : Request → Json
            Consider 'joint' or 'patient'." else Json.null)])
     | .error msg => okResult (Json.mkObj [("valid", false), ("parse_error", msg)])
   | .atlModelCheck model fs states sem => atlModelCheck model fs states sem
+  | .angelsDemonsCheck model fs ws mx => angelsDemonsCheck model fs ws mx
   | .epistemicCheck model us fs ws => epistemicCheck model us fs ws
   | .atlUpdateSearch model st g b pool fuel sem => atlUpdateSearch model st g b pool fuel sem
   | .checkPairwise fs =>

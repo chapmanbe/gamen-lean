@@ -145,5 +145,5 @@ and what is research.
 
 | Source | Status |
 |---|---|
-| Liu & Lorini, PRIMA 2017 (local PDF) | [VERIFIED] syntax and abbreviations (pp. 4-6), Defs 1-6 (pp. 6-9) read off the PDF page; §2.3 properties and §2.4 example read from the text extract (to be re-read from the PDF when tests are written); axiomatization and proofs **not read** |
+| Liu & Lorini, PRIMA 2017 (local PDF) | [VERIFIED] syntax and abbreviations (pp. 4-6), Defs 1-6 (pp. 6-9) read off the PDF page; §2.3 validities (1)-(11), the Moore-like counterexample and the §2.4 example and its two claims re-read from the PDF pages 11-13 (2026-10-14); the paper writes the example's claims with a `→|` connector and the tests check one concrete model satisfying `Hyp1 ∧ Hyp2 ∧ Hyp3`, not every such model; axiomatization and proofs **not read** |
 | Perrotin et al. 2019, Hunter 2022-2026 | [ASSERTED] local PDFs, not read; out of scope |

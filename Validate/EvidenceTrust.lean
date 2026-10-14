@@ -25,6 +25,8 @@ private def lift {α} (r : Except String α) : Except EtError α := r.mapError m
 
 def maxWorlds : Nat := 20
 def maxAgents : Nat := 8
+/-- Validation compares every evidence set with every trusted set, so the sets per entry are capped. -/
+def maxSetsPerEntry : Nat := 2000
 
 /-- Reject a key the request does not define (a misspelling would otherwise read as absent). -/
 def onlyKeys (j : Json) (allowed : List String) (what : String) : Except EtError Unit :=
@@ -95,19 +97,23 @@ def decodeModel (j : Json) : Except EtError (ESM × List String) := do
     | some _ => throw (malformed "valuation must be an object")
   -- knowledge classes: E i w
   let mut E : Array (Array Mask) := Array.replicate na (Array.ofFn (n := n) fun w => (1 <<< w.val))
-  match ← lift (optField j "knowledge") with
-  | none => pure ()
-  | some kj =>
-    for (i, cj) in ← agentEntries aa kj "knowledge" do
-      let mut row := Array.ofFn (n := n) fun w => (1 <<< w.val)
-      let mut seen : Mask := 0
-      for cls in (← lift cj.getArr?).toList do
-        let mask ← maskOfNames wa (← strList cls "a knowledge class")
-        if seen &&& mask != 0 then throw (err "overlapping_classes" s!"agent {aa[i]!}: classes overlap")
-        seen := seen ||| mask
-        for w in List.range n do
-          if mask.testBit w then row := row.set! w mask
-      E := E.set! i row
+  -- knowledge is required for every agent: an agent with no entry would silently know everything
+  let kj ← lift (field j "knowledge")
+  let mut kSeen : List Nat := []
+  for (i, cj) in ← agentEntries aa kj "knowledge" do
+    kSeen := i :: kSeen
+    let mut row := Array.ofFn (n := n) fun w => (1 <<< w.val)
+    let mut seen : Mask := 0
+    for cls in (← lift cj.getArr?).toList do
+      let mask ← maskOfNames wa (← strList cls "a knowledge class")
+      if seen &&& mask != 0 then throw (err "overlapping_classes" s!"agent {aa[i]!}: classes overlap")
+      seen := seen ||| mask
+      for w in List.range n do
+        if mask.testBit w then row := row.set! w mask
+    E := E.set! i row
+  for i in List.range na do
+    unless kSeen.contains i do
+      throw (malformed s!"knowledge: no entry for agent {aa[i]!} (give [] for an agent who knows the actual world)")
   let classMask (i : Nat) (w : Nat) : Mask := E[i]![w]!
   -- belief: required for every class of every agent
   let mut D : Array (Array Mask) := Array.replicate na (Array.replicate n 0)
@@ -139,12 +145,15 @@ def decodeModel (j : Json) : Except EtError (ESM × List String) := do
           for entry in (← lift entries.getArr?).toList do
             onlyKeys entry ["class", "sets"] s!"a {field} entry"
             let c ← worldIdx wa (← lift (strField entry "class"))
-            let sets ← (← lift (← lift (Gamen.Protocol.field entry "sets")).getArr?).toList.mapM fun sj => do
+            let setsJ ← lift (← lift (Gamen.Protocol.field entry "sets")).getArr?
+            if setsJ.size > maxSetsPerEntry then
+              throw (err "bad_size" s!"{field}: at most {maxSetsPerEntry} sets per entry")
+            let sets ← setsJ.toList.mapM fun sj => do
               maskOfNames wa (← strList sj s!"a {field} set")
             let km := classMask i c
             if done.contains km then throw (malformed s!"{field}: two entries for one class")
             done := km :: done
-            let norm := sets.foldl (fun acc m => Sets.ins m acc) []
+            let norm := Sets.ofList sets
             for w in List.range n do
               if km.testBit w then tab := tab.modify i (·.modify k (·.set! w norm))
       pure tab
@@ -202,7 +211,10 @@ partial def decodeFormula (ags : Array String) (j : Json) : Except EtError EForm
     let x ← match (← lift (field j "x")).getNat? with
       | .ok x => pure x
       | .error _ => throw (malformed "type: x must be a non-negative integer")
-    return .type (← ag) x (← parseRat (← lift (strField j "y")))
+    let y ← parseRat (← lift (strField j "y"))
+    if x > ags.size then throw (err "bad_type" s!"type: cautiousness {x} exceeds the number of agents")
+    if y < (1 : Rat) / 2 || y > 1 then throw (err "bad_type" s!"type: quota {y} is outside [1/2, 1]")
+    return .type (← ag) x y
   | "knowledge" => return .knows (← ag) (← sub "operand")
   | "belief" => return .believes (← ag) (← sub "operand")
   | "reason" => return .reason (← ag) (← sub "operand")

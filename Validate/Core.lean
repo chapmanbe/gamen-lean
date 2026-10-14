@@ -70,6 +70,8 @@ def parseRequest (j : Json) : Except String Request := do
       | some v => pure (← v.getArr?).toList
     return .epistemicCheck (← field j "model") updates (← formulas) worlds
   | "evidence_trust_check" =>
+    if let .error e := EtJson.onlyKeys j ["action", "model", "formulas", "worlds"] "request" then
+      throw e.message
     let worlds ← match ← optField j "worlds" with
       | none => pure none
       | some v => pure (some (← (← v.getArr?).toList.mapM (·.getStr?)))

@@ -56,6 +56,19 @@ def strKey (j : Option Json) (k : String) : Option String :=
 def code (r : Json) : Option String := strKey (some r) "error_code"
 def itemCode (r : Json) (i : Nat) : Option String := strKey (item r i) "error_code"
 
+/-- `k` distinct nonempty subsets of 20 worlds `w0..w19`, as JSON. -/
+def manySets (k : Nat) : String :=
+  "[" ++ ",".intercalate ((List.range k).map fun m =>
+    "[" ++ ",".intercalate (((List.range 20).filter fun b => (m + 1).testBit b).map fun b =>
+      "\"w" ++ toString b ++ "\"") ++ "]") ++ "]"
+
+def bigModel (k : Nat) : String :=
+  let ws := "[" ++ ",".intercalate ((List.range 20).map fun i => "\"w" ++ toString i ++ "\"") ++ "]"
+  "{\"worlds\":" ++ ws ++ ",\"agents\":[\"i\",\"j\"],\"knowledge\":{\"i\":[" ++ ws ++ "],\"j\":[" ++ ws
+    ++ "]},\"belief\":{\"i\":[{\"class\":\"w0\",\"worlds\":[\"w0\"]}],\"j\":[{\"class\":\"w0\",\"worlds\":[\"w0\"]}]},\
+    \"trust\":{\"i\":{\"j\":[{\"class\":\"w0\",\"sets\":" ++ manySets k ++ "}]}},\
+    \"types\":{\"i\":[0,\"1\"],\"j\":[0,\"1\"]}}"
+
 def p := atomJ "p"
 def q := atomJ "q"
 def all3 : List String := ["w0", "w1", "w2"]
@@ -69,7 +82,7 @@ def cases : List (String × Bool) := [
       (andJ (notJ (beliefJ "chatbot" q)) (notJ (beliefJ "chatbot" (notJ q))))))])) == some all3),
   ("control: Wikipedia alone does not make a cautiousness-2 chatbot believe q (no world)",
     sat (run (req movieJson [announceJ "wikipedia" p (assessJ "chatbot" p (beliefJ "chatbot" q))])) == some []),
-  ("`worlds` restricts the report, and `holds` and `true_in_model` are per world",
+  ("`worlds` restricts the report; `holds` is per reported world; `true_in_model` is one flag for the whole model, not the restricted report",
     (let r := run (req movieJson [p] ",\"worlds\":[\"w2\",\"w0\"]")
      sat r == some ["w0"]
        && ((item r 0).bind fun i => (i.getObjVal? "true_in_model").toOption) == some (Json.bool false))),
@@ -124,6 +137,19 @@ def cases : List (String × Bool) := [
   ("9 agents is bad_size",
     code (run (req ("{\"worlds\":[\"w\"],\"agents\":[" ++ ",".intercalate ((List.range 9).map fun i => "\"a" ++ toString i ++ "\"")
       ++ "],\"belief\":{},\"types\":{}}") [p])) == some "bad_size"),
+  ("a typo in the request envelope is an error, not an ignored field (`world` for `worlds`)",
+    (let r := run (req movieJson [p] ",\"world\":[\"w9\"]")
+     (r.getObjVal? "ok").toOption == some (Json.bool false)
+       && ((r.getObjVal? "error").toOption.bind (·.getStr?.toOption)).any (·.contains "unknown key"))),
+  ("knowledge is required for every agent: omitting it, or omitting one agent, is malformed_spec, not omniscience",
+    code (run (req (tiny.replace "\"knowledge\":{\"i\":[[\"a\",\"b\"]],\"j\":[[\"a\",\"b\"]]}," "") [p])) == some "malformed_spec"
+      && code (run (req (tiny.replace "\"knowledge\":{\"i\":[[\"a\",\"b\"]],\"j\":[[\"a\",\"b\"]]}"
+        "\"knowledge\":{\"i\":[[\"a\",\"b\"]]}") [p])) == some "malformed_spec"),
+  ("a `type` formula outside the language (cautiousness above the agent count, quota below 1/2) is bad_type, not false",
+    itemCode (run (req tiny ["{\"type\":\"type\",\"agent\":\"i\",\"x\":9,\"y\":\"1\"}"])) 0 == some "bad_type"
+      && itemCode (run (req tiny ["{\"type\":\"type\",\"agent\":\"i\",\"x\":0,\"y\":\"1/4\"}"])) 0 == some "bad_type"),
+  ("more than 2000 sets in one evidence or trust entry is bad_size (validation is quadratic in the sets)",
+    code (run (req (bigModel 2001) [p])) == some "bad_size"),
   ("the protocol version is 8 and the version request says so",
     (run "{\"action\":\"version\"}").compress.contains "\"protocol\":8")]
 

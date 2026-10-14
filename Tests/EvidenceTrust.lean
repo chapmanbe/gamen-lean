@@ -52,7 +52,11 @@ def constructorCases : List (String × Bool) := [
   ("bad_type: a quota below 1/2, and cautiousness above the number of agents",
     errStarts ({ base with T := #[#[(0, 1/4), (0, 1/4)], #[(0, 1), (0, 1)]] }.validate) "bad_type"
       && errStarts ({ base with T := #[#[(3, 1), (3, 1)], #[(0, 1), (0, 1)]] }.validate) "bad_type"),
-("an unknown agent index is an error, not false",
+  ("Sets.ofList sorts and removes duplicates, like repeated Sets.ins",
+    Sets.ofList [5, 1, 5, 3, 1] == [1, 3, 5]
+      && Sets.ofList [] == ([] : Sets)
+      && Sets.ofList [5, 1, 5, 3, 1] == [5, 1, 5, 3, 1].foldl (fun acc m => Sets.ins m acc) []),
+  ("an unknown agent index is an error, not false",
     errStarts (sat base (.knows 5 .bot)) "unknown agent")]
 
 
@@ -104,7 +108,19 @@ def movieCases : List (String × Bool) := [
   ("an announcement is not truthful by definition: Amazon announcing ¬q where q holds still gives evidence",
     valid? (movie 2) (.announce 3 (neg q) (.evidence 0 3 (neg q))) == some true),
   ("T implies E after an announcement by that source, but not for a source the chatbot does not trust",
-    valid? (movie 2) (.announce 3 p (.evidence 0 3 p)) == some false)]
+    sat? (movie 2) (.announce 3 p (.evidence 0 3 p)) == some 0),
+  ("Def 6 revision: i believes ¬p, has sufficient reason for p (one source, type (1,1)); ?_i p replaces the belief set by ‖p‖ (B p after, ¬B p before)",
+    (let m : ESM := { base with
+       valuation := #[["p"], []],
+       D := #[#[2, 2], #[3, 3]],
+       S := #[#[#[[], []], #[[1], [1]]], #[#[[], []], #[[], []]]],
+       C := #[#[#[[], []], #[[1], [1]]], #[#[[], []], #[[], []]]],
+       T := #[#[(1, 1), (1, 1)], #[(0, 1), (0, 1)]] }
+     ok m.validate
+       && sat? m (.believes 0 (neg p)) == some 3          -- before: believes ¬p everywhere
+       && sat? m (.reason 0 p) == some 3                  -- sufficient reason everywhere
+       && sat? m (.assess 0 p (.believes 0 p)) == some 3  -- after: believes p (revision, not expansion)
+       && sat? m (.assess 0 p (.believes 0 (neg p))) == some 0))]
 
 /-! ## Pseudo-random ESMs -/
 def lcg (x : Nat) : Nat := (x * 1103515245 + 12345) % 2147483648
@@ -112,7 +128,7 @@ def next : StateM Nat Nat := modifyGet fun x => let x' := lcg x; (x' / 65536, x'
 
 def quotas : List Rat := [1 / 2, 2 / 3, 1]
 
-/-- A random ESM with 3 worlds and 3 agents; every agent has two classes by a random labelling. -/
+/-- A random ESM with 3 worlds and 3 agents; every agent gets a random two-label partition (one class about a quarter of the time). -/
 def randomESM (seed : Nat) : ESM :=
   let act : StateM Nat ESM := do
     let n := 3
@@ -195,6 +211,14 @@ def randomCases : List (String × Bool) := [
         m.worlds.any fun w => !(m.s i j w).isEmpty).length > 60
       && (seeds.filter fun s => let m := randomESM s; m.agentIds.any fun i => m.worlds.any fun w =>
         m.d i w != m.e i w).length > 60),
+  ("the corpus exercises R_i: in at least 20 of 120 seeds some agent has sufficient reason for some proposition at some world (so (3), (4), (8)-(11) and Proposition 1 are not vacuous)",
+    (seeds.filter fun s => let m := randomESM s; ids.any fun i => props.any fun f =>
+      match sat m (.reason i f) with | .ok mask => mask != 0 | .error _ => false).length ≥ 20),
+  ("the corpus exercises Def 6: in at least 20 of 120 seeds some ?_i φ changes a belief set",
+    (seeds.filter fun s => let m := randomESM s; ids.any fun i => props.any fun f =>
+      match sat m f with
+      | .ok fm => (assessModel m i fm).D != m.D
+      | .error _ => false).length ≥ 20),
   ("(1) T_{i,j}φ → K̂_iφ  (2) E_{i,j}φ → K̂_iφ  (3) R_iφ → K̂_iφ  (4) ¬(R_iφ ∧ R_i¬φ), on 120 random ESMs",
     forAllModels fun m => ids.all fun i => props.all fun f =>
       validAll m (.not (conj (.reason i f) (.reason i (neg f))))

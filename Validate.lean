@@ -123,18 +123,17 @@ Tests: `Tests/ValidateAngelsDemons.lean`.
 believe, hold evidence from sources and trust those sources, and who update on announcements,
 losing or gaining trust, and assessing whether they have sufficient reason to believe a claim.
 `model`: `worlds`, `agents` (at most 20 worlds and 8 agents, else `bad_size`), `valuation`
-(world → atoms), `knowledge` (agent → list of classes, each a list of worlds; a world in no class
-is alone), `belief` (agent → `[{"class": w, "worlds": [...]}]`, **required** for every class of
+(world → atoms), `knowledge` (agent → list of classes, each a list of worlds, **required** for every agent: `[]` means the agent knows the actual world; a world in no class is alone), `belief` (agent → `[{"class": w, "worlds": [...]}]`, **required** for every class of
 every agent, no default), `evidence` and `trust` (agent → source → `[{"class": w, "sets":
 [[worlds], ...]}]`; a class not listed has none), `types` (agent → `[x, "y"]`: cautiousness `x`
 and quota `y`, an exact rational `"n"` or `"n/d"` in [1/2, 1]; one type per agent, a restriction
 of this wire format only). A class is named by any world in it. `formulas` are objects with a
 `type`: `atom` (`name`), `bot`, `top`, `not` (`operand`), `and`/`or`/`implies` (`left`, `right`),
-`type` (`agent`, `x`, `y`), `knowledge`/`belief`/`reason` (`agent`, `operand`; `reason` is `R_i`,
+`type` (`agent`, `x`, `y`; `x` above the number of agents or `y` outside [1/2, 1] is `bad_type`), `knowledge`/`belief`/`reason` (`agent`, `operand`; `reason` is `R_i`,
 "sufficient reason to believe"), `evidence`/`trust` (`agent`, `source`, `operand`), and the
 updates `announce`/`assess` (`agent`, `operand`, `then`) and `lose_trust`/`rely_on` (`agent`,
 `source`, `operand`, `then`), where `then` is the formula evaluated after the update. Unknown keys
-in the model, a formula or an entry are `malformed_spec`. Optional `worlds` restricts the report.
+in the request, the model, a formula or an entry are errors (`malformed_spec` in the model and formulas); at most 2000 sets per evidence or trust entry (`bad_size`). Optional `worlds` restricts the report.
 Reply: `{"worlds","results":[{"index","satisfying","holds","true_in_model"} |
 {"index","error","error_code"}]}`. Request errors carry `error_code`: `malformed_spec`,
 `unknown_world`, `unknown_agent`, `duplicate_world`, `duplicate_agent`, `overlapping_classes`,

@@ -22,6 +22,8 @@ Two points where the extract was wrong: **C8 is `∅ ∉ C(i,j,v)`**, and **Def 
   continuation in the updated model; each update is a pure model transformer given `⟦φ⟧`.
 * `R_iφ` is evaluated directly (`reasonAt`), counting source agents `j ∈ Agt`, `i` included;
   `reasonLiteral` builds the paper's disjunction over `Evd × Evd × Evd × Qt` for a cross-check test.
+* C7 is printed with free `w, v` (`X ∈ C(i,j,v) → X ⊆ E_i(w)`); read literally with two classes it
+  would force `C = ∅` (given C8), so `validate` checks it within the world: `X ∈ C(i,j,w) → X ⊆ E_i(w)`.
 * An announcement has no truth precondition, unlike public announcement: `i` may announce a falsehood.
 
 Not covered: the axiomatization and its completeness proofs (Theorems 1-2) were not read; group
@@ -46,6 +48,14 @@ def Sets.ins (m : Mask) (l : Sets) : Sets :=
   if l.contains m then l else (m :: l).mergeSort (· ≤ ·)
 
 def Sets.del (m : Mask) (l : Sets) : Sets := l.filter (· != m)
+
+/-- Sort and drop duplicates in one pass: the same set as folding `Sets.ins` over the list, but
+`O(k log k)` rather than `O(k² log k)` (a request may list thousands of sets). -/
+def Sets.ofList (l : List Mask) : Sets :=
+  let sorted := l.mergeSort (· ≤ ·)
+  (sorted.foldl (fun (acc : List Mask) m => match acc with
+    | a :: _ => if a == m then acc else m :: acc
+    | [] => [m]) []).reverse
 
 /-- Evidence source model (Def 1). Agents and worlds are indexed from 0; `E i w` is agent
 `i`'s information set at `w`, `D i w` its belief set, `S i j w` the evidence `j` gave `i`,

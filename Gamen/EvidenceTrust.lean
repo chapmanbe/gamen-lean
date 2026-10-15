@@ -27,7 +27,7 @@ Two points where the extract was wrong: **C8 is `∅ ∉ C(i,j,v)`**, and **Def 
 * An announcement has no truth precondition, unlike public announcement: `i` may announce a falsehood.
 
 Not covered: the axiomatization and its completeness proofs (Theorems 1-2) were not read; group
-announcements and trust (Perrotin et al. 2019) and trust-based belief revision (Hunter) are other
+announcements and trust (Perrotin, Galimullin, Canu & Alechina, "Public Group Announcements and Trust in Doxastic Logic"; venue and year unverified) and trust-based belief revision (Hunter) are other
 components. Tests: `Tests/EvidenceTrust.lean` (constructor, the §2.4 example, validities (1)-(11),
 Proposition 1 on random models).
 -/

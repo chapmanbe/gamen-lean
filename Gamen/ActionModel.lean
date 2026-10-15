@@ -14,7 +14,8 @@ epistemic model Def 6, action model Def 7 (events, per-agent relations,
 preconditions `pre`, postconditions `post`), product `M × A` Def 8, truth of
 `⟨A, a⟩φ` Def 9. Checked against the PDF in
 `~/Projects/Logic/logic-notes/reference/dynamic-strategic-logics/pdfs/`. The
-original is Baltag, Moss & Solecki 1998, not local, so not verified against it.
+original is Baltag, Moss & Solecki, TARK 1998, pp. 43-56 (reference taken from
+Velázquez-Quesada, arXiv:2210.04656, not the original), not local, so not verified against it.
 The belief-base half of that paper (ruby action models, Defs 10-11) is not ported.
 
 ## Design

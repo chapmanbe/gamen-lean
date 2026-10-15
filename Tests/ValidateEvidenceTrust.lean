@@ -150,7 +150,9 @@ def cases : List (String × Bool) := [
       && itemCode (run (req tiny ["{\"type\":\"type\",\"agent\":\"i\",\"x\":0,\"y\":\"1/4\"}"])) 0 == some "bad_type"),
   ("more than 2000 sets in one evidence or trust entry is bad_size (validation is quadratic in the sets)",
     code (run (req (bigModel 2001) [p])) == some "bad_size"),
-  ("the protocol version is 8 and the version request says so",
-    (run "{\"action\":\"version\"}").compress.contains "\"protocol\":8")]
+  ("the protocol version is at least 8 (this request's) and the version request reports it",
+    Gamen.Protocol.protocolVersion ≥ 8
+      && (run "{\"action\":\"version\"}").compress.contains
+        s!"\"protocol\":{Gamen.Protocol.protocolVersion}")]
 
 end ValidateEvidenceTrustTests

@@ -34,6 +34,14 @@ def cost1 (i j : Nat) : Nat :=
   | 0, 3 => 2 | 2, 3 => 1 | 3, 2 => 1
   | _, _ => 9
 
+/-- Two states, a→a and b→b, cost 1, `b` true at b: the legality discriminator. -/
+def tiny : Except String WModel :=
+  mkWModel ["a", "b"] [(0, 0), (1, 1)] (fun _ _ => 1) (fun i => if i == 1 then ["b"] else [])
+
+/-- a→b, b→b, cost 1, `b` true at b. -/
+def chain : Except String WModel :=
+  mkWModel ["a", "b"] [(0, 1), (1, 1)] (fun _ _ => 1) (fun i => if i == 1 then ["b"] else [])
+
 def lab1 (i : Nat) : List String :=
   match i with
   | 1 => ["error"] | 2 => ["server"] | 3 => ["server", "admin"] | _ => []
@@ -127,6 +135,34 @@ def cases : List (String × Bool) := [
   ("budget 0 changes nothing, for demon and angel alike",
     sats m1 (.demon 0 (.eventually admin)) == sats m1 (.angel 0 (.eventually admin))
       && sats m1 (.demon 0 (.always noAdmin)) == sats m1 (.angel 0 (.always noAdmin))),
+  ("Example 3, competitive: the demon alone cannot clear the admin module, ⟨[demon 2]⟩^2 F¬admin fails at s3 of 𝔐2 (the angel can play the empty move)",
+    (sats m2 (.updateDemon 2 2 (.eventually noAdmin))).map (·.contains "s3") == some false),
+  ("Example 3, competitive: ⟨[demon 2]⟩^2 G¬admin fails at s1 of 𝔐2 (the angel, aided by a simultaneous bridge, reaches s3)",
+    (sats m2 (.updateDemon 2 2 (.always noAdmin))).map (·.contains "s1") == some false),
+  ("Example 3, competitive: ⟨[demon 2]⟩^1 G¬admin holds at s1 of 𝔐2 (the angel with one resource cannot restore a path to s3)",
+    (sats m2 (.updateDemon 2 1 (.always noAdmin))).map (·.contains "s1") == some true),
+  ("SUL reading A (Brian, 2026-10-15), hand-derived on a 2-state model (a→a, b→b, cost 1, `b` at b): at a, X b fails for all four coalitions, since the last edge a→a is not removable even when the angel adds a→b at the same time; under joint-result legality ⟨[demon 1]⟩^1 X b would hold at a. At b only the cooperative and the angelic-choice forms hold (a universal angel can add b→a)",
+    (match tiny with
+     | .ok w =>
+       let atS (f : S) (s : String) := (satStates w f).toOption.map (·.contains s)
+       [atS (.update 1 1 (.next (atom "b"))) "a", atS (.updateDemon 1 1 (.next (atom "b"))) "a",
+        atS (.updateAngel 1 1 (.next (atom "b"))) "a", atS (.updateNone 1 1 (.next (atom "b"))) "a"]
+         == [some false, some false, some false, some false]
+       && [atS (.update 1 1 (.next (atom "b"))) "b", atS (.updateDemon 1 1 (.next (atom "b"))) "b",
+           atS (.updateAngel 1 1 (.next (atom "b"))) "b", atS (.updateNone 1 1 (.next (atom "b"))) "b"]
+         == [some true, some false, some true, some false]
+     | .error _ => false)),
+  ("⟨[∅]⟩ is universal over both: with a→b, b→b, F b holds at a for budgets (angel 0, demon 1) (no removable edge, no additions) and fails for (angel 1, demon 0) (the angel adds a→a and the traveller loops)",
+    (match chain with
+     | .ok w =>
+       (satStates w (.updateNone 0 1 (.eventually (atom "b")))).toOption == some ["a", "b"]
+       && (satStates w (.updateNone 1 0 (.eventually (atom "b")))).toOption == some ["b"]
+     | .error _ => false)),
+  ("duality of the new modalities against the pushed-through form: [demon d]^a F admin ≡ ¬⟨[demon d]⟩^a G¬admin, and angel, and ∅ (𝔐2)",
+    [0, 1, 2].all fun n =>
+      sats m2 (.updateDemonBox n 1 (.eventually admin)) == sats m2 (.not (.updateDemon n 1 (.always noAdmin)))
+        && sats m2 (.updateAngelBox 1 n (.eventually admin)) == sats m2 (.not (.updateAngel 1 n (.always noAdmin)))
+        && sats m2 (.updateNoneBox n 1 (.eventually admin)) == sats m2 (.not (.updateNone n 1 (.always noAdmin)))),
   ("an arena larger than the cap is an error, never a partial answer",
     match m1 with
     | .ok w => (satStates w (.demon 2 (.always noAdmin)) 2).isOk == false
@@ -205,9 +241,37 @@ def agrees (seed k : Nat) : Bool :=
       && chk (.demonBox 0 (.next (atom "q"))) (ex w q)
       && chk (.angel 0 (.always (atom "q"))) (ag w q)
 
+/-- The new coalitions against what they must reduce to or be bounded by, on one graph. -/
+def updateAgrees (seed k : Nat) : Bool :=
+  match randomModel k seed with
+  | .error _ => false
+  | .ok w =>
+    let paths : List P := [.next (atom "p"), .eventually (atom "p"), .always (atom "p"),
+      .until (atom "p") (atom "q")]
+    let sat' (f : S) := (satStates w f).toOption
+    let sub (x y : Option (List String)) : Bool :=
+      match x, y with | some a, some b => a.all b.contains | _, _ => false
+    paths.all fun ψ =>
+      -- a universal side with budget 0 can only play the empty move
+      (sat' (.updateDemon 1 0 ψ)).isSome && sat' (.updateDemon 1 0 ψ) == sat' (.demon 1 ψ)
+        && sat' (.updateAngel 1 0 ψ) == sat' (.angel 1 ψ)
+        && sat' (.updateNone 0 0 ψ) == sat' (.demon 0 ψ)
+        -- more universal quantifiers never help the existential side
+        && sub (sat' (.updateNone 1 1 ψ)) (sat' (.updateDemon 1 1 ψ))
+        && sub (sat' (.updateNone 1 1 ψ)) (sat' (.updateAngel 1 1 ψ))
+        && sub (sat' (.updateDemon 1 1 ψ)) (sat' (.update 1 1 ψ))
+        && sub (sat' (.updateAngel 1 1 ψ)) (sat' (.update 1 1 ψ))
+
 def randomCases : List (String × Bool) :=
   [("⟨⟨0⟩⟩ and [0] agree with AX/AG/AF/AU/EF/EX, and a budget-100 demon with EX/EF/EG, on 24 pseudo-random graphs (3-5 states)",
     (List.range 24).all fun i => agrees (1000 + 7919 * i) (3 + i % 3)),
+   ("⟨[demon n]⟩^0 = ⟨⟨n⟩⟩, ⟨[angel n]⟩^0 = ⟨⟨n⟩⟩ (angelic), ⟨[∅]⟩^{0,0} = ⟨⟨0⟩⟩, and ⟨[∅]⟩ ⊆ ⟨[demon]⟩^m, ⟨[angel]⟩^d ⊆ cooperative ⟨[angel,demon]⟩, on 12 pseudo-random 3-state graphs (budgets ≤ 1; X, F, G, U)",
+    (List.range 12).all fun i => updateAgrees (2000 + 104729 * i) 3),
+   ("the inclusions are not vacuous: on those graphs ⟨[∅]⟩^{1,1} is strictly smaller than cooperative ⟨[angel 1, demon 1]⟩ for some seed and some path formula",
+    (List.range 12).any fun i => match randomModel 3 (2000 + 104729 * i) with
+      | .ok w => [PFormula.next (atom "p"), .eventually (atom "p"), .always (atom "p")].any fun ψ =>
+          (satStates w (.updateNone 1 1 ψ)).toOption != (satStates w (.update 1 1 ψ)).toOption
+      | .error _ => false),
    ("the random graphs are mostly non-trivial (some state satisfies p and some does not, in at least 18 of 24)",
     ((List.range 24).filter fun i => match randomModel (3 + i % 3) (1000 + 7919 * i) with
       | .ok w => let p := holdsAtom w "p"; !p.isEmpty && p.length < w.k

@@ -76,6 +76,32 @@ def cases : List (String × Bool) := [
         == some false
       && (sat (run (req (model e2) [upd "update" 2 0 (eventuallyP (notF admin))]))).map (·.contains "s3")
         == some false),
+  ("competitive coalitions over the wire (Example 3): update_demon (demon_bound 2, angel_bound 2) F¬admin fails at s3; (demon 2, angel 1) G¬admin holds at s1 and (2, 2) fails; the angel and ∅ forms are distinct request types",
+    (sat (run (req (model e2) [upd "update_demon" 2 2 (eventuallyP (notF admin))]))).map (·.contains "s3")
+        == some false
+      && (sat (run (req (model e2) [upd "update_demon" 1 2 (alwaysP (notF admin))]))).map (·.contains "s1")
+        == some true
+      && (sat (run (req (model e2) [upd "update_demon" 2 2 (alwaysP (notF admin))]))).map (·.contains "s1")
+        == some false
+      && (sat (run (req (model e2) [upd "update_demon_box" 2 2 (eventuallyP admin)]))).isSome
+      && (sat (run (req (model e2) [upd "update_angel" 2 2 (eventuallyP (notF admin))]))).isSome
+      && (sat (run (req (model e2) [upd "update_none" 2 2 (eventuallyP (notF admin))]))).isSome),
+  ("update_angel is not the cooperative form: at s3 of 𝔐2 only the demon can remove s3's self-loop, so ⟨[angel 2]⟩^2 F¬admin fails (the universal demon passes) while ⟨[angel 2, demon 2]⟩F¬admin holds",
+    (sat (run (req (model e2) [upd "update_angel" 2 2 (eventuallyP (notF admin))]))).map (·.contains "s3")
+        == some false
+      && (sat (run (req (model e2) [upd "update" 2 2 (eventuallyP (notF admin))]))).map (·.contains "s3")
+        == some true),
+  ("update_none is universal over the angel too: on 𝔐2 at s0, G¬admin holds for ⟨[angel 1]⟩^0 (the angel adds nothing, and s3 is unreachable from s0 in 𝔐2) but fails for ⟨[∅]⟩^{1,0} (an angel adding s0→s3 or s2→s3 reaches it)",
+    (sat (run (req (model e2) [upd "update_angel" 1 0 (alwaysP (notF admin))]))).map (·.contains "s0")
+        == some true
+      && (sat (run (req (model e2) [upd "update_none" 1 0 (alwaysP (notF admin))]))).map (·.contains "s0")
+        == some false),
+  ("the new types are strict about keys: a `bound` on update_none, and a missing demon_bound on update_angel, are malformed_spec",
+    strKey (item (run (req (model e2) [strat "update_none" 1 (nextP admin)])) 0) "error_code"
+        == some "malformed_spec"
+      && strKey (item (run (req (model e2)
+        ["{\"type\":\"update_angel\",\"angel_bound\":1,\"path\":" ++ nextP admin ++ "}"])) 0)
+        "error_code" == some "malformed_spec"),
   ("SUL legality survives the wire: ⟨[angel 1, demon 2]⟩X¬admin fails at s3 of 𝔐2",
     (sat (run (req (model e2) [upd "update" 1 2 (nextP (notF admin))]))).map (·.contains "s3")
       == some false),

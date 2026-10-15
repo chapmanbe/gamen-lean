@@ -92,12 +92,16 @@ def decodeWModel (j : Json) : Except AdError WModel := do
 
     {"type":"atom","name":"p"}  "top"  "bot"  "not"(operand)  "and"/"or"/"implies"(left,right)
     {"type":"demon"|"demon_box"|"angel"|"angel_box","bound":n,"path":P}
-    {"type":"update"|"update_box","angel_bound":a,"demon_bound":d,"path":P}
+    {"type":"update"|"update_box"|"update_demon"|"update_demon_box"|"update_angel"
+            |"update_angel_box"|"update_none"|"update_none_box","angel_bound":a,"demon_bound":d,"path":P}
 
 with path `P` one of `{"type":"next","operand":F}`, `{"type":"until"|"release","left":F,
 "right":F}`, `{"type":"eventually"|"always","operand":F}`. `demon` is `⟨⟨n⟩⟩`
 of SDL (Defs 4-5), `angel` that of SCL (Defs 7-8), the `_box` forms are their duals `[n]`, and
-`update` is the cooperative `⟨[angel a, demon d]⟩` (Defs 10-11, the cooperative case; the competitive coalitions are not implemented).
+`update` is the cooperative `⟨[angel a, demon d]⟩` (Defs 10-11); `update_demon` is `⟨[demon d]⟩^a`
+(the demon has a strategy against every angelic `a`-strategy), `update_angel` is `⟨[angel a]⟩^d`,
+`update_none` is `⟨[∅]⟩^{a,d}`, and each `_box` is the dual. All take both bounds. Against a
+universal opponent each side's own move must be legal (reading A, `Gamen.AngelsDemons.movesFrom`).
 
 `partial` as `decodeDFormula` is: recursion goes through JSON field lookups. -/
 mutual
@@ -110,7 +114,8 @@ partial def decodeSFormula (j : Json) : Except AdError SFormula := do
     | "atom" => ["name"]
     | "not" => ["operand"]
     | "and" | "or" | "implies" => ["left", "right"]
-    | "update" | "update_box" => ["angel_bound", "demon_bound", "path"]
+    | "update" | "update_box" | "update_demon" | "update_demon_box" | "update_angel"
+    | "update_angel_box" | "update_none" | "update_none_box" => ["angel_bound", "demon_bound", "path"]
     | "demon" | "demon_box" | "angel" | "angel_box" => ["bound", "path"]
     | _ => []) s!"formula \"{ty}\""
   match ty with
@@ -127,6 +132,15 @@ partial def decodeSFormula (j : Json) : Except AdError SFormula := do
   | "angel_box" => return .angelBox (← bound) (← path)
   | "update" => return .update (← bound "angel_bound") (← bound "demon_bound") (← path)
   | "update_box" => return .updateBox (← bound "angel_bound") (← bound "demon_bound") (← path)
+  | "update_demon" => return .updateDemon (← bound "demon_bound") (← bound "angel_bound") (← path)
+  | "update_demon_box" =>
+    return .updateDemonBox (← bound "demon_bound") (← bound "angel_bound") (← path)
+  | "update_angel" => return .updateAngel (← bound "angel_bound") (← bound "demon_bound") (← path)
+  | "update_angel_box" =>
+    return .updateAngelBox (← bound "angel_bound") (← bound "demon_bound") (← path)
+  | "update_none" => return .updateNone (← bound "angel_bound") (← bound "demon_bound") (← path)
+  | "update_none_box" =>
+    return .updateNoneBox (← bound "angel_bound") (← bound "demon_bound") (← path)
   | other => throw (malformed s!"Unknown formula type: {other}")
 
 partial def decodePFormula (j : Json) : Except AdError PFormula := do

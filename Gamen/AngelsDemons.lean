@@ -32,11 +32,16 @@ changes which actions agents have, this module changes the transition graph.
   relation): a removal that leaves a state with no successor is not a legal move;
 * `[n]ψ := ¬⟨⟨n⟩⟩¬ψ`; `□φ := ⟨⟨0⟩⟩Xφ` and `◇φ := [0]Xφ` are the usual modalities.
 
-**SUL: only the cooperative update.** SUL has four coalitions (Def 10). `update a d ψ` is
-`⟨[angel a, demon d]⟩ψ` (both modifiers cooperate against the traveller) and its dual. The
-other three quantify universally over the opponent's strategy while the two modifiers move
-at once, and the paper does not say what a joint move that leaves a non-serial model means
-under a universal opponent, so they are not implemented rather than guessed.
+**SUL (Def 10).** Four coalitions, in `n`/`m` order as in the paper: `update a d ψ` is
+`⟨[angel a, demon d]⟩ψ` (both modifiers cooperate against the traveller);
+`updateDemon d a ψ` is `⟨[demon d]⟩^a ψ` (a demonic `d`-strategy against every angelic
+`a`-strategy); `updateAngel a d ψ` is `⟨[angel a]⟩^d ψ`; `updateNone a d ψ` is `⟨[∅]⟩^{a,d} ψ`
+(every angelic `a`- and demonic `d`-strategy). Each has a dual (`…Box`). The modifiers move at
+once from the same model (Def 9). The paper does not say which moves a *universal* opponent
+ranges over when a joint move could leave a non-serial model; this port uses **reading A**,
+decided by Brian Chapman on 2026-10-15: each side's own move must be legal on its own (the
+demon's removal leaves a serial model by itself, footnote 2), so every joint result is
+serial. An interpretation, not the paper's text; see `movesFrom`.
 
 ## Cost of the check
 
@@ -102,6 +107,17 @@ inductive SFormula where
   /-- `⟨[angel a, demon d]⟩ψ`: the cooperative SUL modality. -/
   | update (a d : Nat) (psi : PFormula)
   | updateBox (a d : Nat) (psi : PFormula)
+  /-- `⟨[demon d]⟩^a ψ` (Def 10, case 1): some demonic `d`-strategy, for all angelic
+  `a`-strategies. -/
+  | updateDemon (d a : Nat) (psi : PFormula)
+  | updateDemonBox (d a : Nat) (psi : PFormula)
+  /-- `⟨[angel a]⟩^d ψ` (Def 10, case 2): some angelic `a`-strategy, for all demonic
+  `d`-strategies. -/
+  | updateAngel (a d : Nat) (psi : PFormula)
+  | updateAngelBox (a d : Nat) (psi : PFormula)
+  /-- `⟨[∅]⟩^{a,d} ψ` (Def 10, case 4): for all angelic `a`- and demonic `d`-strategies. -/
+  | updateNone (a d : Nat) (psi : PFormula)
+  | updateNoneBox (a d : Nat) (psi : PFormula)
 
 /-- Path formulas. -/
 inductive PFormula where
@@ -126,6 +142,12 @@ inductive Kind where
   | demon (n : Nat)
   | angel (n : Nat)
   | both (a d : Nat)
+  /-- Demon chooses, angel answers universally. -/
+  | demonVs (d a : Nat)
+  /-- Angel chooses, demon answers universally. -/
+  | angelVs (a d : Nat)
+  /-- Both answer universally: a single choice, every joint move a reply. -/
+  | noneChoose (a d : Nat)
   deriving BEq, Hashable
 
 mutual
@@ -136,6 +158,9 @@ def kindsS : SFormula → List Kind
   | .demon n p | .demonBox n p => .demon n :: kindsP p
   | .angel n p | .angelBox n p => .angel n :: kindsP p
   | .update a d p | .updateBox a d p => .both a d :: kindsP p
+  | .updateDemon d a p | .updateDemonBox d a p => .demonVs d a :: kindsP p
+  | .updateAngel a d p | .updateAngelBox a d p => .angelVs a d :: kindsP p
+  | .updateNone a d p | .updateNoneBox a d p => .noneChoose a d :: kindsP p
 def kindsP : PFormula → List Kind
   | .next f => kindsS f
   | .until l r | .release l r => kindsS l ++ kindsS r
@@ -155,11 +180,19 @@ def subsetsWithin (cap : Nat) : List (Nat × Nat) → Nat → Except String (Lis
       throw s!"too many edge sets within the cost budget (more than {cap}); lower the budget or raise the cap"
     pure (without ++ withIt)
 
-/-- Models reachable from edge set `e` in one modifier move of kind `kind`. The demon's
-removals must leave a serial model *on their own* (the paper: "the demon cannot remove an
-edge if it is the only outgoing edge from a given state", footnote 2; Def 2 makes the
-`m`-submodel a model), even when the angel adds an edge in the same step. -/
-def movesFrom (m : WModel) (cap : Nat) (kind : Kind) (e : Nat) : Except String (List Nat) := do
+/-- Models reachable from edge set `e` in one modifier move of kind `kind`, grouped by the
+choice of the *existential* side: the existential side picks a group, and every model in the
+group is a reply the universal side may make (a singleton for the single-mover kinds and the
+cooperative one).
+
+Legality (reading A; the paper is silent on it for a universal opponent, so this is an
+interpretation): the demon's removals must leave a serial model *on their own* (the paper:
+"the demon cannot remove an edge if it is the only outgoing edge from a given state", footnote
+2; Def 2 makes the `m`-submodel a model), even when the angel adds an edge in the same step.
+Additions never break seriality, so every joint result is serial, and a universal opponent
+ranges over exactly its own legal moves; the empty move is always legal, so no group is empty. -/
+def movesFrom (m : WModel) (cap : Nat) (kind : Kind) (e : Nat) :
+    Except String (List (List Nat)) := do
   let k := m.k
   let pairs := (List.range k).flatMap fun i => (List.range k).map fun j => (i, j)
   let present := pairs.filter fun (i, j) => hasEdge k e i j
@@ -168,24 +201,42 @@ def movesFrom (m : WModel) (cap : Nat) (kind : Kind) (e : Nat) : Except String (
   let removals (d : Nat) : Except String (List Nat) := do
     pure ((← subsetsWithin cap (present.map item) d).filter fun b => serial k (e ^^^ b))
   let additions (a : Nat) := subsetsWithin cap (absent.map item) a
-  let raw : List Nat ← match kind with
-    | .demon n => do pure ((← removals n).map fun b => e ^^^ b)
-    | .angel n => do pure ((← additions n).map fun a => e ||| a)
+  let result (b x : Nat) : Nat := (e ^^^ b) ||| x
+  let joint (a d : Nat) : Except String (List Nat × List Nat) := do
+    let rs ← removals d
+    let xs ← additions a
+    if rs.length * xs.length > cap then
+      throw s!"too many joint (removal, addition) pairs (more than {cap})"
+    pure (rs, xs)
+  let raw : List (List Nat) ← match kind with
+    | .demon n => do pure ((← removals n).map fun b => [e ^^^ b])
+    | .angel n => do pure ((← additions n).map fun a => [e ||| a])
     | .both a d => do
-      let rs ← removals d
-      let xs ← additions a
-      if rs.length * xs.length > cap then
-        throw s!"too many joint (removal, addition) pairs (more than {cap})"
-      pure (rs.flatMap fun b => xs.map fun x => (e ^^^ b) ||| x)
-  let seen : Std.HashSet Nat := raw.foldl (fun s x => if serial k x then s.insert x else s) {}
-  pure seen.toList
+      let (rs, xs) ← joint a d
+      pure (rs.flatMap fun b => xs.map fun x => [result b x])
+    | .demonVs d a => do
+      let (rs, xs) ← joint a d
+      pure (rs.map fun b => xs.map fun x => result b x)
+    | .angelVs a d => do
+      let (rs, xs) ← joint a d
+      pure (xs.map fun x => rs.map fun b => result b x)
+    | .noneChoose a d => do
+      let (rs, xs) ← joint a d
+      pure [rs.flatMap fun b => xs.map fun x => result b x]
+  raw.mapM fun grp => do
+    let seen : Std.HashSet Nat := grp.foldl (fun s x => s.insert x) {}
+    if seen.isEmpty then throw "movesFrom: no legal reply to a modifier move"
+    if seen.toList.any fun x => !serial k x then
+      throw "movesFrom: a joint move left a non-serial model (legality bug)"
+    pure seen.toList
 
 /-- The explicit arena: every model reachable from the initial one by the formula's moves. -/
 structure Arena where
   models : Array Nat
   index : Std.HashMap Nat Nat
-  /-- `moves kind` : for each model index, the model indices reachable in one move. -/
-  moves : Std.HashMap Kind (Array (Array Nat))
+  /-- `moves kind` : for each model index, the existential side's choices, each a group of the
+  model indices the universal side may reply with. -/
+  moves : Std.HashMap Kind (Array (Array (Array Nat)))
 
 def buildArena (m : WModel) (kinds : List Kind) (maxModels : Nat) : Except String Arena := do
   let kinds := kinds.foldl (fun acc k => if acc.contains k then acc else acc ++ [k]) []
@@ -193,13 +244,13 @@ def buildArena (m : WModel) (kinds : List Kind) (maxModels : Nat) : Except Strin
   let mut models : Array Nat := #[e0]
   let mut index : Std.HashMap Nat Nat := ({} : Std.HashMap Nat Nat).insert e0 0
   let mut i := 0
-  let mut moveLists : Std.HashMap Kind (Array (List Nat)) := {}
+  let mut moveLists : Std.HashMap Kind (Array (List (List Nat))) := {}
   for kd in kinds do moveLists := moveLists.insert kd #[]
   while i < models.size do
     let e := models[i]!
     for kd in kinds do
       let next ← movesFrom m maxModels kd e
-      for x in next do
+      for x in next.flatten do
         unless index.contains x do
           if models.size ≥ maxModels then
             throw s!"arena too large: more than {maxModels} models reachable by the formula's moves"
@@ -208,13 +259,15 @@ def buildArena (m : WModel) (kinds : List Kind) (maxModels : Nat) : Except Strin
       moveLists := moveLists.insert kd ((moveLists.getD kd #[]).push next)
     i := i + 1
   -- every successor mask was added to `index` above; a missing one is a bug, not model 0
-  let moves ← moveLists.toList.foldlM (init := ({} : Std.HashMap Kind (Array (Array Nat))))
+  let moves ← moveLists.toList.foldlM (init := ({} : Std.HashMap Kind (Array (Array (Array Nat)))))
     fun acc (kd, ls) => do
       let rows ← ls.mapM fun l => do
-        let ids ← l.mapM fun x => match index.get? x with
-          | some i => pure i
-          | none => throw "buildArena: a reachable edge set is missing from the arena index"
-        pure ids.toArray
+        let groups ← l.mapM fun grp => do
+          let ids ← grp.mapM fun x => match index.get? x with
+            | some i => pure i
+            | none => throw "buildArena: a reachable edge set is missing from the arena index"
+          pure ids.toArray
+        pure groups.toArray
       pure (acc.insert kd rows)
   pure { models, index, moves }
 
@@ -229,7 +282,7 @@ def pre (m : WModel) (ar : Arena) (kind : Kind) (x : Array Bool) : Array Bool :=
   (Array.range (ar.models.size * k)).map fun pos =>
     let mi := pos / k
     let s := pos % k
-    (mv.getD mi #[]).any fun mj =>
+    (mv.getD mi #[]).any fun grp => grp.all fun mj =>
       (succs k (ar.models[mj]!) s).all fun t => x.getD (mj * k + t) false
 
 private def iterate (step : Array Bool → Array Bool) (start : Array Bool) (fuel : Nat) :
@@ -259,6 +312,12 @@ def satS (m : WModel) (ar : Arena) : SFormula → Except String (Array Bool)
   | .angelBox n p => do pure ((← satP m ar (.angel n) true p).map (!·))
   | .update a d p => satP m ar (.both a d) false p
   | .updateBox a d p => do pure ((← satP m ar (.both a d) true p).map (!·))
+  | .updateDemon d a p => satP m ar (.demonVs d a) false p
+  | .updateDemonBox d a p => do pure ((← satP m ar (.demonVs d a) true p).map (!·))
+  | .updateAngel a d p => satP m ar (.angelVs a d) false p
+  | .updateAngelBox a d p => do pure ((← satP m ar (.angelVs a d) true p).map (!·))
+  | .updateNone a d p => satP m ar (.noneChoose a d) false p
+  | .updateNoneBox a d p => do pure ((← satP m ar (.noneChoose a d) true p).map (!·))
 
 /-- Positions from which the modifier of kind `kind` has a strategy making `ψ` true on all
 traveller replies (Defs 5, 8, 11). With `negated`, the strategy is for `¬ψ` instead, pushed

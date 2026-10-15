@@ -101,16 +101,18 @@ update that breaks `∼`) are not legal moves and are counted in `illegal`. Budg
 The default pool has no informed-only clauses; pass a pool for those. An error evaluating the goal
 at any visited model aborts the search. Tests: `Tests/UpdateSearch.lean`.
 
-**`angels_demons_check` (Lean-only, protocol 7; issue #3 item 2).** Model-checks SDL/SCL/SUL
+**`angels_demons_check` (Lean-only, protocol 7, competitive SUL types added in 9; issue #3 item 2).** Model-checks SDL/SCL/SUL
 formulas (`Gamen.AngelsDemons`; Catta, Galimullin & Mittelmann, AAMAS 2026) on a weighted graph.
 `model`: `{"states":[..],"edges":[[from,to],..],"costs":[[from,to,n],..],"default_cost":1,
 "valuation":{"s":[atoms]}}`; every ordered pair needs a positive cost (`costs` overrides
 `default_cost`, default 1; a pair named twice is an error) and the graph must be serial. `formulas` are objects with a `type`:
 `atom` (`name`), `top`, `bot`, `not` (`operand`), `and`/`or`/`implies` (`left`, `right`), and `demon`/`demon_box`/`angel`/`angel_box`
-(`bound`, `path`) or `update`/`update_box` (`angel_bound`, `demon_bound`, `path`), where `path`
+(`bound`, `path`) or `update`/`update_box`/`update_demon`/`update_demon_box`/`update_angel`/`update_angel_box`/`update_none`/`update_none_box` (`angel_bound`, `demon_bound`, `path`), where `path`
 is `next` (`operand`), `until`/`release` (`left`, `right`) or `eventually`/`always` (`operand`).
-`update` is the cooperative `⟨[angel a, demon d]⟩`; the competitive coalitions of Def 10 are not
-implemented. The bound limits the change to the graph *per step*, not over the play. Optional
+`update` is the cooperative `⟨[angel a, demon d]⟩`; `update_demon` is `⟨[demon d]⟩^a`, `update_angel`
+is `⟨[angel a]⟩^d`, `update_none` is `⟨[∅]⟩^{a,d}` (Def 10; protocol 9). Against a universal opponent
+each side's own move must be legal, so the demon never removes a state's last edge even if the angel
+adds one in the same step: an interpretation (reading A, decided 2026-10-15), not the paper's text. The bound limits the change to the graph *per step*, not over the play. Optional
 `states` (states to report; default all) and `max_models` (cap on the arena of pointed models,
 default 20000, from 1 to 1000000 or `bad_max_models`; exceeding it is a per-formula error, never a partial answer). Unknown keys in `model`, a formula or a path are `malformed_spec`, as are a pair named twice in `costs` and a state listed twice in `states`. Reply:
 `{"states","results":[{"index","satisfying","holds","true_in_model"} | {"index","error","error_code"}]}`.

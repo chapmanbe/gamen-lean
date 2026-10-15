@@ -13,3 +13,17 @@ results. A line marked verified means the stated fact was seen in the named file
 
 Still [ASSERTED]: every claim about what these papers prove or how they model trust; the
 DaLí 2022 reference; venues and years noted above.
+
+## Addendum: Figure 1 edge costs (Catta, Galimullin & Mittelmann, AAMAS 2026, p. 3)
+
+The digest said the costs in `Tests/AngelsDemons.lean` (`cost1`, `e1`) were a reconstruction
+from the text (confidence: medium). Checked by rendering p. 3 of the PDF at 400 dpi and reading
+every label of both models. **All match; no change to any cost.**
+
+- Self-loops: s0 3, s1 3, s2 2, s3 2 (identical in 𝔐1 and 𝔐2).
+- s0→s2 2, s2→s0 1, s0→s1 3, s0→s3 2, s2→s3 1; dotted s1→s0 1, s3→s2 1.
+- 𝔐2: the s0→s3 and s2→s3 edges are dotted (removed), with the same costs.
+- Pairs not drawn get cost 9 in the tests; the figure has none, so that is a test convention.
+
+Not checked: that the dotted edges' arrow directions in 𝔐2 (s3→s2 and s2→s3 both drawn) matter
+to any claim; the tests use only the 𝔐1 and 𝔐3 constructions from the text.

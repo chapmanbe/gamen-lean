@@ -4,7 +4,7 @@ import Validate.Core
 # The Lean-only `angels_demons_check` action (`Validate/AngelsDemons.lean`)
 
 Issue #3 item 2, protocol 7. The wire contract over the access-control models of Catta,
-Galimullin & Mittelmann (AAMAS 2026), Examples 1-3 (Figure 1's costs are a reconstruction;
+Galimullin & Mittelmann (AAMAS 2026), Examples 1-3 (Figure 1's costs were checked against the figure;
 see `Tests/AngelsDemons.lean`). Every expected set repeats a value `Tests/AngelsDemons.lean`
 checks through the Lean API, so the JSON layer is tested against the checker, not itself.
 -/

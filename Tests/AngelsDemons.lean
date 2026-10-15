@@ -4,9 +4,10 @@ import Gamen.AngelsDemons
 # SDL, SCL and SUL (`Gamen.AngelsDemons`; issue #3 item 2)
 
 Answer keys: Examples 1-3 of Catta, Galimullin & Mittelmann, AAMAS 2026. Figure 1's edge
-costs are small and were reconstructed so that *every claim the paper's text makes about the
-two models* holds; the tests below are exactly those claims plus their obvious contrapositives
-(nothing here was fitted to a result the paper does not state). Edges drawn only as dotted
+costs were first reconstructed from the text, then checked against the figure itself (p. 3,
+rendered from the PDF, 2026-10-15): every label matches, including the self-loops. The tests
+below are the paper's claims plus their obvious contrapositives (nothing here was fitted to a
+result the paper does not state). Edges drawn only as dotted
 possible additions keep their stated cost; pairs that are neither edges nor drawn get cost 9.
 
 Cross-checks: with budget 0 the modifier cannot change anything, so `⟨⟨0⟩⟩` is the universal

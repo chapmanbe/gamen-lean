@@ -8,6 +8,7 @@ import Gamen.DeonticStit.Prove
 import Validate.Atl
 import Validate.Epistemic
 import Validate.AngelsDemons
+import Validate.EvidenceTrust
 
 /-!
 # Validate.Core
@@ -32,6 +33,7 @@ inductive Request where
       (pool : Option (List Candidate)) (fuel : Nat) (sem : AtlSemantics)
   | epistemicCheck (model : Json) (updates : List Json) (formulas : List Formula)
       (worlds : Option (List String))
+  | evidenceTrustCheck (model : Json) (formulas : List Json) (worlds : Option (List String))
   | angelsDemonsCheck (model : Json) (formulas : List Json) (states : Option (List String))
       (maxModels : Nat)
   | atlModelCheck (model : Json) (formulas : AtlFormulas) (states : Option (List String))
@@ -67,6 +69,13 @@ def parseRequest (j : Json) : Except String Request := do
       | none => pure []
       | some v => pure (← v.getArr?).toList
     return .epistemicCheck (← field j "model") updates (← formulas) worlds
+  | "evidence_trust_check" =>
+    if let .error e := EtJson.onlyKeys j ["action", "model", "formulas", "worlds"] "request" then
+      throw e.message
+    let worlds ← match ← optField j "worlds" with
+      | none => pure none
+      | some v => pure (some (← (← v.getArr?).toList.mapM (·.getStr?)))
+    return .evidenceTrustCheck (← field j "model") (← (← field j "formulas").getArr?).toList worlds
   | "angels_demons_check" =>
     let states ← match ← optField j "states" with
       | none => pure none
@@ -228,6 +237,7 @@ def handleRequest (commit : String) : Request → Json
            Consider 'joint' or 'patient'." else Json.null)])
     | .error msg => okResult (Json.mkObj [("valid", false), ("parse_error", msg)])
   | .atlModelCheck model fs states sem => atlModelCheck model fs states sem
+  | .evidenceTrustCheck model fs ws => evidenceTrustCheck model fs ws
   | .angelsDemonsCheck model fs ws mx => angelsDemonsCheck model fs ws mx
   | .epistemicCheck model us fs ws => epistemicCheck model us fs ws
   | .atlUpdateSearch model st g b pool fuel sem => atlUpdateSearch model st g b pool fuel sem

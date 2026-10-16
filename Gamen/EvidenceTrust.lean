@@ -26,7 +26,10 @@ Two points where the extract was wrong: **C8 is `∅ ∉ C(i,j,v)`**, and **Def 
   would force `C = ∅` (given C8), so `validate` checks it within the world: `X ∈ C(i,j,w) → X ⊆ E_i(w)`.
 * An announcement has no truth precondition, unlike public announcement: `i` may announce a falsehood.
 
-Not covered: the axiomatization and its completeness proofs (Theorems 1-2) were not read; group
+Not covered: the completeness proofs of Theorems 1-2 are not in the PRIMA paper (they are in an IRIT
+technical report that is not local), so they are not read; the reduction axioms of Def 8 are tested
+as validities of this semantics (`Tests/EvidenceTrust.lean`; the paper prints `∨` in Red−E_{i,j} and
+Red−T_{i,j} where `∧` is valid); group
 announcements and trust (Perrotin, Galimullin, Canu & Alechina, "Public Group Announcements and Trust in Doxastic Logic"; venue and year unverified) and trust-based belief revision (Hunter) are other
 components. Tests: `Tests/EvidenceTrust.lean` (constructor, the §2.4 example, validities (1)-(11),
 Proposition 1 on random models).

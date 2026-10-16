@@ -268,6 +268,85 @@ def randomCases : List (String × Bool) := [
        && valid? m (.implies (.reason 0 moore) (.assess 0 moore (.believes 0 moore))) == some false
        && valid? m (.implies (.reason 0 p) (.assess 0 p (.believes 0 p))) == some true))]
 
-def cases : List (String × Bool) := constructorCases ++ movieCases ++ randomCases
+
+/-! ## The reduction axioms of Def 8 (Theorem 2's soundness half)
+
+Each reduction axiom is checked as a validity of the *implemented* semantics on 120 random ESMs.
+The proofs of Theorems 1-2 are not in the PRIMA paper (they are in an IRIT technical report that
+is not local); this tests the axioms themselves, read off pp. 15-16 of the PDF. -/
+
+def iff' (a b : F) : F := conj (.implies a b) (.implies b a)
+/-- Test formulas ψ: atoms, negation, and each modal operator, on different agents. -/
+def psis : List F := [p, neg q, .evidence 0 1 p, .trust 1 2 q, .knows 0 q, .believes 1 p,
+  .evidence 2 0 (neg p), .trust 0 0 p]
+def phis : List F := [p, neg p, q]
+def typeFs : List F := [.type 0 0 1, .type 1 1 (1 / 2), .type 2 2 (2 / 3)]
+
+/-- `lhs ↔ rhs` valid on every random ESM, for every `(i, j, φ, ψ)`. -/
+def redAll (ax : Nat → Nat → F → F → F × F) : Bool :=
+  forAllModels fun m => ids.all fun i => ids.all fun j => phis.all fun f => psis.all fun g =>
+    let (l, r) := ax i j f g
+    validAll m (iff' l r)
+
+def reductionCases : List (String × Bool) := [
+  ("Red for [!_iφ]: p, type, ¬, ∧, K_j, B_j, E_{j,k} (k ≠ i) and T_{j,k} commute with the update",
+    redAll (fun i j f g => (.announce i f (.not g), .not (.announce i f g)))
+      && redAll (fun i j f g => (.announce i f (conj g p), conj (.announce i f g) (.announce i f p)))
+      && redAll (fun i j f g => (.announce i f p, p))
+      && typeFs.all (fun t => redAll (fun i j f _ => (.announce i f t, t)))
+      && redAll (fun i j f g => (.announce i f (.knows j g), .knows j (.announce i f g)))
+      && redAll (fun i j f g => (.announce i f (.believes j g), .believes j (.announce i f g)))
+      && redAll (fun i j f g => if i == j then (.top, .top)
+          else (.announce i f (.evidence 0 j g), .evidence 0 j (.announce i f g)))
+      && redAll (fun i j f g => (.announce i f (.trust 0 j g), .trust 0 j (.announce i f g)))),
+  ("Red!E_{j,i}: [!_iφ]E_{j,i}ψ ↔ ((T_{j,i}φ → (E_{j,i}[!_iφ]ψ ∨ K_j(φ ↔ [!_iφ]ψ))) ∧ (¬T_{j,i}φ → E_{j,i}[!_iφ]ψ))",
+    redAll (fun i j f g => (.announce i f (.evidence j i g),
+      conj (.implies (.trust j i f) (.or (.evidence j i (.announce i f g)) (.knows j (iff' f (.announce i f g)))))
+        (.implies (.not (.trust j i f)) (.evidence j i (.announce i f g)))))),
+  ("Red for [−_{i,j}φ]: K_k, B_k commute; E_{k,l} and T_{k,l} commute unless (k,l) = (i,j); E_{i,j}ψ ↔ (E_{i,j}[−]ψ ∧ ¬K_i(φ ↔ [−]ψ)), same for T_{i,j} (the paper prints ∨; see the next case)",
+    redAll (fun i j f g => (.loseTrust i j f (.knows 1 g), .knows 1 (.loseTrust i j f g)))
+      && redAll (fun i j f g => (.loseTrust i j f (.believes 2 g), .believes 2 (.loseTrust i j f g)))
+      && redAll (fun i j f g => if i == 0 && j == 1 then (.top, .top)
+          else (.loseTrust i j f (.evidence 0 1 g), .evidence 0 1 (.loseTrust i j f g)))
+      && redAll (fun i j f g => if i == 1 && j == 2 then (.top, .top)
+          else (.loseTrust i j f (.trust 1 2 g), .trust 1 2 (.loseTrust i j f g)))
+      && redAll (fun i j f g => (.loseTrust i j f (.evidence i j g),
+          conj (.evidence i j (.loseTrust i j f g)) (.not (.knows i (iff' f (.loseTrust i j f g))))))
+      && redAll (fun i j f g => (.loseTrust i j f (.trust i j g),
+          conj (.trust i j (.loseTrust i j f g)) (.not (.knows i (iff' f (.loseTrust i j f g))))))),
+  ("the paper's Red−E_{i,j} and Red−T_{i,j} as printed (p. 15) join the two sides with ∨, which is not valid: it contradicts the paper's own validity (6), [−_{i,j}φ](¬E_{i,j}φ ∧ ¬T_{i,j}φ). With ∧, as tested above, both are valid. The printed ∨ fails on some random ESM",
+    !(redAll (fun i j f g => (.loseTrust i j f (.evidence i j g),
+          .or (.evidence i j (.loseTrust i j f g)) (.not (.knows i (iff' f (.loseTrust i j f g)))))))
+      && !(redAll (fun i j f g => (.loseTrust i j f (.trust i j g),
+          .or (.trust i j (.loseTrust i j f g)) (.not (.knows i (iff' f (.loseTrust i j f g)))))))),
+  ("Red for [+_{i,j}φ]: K_k, B_k, E_{k,l} commute; T_{k,l} commutes unless (k,l) = (i,j); [+]T_{i,j}ψ ↔ ((K̂_iφ → (T_{i,j}[+]ψ ∨ K_i(φ ↔ [+]ψ))) ∧ (K_i¬φ → T_{i,j}[+]ψ))",
+    redAll (fun i j f g => (.relyOn i j f (.knows 1 g), .knows 1 (.relyOn i j f g)))
+      && redAll (fun i j f g => (.relyOn i j f (.believes 2 g), .believes 2 (.relyOn i j f g)))
+      && redAll (fun i j f g => (.relyOn i j f (.evidence 0 1 g), .evidence 0 1 (.relyOn i j f g)))
+      && redAll (fun i j f g => if i == 1 && j == 2 then (.top, .top)
+          else (.relyOn i j f (.trust 1 2 g), .trust 1 2 (.relyOn i j f g)))
+      && redAll (fun i j f g => (.relyOn i j f (.trust i j g),
+          conj (.implies (.hatK i f) (.or (.trust i j (.relyOn i j f g)) (.knows i (iff' f (.relyOn i j f g)))))
+            (.implies (.knows i (neg f)) (.trust i j (.relyOn i j f g)))))),
+  ("Red for [?_iφ]: K_j commutes; B_j commutes for j ≠ i; E and T commute; [?_iφ]B_iψ ↔ the α₁-α₅ cases",
+    redAll (fun i j f g => (.assess i f (.knows j g), .knows j (.assess i f g)))
+      && redAll (fun i j f g => if i == j then (.top, .top)
+          else (.assess i f (.believes j g), .believes j (.assess i f g)))
+      && redAll (fun i j f g => (.assess i f (.evidence 0 j g), .evidence 0 j (.assess i f g)))
+      && redAll (fun i j f g => (.assess i f (.trust 0 j g), .trust 0 j (.assess i f g)))
+      && redAll (fun i _ f g =>
+        let a1 := conj (.reason i f) (neg (.believes i f))
+        let a2 := conj (.reason i (neg f)) (neg (.believes i (neg f)))
+        let a3 := conj (.reason i f) (.believes i (neg f))
+        let a4 := conj (.reason i (neg f)) (.believes i f)
+        let a5 := conj (neg a1) (conj (neg a2) (conj (neg a3) (neg a4)))
+        (.assess i f (.believes i g),
+          conj (.implies a1 (.believes i (.implies f (.assess i f g))))
+            (conj (.implies a2 (.believes i (.implies (neg f) (.assess i f g))))
+              (conj (.implies a3 (.knows i (.implies f (.assess i f g))))
+                (conj (.implies a4 (.knows i (.implies (neg f) (.assess i f g))))
+                  (.implies a5 (.believes i (.assess i f g)))))))))]
+
+def cases : List (String × Bool) := constructorCases ++ movieCases ++ randomCases ++ reductionCases
 
 end EvidenceTrustTests

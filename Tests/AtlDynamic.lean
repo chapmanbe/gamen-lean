@@ -192,7 +192,7 @@ def lawsB : List Law := [("right", "r1", .not (.atom "warm"), .not warmP),
 def lawsC : List Law := [("left", "r1", .canNext ["r1", "r2"] (.atom "atBob"), xAtBob),
                          ("left", "r2", .atom "atBob", atBob)]
 
-def cases : List (String × Bool) := [
+def coreCases : List (String × Bool) := [
   ("ATL-D Example 1: ⟨⟨r1,r2⟩⟩F atBob holds at q0 (left twice)",
     (sats modelDefault (.canEventually team atBob)).map (·.contains "q0") == some true),
   ("ATL-D Example 1: ⟨⟨r1,r2⟩⟩X atBob fails at q0 before the grant (right,right is disabled)",
@@ -374,5 +374,52 @@ def cases : List (String × Bool) := [
     code (processLine ("{\"action\":\"atl_model_check\",\"dynamic\":true,\"semantics\":\"imperfect_subjective\",\"model\":"
       ++ epiModel.replace "[[\"s0\",\"s1\"]]" "[[]]" ++ ",\"formulas\":[]}") "t") == some "malformed_spec")
 ]
+
+/-! ## Theorems 1-2 (expressivity, p. 4 and the technical appendix): the separating CGSs, run
+
+One agent `a`, actions `α`, `β`, atom `p`. Figure 3, read off the page image: `𝒢1` is a single
+state `v : p` with `α` and `β` self-loops; `𝒢2` has `v : p` and `w`, `α` self-loops, and the `β`
+transitions `v ⇄ w` *disabled* (`a` lacks `β`); `𝒢3` is `𝒢2` with `β` enabled; `𝒢4` is `𝒢3` with
+`α` and `β` swapped. The halves tested are the computable ones (the formula holds in one model and
+fails in the other); that no ATL or ATL-D⁻/ATL-D⁺ formula can tell them apart is the paper's
+argument. -/
+
+def fig3 (loops : List (String × String)) (cross : String) (avail : List String) : String :=
+  let st (v : String) : String :=
+    "\"" ++ v ++ "\":{\"a\":[" ++ ",".intercalate (avail.map fun x => "\"" ++ x ++ "\"") ++ "]}"
+  let tr (v w a : String) : String :=
+    s!"\{\"state\":\"{v}\",\"moves\":\{\"a\":\"{a}\"},\"next\":\"{w}\"}"
+  "{\"states\":[\"v\",\"w\"],\"agents\":[\"a\"],\"actions\":[\"alpha\",\"beta\"],\"moves\":{"
+    ++ st "v" ++ "," ++ st "w" ++ "},\"valuation\":{\"v\":[\"p\"]},\"transitions\":["
+    ++ ",".intercalate ((loops.map fun (v, a) => tr v v a)
+        ++ [tr "v" "w" cross, tr "w" "v" cross]) ++ "]}"
+
+/-- `𝒢2` / `𝒢3` / `𝒢4`: `α` loops and `β` crossing, `β` loops and `α` crossing. -/
+def g2 : String := fig3 [("v", "alpha"), ("w", "alpha")] "beta" ["alpha"]
+def g3 : String := fig3 [("v", "alpha"), ("w", "alpha")] "beta" ["alpha", "beta"]
+def g4 : String := fig3 [("v", "beta"), ("w", "beta")] "alpha" ["alpha", "beta"]
+def g1 : String :=
+  "{\"states\":[\"v\"],\"agents\":[\"a\"],\"actions\":[\"alpha\",\"beta\"],\"moves\":{\"v\":{\"a\":[\"alpha\",\"beta\"]}},\"valuation\":{\"v\":[\"p\"]},\"transitions\":[{\"state\":\"v\",\"moves\":{\"a\":\"alpha\"},\"next\":\"v\"},{\"state\":\"v\",\"moves\":{\"a\":\"beta\"},\"next\":\"v\"}]}"
+
+def atNotP : DFormula := .canNext ["a"] (.not (.atom "p"))
+def grantBeta : UpdateList := .cons (.not .bot) "beta" ["a"] [] .nil
+
+def holdsAtV (m : String) (f : DFormula) : Option Bool := (sats m f).map (·.contains "v")
+
+def separationCases : List (String × Bool) := [
+  ("Thm 1, ATL ≺ ATL-D⁺ (Fig. 3): [⊤ : β → {a}]⁺⟨⟨a⟩⟩X¬p fails at v of 𝒢1 (a already has β, and there is no ¬p-state) and holds at v of 𝒢2 (granting β gives 𝒢3)",
+    holdsAtV g1 (.grant grantBeta atNotP) == some false
+      && holdsAtV g2 (.grant grantBeta atNotP) == some true),
+  ("Thm 1's 𝒢3 step: ⟨⟨a⟩⟩X¬p already holds at v of 𝒢3 (β crosses to the ¬p-state) and fails in 𝒢2 and 𝒢1",
+    holdsAtV g3 atNotP == some true && holdsAtV g2 atNotP == some false
+      && holdsAtV g1 atNotP == some false),
+  ("Thm 2, ATL ≺ ATL-D⁻ (𝒢3 vs 𝒢4): [⊤ : β → {a}]⁻⟨⟨a⟩⟩X¬p fails at v of 𝒢3 (removing β cuts the crossing) and holds at v of 𝒢4 (β is only the self-loop, α still crosses)",
+    holdsAtV g3 (.revoke grantBeta atNotP) == some false
+      && holdsAtV g4 (.revoke grantBeta atNotP) == some true),
+  ("Thm 2: plain ATL cannot see action names, and indeed ⟨⟨a⟩⟩X¬p has the same value in 𝒢3 and 𝒢4 (both models have all transitions enabled)",
+    holdsAtV g3 atNotP == holdsAtV g4 atNotP && holdsAtV g3 atNotP == some true)
+]
+
+def cases : List (String × Bool) := coreCases ++ separationCases
 
 end AtlDynamicTests

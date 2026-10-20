@@ -52,7 +52,7 @@ def wireWith (goal : String) (bound : Nat) (extra : String) : Lean.Json :=
 
 def wire (goal : String) (bound : Nat) : Lean.Json := wireWith goal bound ""
 
-def cases : List (String × Bool) := [
+def coreCases : List (String × Bool) := [
   ("search: a goal that already holds needs the empty sequence (size 0)",
     match tank with
     | some m => sizeOf? (search m .perfect "q0" (.canEventually team atBob) 2) == some (some 0)
@@ -165,5 +165,147 @@ def cases : List (String × Bool) := [
           [{ grant := true, cond := .not .bot, action := "right", agents := ["r2"], informed := ["r9"] }] 100).isOk == false
     | none => false)
 ]
+
+/-! ## Theorem 6's NP-hardness reduction (extended version, appendix), run end to end
+
+3SAT `Ψ = ⋀ X_i` becomes a one-agent CGS `G_Ψ` (states `X_i`, `x_i^j`, `u_l`, `t1`, `t2`; atoms
+`p`, `p⊤`, `p⊥`, `p_l`) and a goal `φ_Ψ`; `Ψ` is satisfiable iff some update `[π]` makes
+`G_Ψ, X_1 ⊨ [π]φ_Ψ`. An update enables `α` (true) or `β` (false) at `u_l` via `p_l : α → a`.
+The pool is the `2k` clauses `p_l : α → a` and `p_l : β → a`, bound `k`; the answer must equal
+brute-force satisfiability. `notFound` is relative to that pool, so this checks the reduction in
+the direction the proof sketch relies on: a satisfying assignment yields such an update, and when
+no update exists in the pool, `Ψ` is unsatisfiable. -/
+
+/-- A 3SAT instance: clauses of three literals `±l`, atoms `1..k`. -/
+abbrev Cnf := List (List Int)
+
+def Cnf.atoms (c : Cnf) : Nat := c.foldl (fun m cl => cl.foldl (fun m l => max m l.natAbs) m) 0
+
+/-- Brute-force satisfiability. -/
+def Cnf.sat (c : Cnf) : Bool :=
+  (List.range (2 ^ c.atoms)).any fun bits =>
+    c.all fun cl => cl.any fun l =>
+      let v := (bits / 2 ^ (l.natAbs - 1)) % 2 == 1
+      if l > 0 then v else !v
+
+def jstr (xs : List String) : String := "[" ++ ",".intercalate xs ++ "]"
+def q (s : String) : String := "\"" ++ s ++ "\""
+
+/-- `G_Ψ` as an `atl_model_check` model. -/
+def gPsi (c : Cnf) : String :=
+  let m := c.length
+  let k := c.atoms
+  let acts := ["alpha", "beta", "beta1", "beta2", "beta3", "gamma"]
+  let xs : List String := (List.range m).map fun i => s!"X{i + 1}"
+  let lits : List (String × Int) := (List.range m).flatMap fun i =>
+    (List.range 3).map fun j => (s!"x{i + 1}_{j + 1}", (c[i]!)[j]!)
+  let us : List String := (List.range k).map fun l => s!"u{l + 1}"
+  let states := xs ++ lits.map (·.1) ++ us ++ ["t1", "t2"]
+  let avail (st : String) : List String :=
+    if st.startsWith "X" then ["alpha", "beta1", "beta2", "beta3"]
+    else if st.startsWith "x" then ["alpha"]
+    else if st.startsWith "u" then ["gamma"] else ["alpha"]
+  let next (st act : String) : String :=
+    if st.startsWith "X" then
+      let i := (st.drop 1).toNat!
+      if act == "alpha" then (if i < m then s!"X{i + 1}" else st)
+      else if act == "beta1" then s!"x{i}_1" else if act == "beta2" then s!"x{i}_2"
+      else if act == "beta3" then s!"x{i}_3" else st
+    else if st.startsWith "x" then
+      if act == "alpha" then
+        match lits.find? (·.1 == st) with
+        | some (_, l) => s!"u{l.natAbs}"
+        | none => st
+      else st
+    else if st.startsWith "u" then
+      if act == "alpha" then "t1" else if act == "beta" then "t2" else st
+    else st
+  let val (st : String) : List String :=
+    if st.startsWith "X" then ["p"]
+    else if st.startsWith "x" then
+      (match lits.find? (·.1 == st) with | some (_, l) => if l > 0 then ["pT"] else ["pF"] | none => [])
+    else if st.startsWith "u" then [s!"p{st.drop 1}"]
+    else if st == "t1" then ["pT"] else ["pF"]
+  "{" ++ s!"\"states\":{jstr (states.map q)},\"agents\":[\"a\"],\"actions\":{jstr (acts.map q)},"
+    ++ "\"moves\":{" ++ ",".intercalate (states.map fun st => s!"{q st}:\{\"a\":{jstr ((avail st).map q)}}") ++ "},"
+    ++ "\"valuation\":{" ++ ",".intercalate ((states.filter fun st => !(val st).isEmpty).map fun st =>
+        s!"{q st}:{jstr ((val st).map q)}") ++ "},"
+    ++ "\"transitions\":[" ++ ",".intercalate (states.flatMap fun st => acts.map fun a =>
+        s!"\{\"state\":{q st},\"moves\":\{\"a\":{q a}},\"next\":{q (next st a)}}") ++ "]}"
+
+def dx (f : DFormula) : DFormula := .canNext ["a"] f
+def pT : DFormula := .atom "pT"
+def pF : DFormula := .atom "pF"
+def pAt : DFormula := .atom "p"
+
+/-- `φ_Ψ = ⟨⟨a⟩⟩G(p ∧ ⟨⟨a⟩⟩X(¬p ∧ φtrue ∧ φfalse))`. -/
+def phiPsi : DFormula :=
+  let ph (t f : DFormula) : DFormula :=
+    .implies t (.and (dx (.and (.not t) (dx t))) (.not (dx (dx f))))
+  .canAlways ["a"] (.and pAt (dx (.and (.not pAt) (.and (ph pT pF) (ph pF pT)))))
+
+def psiPool (k : Nat) : List Candidate :=
+  (List.range k).flatMap fun l =>
+    ["alpha", "beta"].map fun a =>
+      { grant := true, cond := .atom s!"p{l + 1}", action := a, agents := ["a"] }
+
+/-- `some true` iff an update over the pool, of size at most `k`, makes `φ_Ψ` hold at `X1`. -/
+def reductionSays (c : Cnf) : Option Bool :=
+  match AtlDynamicTests.load (gPsi c) with
+  | .error _ => none
+  | .ok m =>
+    match boundedUpdate m .perfect "X1" phiPsi c.atoms (psiPool c.atoms) 200000 with
+    | .ok { outcome := .found steps _, .. } =>
+      -- re-check the witness by evaluating [π]φ_Ψ
+      match dsat m .perfect (stepsFormula steps phiPsi) with
+      | .ok r => some (r.contains "X1")
+      | .error _ => none
+    | .ok { outcome := .notFound, .. } => some false
+    | .error _ => none
+
+def paperEx : Cnf := [[1, 2, 3], [-1, -3, 4]]
+def unsat3 : Cnf := [[1, 2, 3], [1, 2, -3], [1, -2, 3], [1, -2, -3], [-1, 2, 3], [-1, 2, -3], [-1, -2, 3], [-1, -2, -3]]
+def lcgN (x : Nat) : Nat := (x * 1103515245 + 12345) % 2147483648
+/-- A random 3-literal-per-clause instance over `k` atoms. -/
+def randCnf (k m seed : Nat) : Cnf :=
+  let rec go (i x : Nat) (acc : Cnf) : Cnf :=
+    match i with
+    | 0 => acc
+    | i + 1 =>
+      let (cl, x') := (List.range 3).foldl (fun (cl, x) _ =>
+        let x := lcgN x
+        let atom := (x / 65536) % k + 1
+        let sign := (x / 1048576) % 2 == 0
+        (cl ++ [if sign then (atom : Int) else -(atom : Int)], x)) ([], x)
+      go i x' (acc ++ [cl])
+  go m seed []
+
+/-- Satisfiable only by assignments that set some atom true and some false, so an update that
+treats every atom alike (ignores the condition `p_l`) cannot find them. -/
+def mixedOnly : List Cnf :=
+  [[[1, 1, 1], [-2, -2, -2]], [[1, 1, 1], [-2, -2, -2], [-1, 2, 3]],
+   [[-1, -1, -1], [2, 2, 2], [1, -2, 3]]]
+/-- Unsatisfiable, but each clause is satisfied by some uniform assignment. -/
+def mixedUnsat : Cnf := [[1, 1, 1], [-1, 2, 2], [-2, -2, -2]]
+
+def reductionInstances : List Cnf :=
+  [paperEx, unsat3, mixedUnsat] ++ mixedOnly ++ (List.range 14).map fun i => randCnf (3 + i % 2) (3 + (i * 5) % 9) (7 + 977 * i)
+
+def reductionCases : List (String × Bool) := [
+  ("Thm 6 hardness (Fig. 6): the paper's example Ψ = (p1∨p2∨p3)∧(¬p1∨¬p3∨p4) is satisfiable, and its update [p2 : α → a, p4 : α → a]⁺ makes φ_Ψ hold at X1",
+    (match AtlDynamicTests.load (gPsi paperEx) with
+     | .ok m =>
+       (dsat m .perfect (.grant (.cons (.atom "p2") "alpha" ["a"] [] (.cons (.atom "p4") "alpha" ["a"] [] .nil)) phiPsi)).toOption.map
+         (·.contains "X1") == some true
+         && (dsat m .perfect phiPsi).toOption.map (·.contains "X1") == some false
+     | .error _ => false)),
+  ("Thm 6 hardness: the reduction agrees with brute-force 3SAT on the paper's example, the 8-clause unsatisfiable instance, and 14 random ones (both satisfiable and unsatisfiable occur), including instances only a mixed true/false assignment satisfies",
+    reductionInstances.all (fun c => reductionSays c == some c.sat)
+      && reductionInstances.any (·.sat) && reductionInstances.any (!·.sat)
+      && mixedOnly.all fun c => c.sat
+        && !(c.all fun cl => cl.any fun l => l > 0) && !(c.all fun cl => cl.any fun l => l < 0))
+]
+
+def cases : List (String × Bool) := coreCases ++ reductionCases
 
 end UpdateSearchTests

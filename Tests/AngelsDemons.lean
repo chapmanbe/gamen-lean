@@ -334,6 +334,112 @@ def expressivityCases : List (String × Bool) := [
         && holdsAtName (fig4 n (n + 3)) (.demon 1 (.eventually pp)) "s1" == some false)
 ]
 
-def cases : List (String × Bool) := coreCases ++ expressivityCases
+
+/-! ## Theorem 5's lower bound: QBF reduces to SDL model checking (p. 6), run end to end
+
+`𝔐^Ψ` has states `s, s_1..s_{2n}`, edges `s→s`, `s→s_i`, `s_i→s`, `p_i^1` at `s_i` and `p_i^0` at
+`s_{n+i}`, cost 2 on `s→s` and 1 elsewhere. The demon sets `p_i` true by removing `s → p_i^0`
+(`s→s_{n+i}`); `chosen_k` guards that exactly the first `k` atoms are set unambiguously;
+`φ_k := [1]X(chosen_k → φ_{k-1})` for `∀`, `⟨1⟩X(chosen_k ∧ φ_{k-1})` for `∃`, `φ_0 := ψ(◇◇p_i^1)`.
+As printed, `φ := φ_n` nests `φ_{k-1}` *inside* `φ_k`, so the first demon move would face
+`chosen_n`, which cannot hold after one removal; the nesting that works puts `Q_1` outermost
+with `chosen_1` (`qbfFormula`). The printed order is `qbfFormulaPrinted`; both are tested. -/
+
+/-- `Ψ = Q_1 p_1 … Q_n p_n ψ`: `true` = ∃. `ψ` is a CNF of literals `±i` (1-based). -/
+structure Qbf where
+  exists_ : List Bool
+  cnf : List (List Int)
+
+def Qbf.n (q : Qbf) : Nat := q.exists_.length
+
+/-- Brute-force truth of the QBF. -/
+def Qbf.eval (q : Qbf) : Bool :=
+  let rec go (j : Nat) (val : List Bool) (fuel : Nat) : Bool :=
+    match fuel with
+    | 0 => false
+    | fuel + 1 =>
+      if j ≥ q.n then
+        q.cnf.all fun cl => cl.any fun l =>
+          let v := val.getD (l.natAbs - 1) false
+          if l > 0 then v else !v
+      else if q.exists_.getD j false then go (j + 1) (val ++ [true]) fuel || go (j + 1) (val ++ [false]) fuel
+      else go (j + 1) (val ++ [true]) fuel && go (j + 1) (val ++ [false]) fuel
+  go 0 [] (q.n + 2)
+
+def qbfModel (n : Nat) : Except String WModel :=
+  mkWModel ("s" :: (List.range (2 * n)).map fun i => s!"s{i + 1}")
+    ([(0, 0)] ++ (List.range (2 * n)).flatMap fun i => [(0, i + 1), (i + 1, 0)])
+    (fun i j => if i == 0 && j == 0 then 2 else 1)
+    (fun st => if st == 0 then []
+      else if st ≤ n then [s!"p1_{st}"] else [s!"p0_{st - n}"])
+
+def dia (f : S) : S := .demonBox 0 (.next f)
+def diaDia (f : S) : S := dia (dia f)
+def iffS (a b : S) : S := .and (imp a b) (imp b a)
+
+def chosen (n k : Nat) : S :=
+  let first := (List.range k).map fun i =>
+    iffS (diaDia (atom s!"p0_{i + 1}")) (.not (diaDia (atom s!"p1_{i + 1}")))
+  let rest := ((List.range n).filter (· ≥ k)).map fun i =>
+    SFormula.and (diaDia (atom s!"p0_{i + 1}")) (diaDia (atom s!"p1_{i + 1}"))
+  first.foldl SFormula.and (rest.foldl SFormula.and SFormula.top)
+
+def matrix (q : Qbf) : S :=
+  let lit (l : Int) : S :=
+    let a := diaDia (atom s!"p1_{l.natAbs}")
+    if l > 0 then a else .not a
+  q.cnf.foldl (fun acc cl => SFormula.and acc (cl.foldl (fun d l => SFormula.or d (lit l)) (.not SFormula.top))) SFormula.top
+
+/-- The nesting that works: `Q_1` outermost, guarded by `chosen_1`. -/
+def qbfFormula (q : Qbf) : S :=
+  let n := q.n
+  let rec go (j : Nat) (fuel : Nat) : S :=
+    match fuel with
+    | 0 => matrix q
+    | fuel + 1 =>
+      if j > n then matrix q
+      else if q.exists_.getD (j - 1) false then
+        .demon 1 (.next (.and (chosen n j) (go (j + 1) fuel)))
+      else .demonBox 1 (.next (imp (chosen n j) (go (j + 1) fuel)))
+  go 1 (n + 1)
+
+/-- As printed: `φ_n` outermost with `Q_n` and `chosen_n`. -/
+def qbfFormulaPrinted (q : Qbf) : S :=
+  let n := q.n
+  let rec go (k : Nat) (fuel : Nat) : S :=
+    match fuel with
+    | 0 => matrix q
+    | fuel + 1 =>
+      if k == 0 then matrix q
+      else if q.exists_.getD (k - 1) false then
+        .demon 1 (.next (.and (chosen n k) (go (k - 1) fuel)))
+      else .demonBox 1 (.next (imp (chosen n k) (go (k - 1) fuel)))
+  go n (n + 1)
+
+def qbfHolds (q : Qbf) (f : Qbf → S) : Option Bool :=
+  holdsAtName (qbfModel q.n) (f q) "s"
+
+def qbfs2 : List Qbf :=
+  [[false, false], [false, true], [true, false], [true, true]].flatMap fun pre =>
+    [[[1, 2]], [[1], [-2]], [[1, -2], [-1, 2]], [[1], [2]], [[-1, -2]], [[1, 2], [-1, -2]]].map
+      fun cnf => { exists_ := pre, cnf := cnf }
+
+def qbfs3 : List Qbf :=
+  [[false, true, false], [true, false, true], [true, true, false], [false, false, true]].flatMap fun pre =>
+    [[[1, 2], [-2, 3]], [[1, -3], [2, 3], [-1, -2]], [[1, 2, 3]]].map fun cnf => { exists_ := pre, cnf := cnf }
+
+def qbfCases : List (String × Bool) := [
+  ("Thm 5 lower bound: the QBF reduction run through the SDL checker agrees with brute-force QBF truth on all 24 two-variable instances (4 prefixes × 6 matrices), with both true and false instances",
+    qbfs2.all (fun q => qbfHolds q qbfFormula == some q.eval)
+      && qbfs2.any (·.eval) && qbfs2.any (!·.eval)),
+  ("…and on 12 three-variable instances",
+    qbfs3.all (fun q => qbfHolds q qbfFormula == some q.eval)
+      && qbfs3.any (·.eval) && qbfs3.any (!·.eval)),
+  ("…but the nesting as printed (φ_n outermost, chosen_n first) does not: it disagrees with brute-force truth on some instance",
+    qbfs2.all (fun q => (qbfHolds q qbfFormulaPrinted).isSome)
+      && qbfs2.any fun q => qbfHolds q qbfFormulaPrinted != some q.eval)
+]
+
+def cases : List (String × Bool) := coreCases ++ expressivityCases ++ qbfCases
 
 end AngelsDemonsTests

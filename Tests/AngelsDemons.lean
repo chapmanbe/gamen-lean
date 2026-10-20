@@ -66,7 +66,7 @@ def admin : S := atom "admin"
 def noAdmin : S := .not admin
 def err : S := atom "error"
 
-def cases : List (String × Bool) := [
+def coreCases : List (String × Bool) := [
   ("mkWModel: a non-serial graph, a zero cost and an out-of-range edge are errors",
     (mkWModel ["a", "b"] [(0, 1)] (fun _ _ => 1)).isOk == false
       && (mkWModel ["a"] [(0, 0)] (fun _ _ => 0)).isOk == false
@@ -276,5 +276,64 @@ def randomCases : List (String × Bool) :=
     ((List.range 24).filter fun i => match randomModel (3 + i % 3) (1000 + 7919 * i) with
       | .ok w => let p := holdsAtom w "p"; !p.isEmpty && p.length < w.k
       | .error _ => false).length ≥ 18)]
+
+/-! ## The expressivity proofs of §3 (Theorems 1, 2, 4): the paper's separating models, run
+
+The proofs rest on pairs of models that one logic tells apart and another cannot. The first half
+of each argument (a formula *does* hold in one and fail in the other) is a computation, checked
+here against the implementation; the second half (no formula of the other logic can tell them
+apart) is the paper's argument and is not tested. Figure 3 is read off p. 5 of the PDF, Figure 4
+off p. 6. -/
+
+/-- 𝔐1/𝔐2 of Fig. 3: `s : p` and `t`, every edge present, cost `c` on all of them. -/
+def fig3Complete (c : Nat) : Except String WModel :=
+  mkWModel ["s", "t"] [(0, 0), (0, 1), (1, 0), (1, 1)] (fun _ _ => c)
+    (fun i => if i == 0 then ["p"] else [])
+
+/-- 𝔐3 of Fig. 3: `s : p` and `t`, reflexive edges only, cost 1 everywhere. 𝔐4 is `s` alone. -/
+def fig3M3 : Except String WModel :=
+  mkWModel ["s", "t"] [(0, 0), (1, 1)] (fun _ _ => 1) (fun i => if i == 0 then ["p"] else [])
+def fig3M4 : Except String WModel :=
+  mkWModel ["s"] [(0, 0)] (fun _ _ => 1) (fun _ => ["p"])
+
+/-- Fig. 4: the chain `s1 → … → s_{n+1}`, then `s_{n+1} → t_i` for `i ≤ k`, `t_i` reflexive,
+`p` only at `t1`, all costs 1. States: `s1..s_{n+1}` are 0..n, `t_i` is `n + i`. -/
+def fig4 (n k : Nat) : Except String WModel :=
+  mkWModel (((List.range (n + 1)).map fun i => s!"s{i + 1}") ++ ((List.range k).map fun i => s!"t{i + 1}"))
+    ((List.range n).map (fun i => (i, i + 1)) ++ (List.range k).map (fun i => (n, n + 1 + i))
+      ++ (List.range k).map (fun i => (n + 1 + i, n + 1 + i)))
+    (fun _ _ => 1) (fun i => if i == n + 1 then ["p"] else [])
+
+def holdsAtName (m : Except String WModel) (f : S) (s : String) : Option Bool :=
+  match m with
+  | .ok w => (satStates w f).toOption.map (·.contains s)
+  | .error _ => none
+
+def pp : S := atom "p"
+
+def expressivityCases : List (String × Bool) := [
+  ("Thm 1/2, SDL ⋠ SCL (Fig. 3): ⟨⟨1⟩⟩X p holds at s of 𝔐1 (the demon removes s→t, cost 1) and fails at s of 𝔐2 (every edge costs 2)",
+    holdsAtName (fig3Complete 1) (.demon 1 (.next pp)) "s" == some true
+      && holdsAtName (fig3Complete 2) (.demon 1 (.next pp)) "s" == some false),
+  ("Thm 1/2, SCL ⋠ SDL and CTL ≺ SCL (Fig. 3): ⟨⟨angel 1⟩⟩X[angel 0]X¬p holds at s of 𝔐3 and fails at s of 𝔐4",
+    holdsAtName fig3M3 (.angel 1 (.next (.angelBox 0 (.next (.not pp))))) "s" == some true
+      && holdsAtName fig3M4 (.angel 1 (.next (.angelBox 0 (.next (.not pp))))) "s" == some false),
+  ("Thm 1/2, the SUL formula ⟨[angel 1]⟩^0 X [⟨angel 0, demon 0⟩] X¬p — the competitive form — separates 𝔐3 from 𝔐4 too",
+    holdsAtName fig3M3 (.updateAngel 1 0 (.next (.updateBox 0 0 (.next (.not pp))))) "s" == some true
+      && holdsAtName fig3M4 (.updateAngel 1 0 (.next (.updateBox 0 0 (.next (.not pp))))) "s" == some false),
+  ("Thm 2's translations SDL ≼ SUL and SCL ≼ SUL: ⟨[angel 0, demon n]⟩ ≡ ⟨⟨n⟩⟩ and ⟨[angel n, demon 0]⟩ ≡ the angelic ⟨⟨n⟩⟩ (on 𝔐1 of Fig. 1 and the Fig. 3 models), and Thm 1's ⟨[angel 0, demon 0]⟩ ≡ ⟨⟨0⟩⟩",
+    [m1, m2, m3, fig3Complete 1, fig3Complete 2, fig3M3].all fun m =>
+      [PFormula.next pp, .eventually pp, .always (.not pp), .until (.not pp) pp].all fun ψ =>
+        [0, 1, 2].all fun n =>
+          sats m (.update 0 n ψ) == sats m (.demon n ψ) && (sats m (.demon n ψ)).isSome
+            && sats m (.update n 0 ψ) == sats m (.angel n ψ) && (sats m (.angel n ψ)).isSome
+            && sats m (.update 0 0 ψ) == sats m (.demon 0 ψ)),
+  ("Thm 4, SDL ⋠ OL (Fig. 4): ⟨⟨1⟩⟩F p holds at s1 of 𝔐_{n+2} (n+1 non-p t-states, and the demon has n+1 removals along the way) and fails at s1 of 𝔐_{n+3}, for n = 1, 2, 3",
+    [1, 2, 3].all fun n =>
+      holdsAtName (fig4 n (n + 2)) (.demon 1 (.eventually pp)) "s1" == some true
+        && holdsAtName (fig4 n (n + 3)) (.demon 1 (.eventually pp)) "s1" == some false)
+]
+
+def cases : List (String × Bool) := coreCases ++ expressivityCases
 
 end AngelsDemonsTests

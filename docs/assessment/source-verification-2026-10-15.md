@@ -27,3 +27,15 @@ every label of both models. **All match; no change to any cost.**
 
 Not checked: that the dotted edges' arrow directions in 𝔐2 (s3→s2 and s2→s3 both drawn) matter
 to any claim; the tests use only the 𝔐1 and 𝔐3 constructions from the text.
+
+## Addendum 2026-10-21: Perrotin et al. and Hunter, read
+
+Read from the local PDFs (pdftotext); abstracts, and for Perrotin §§3 and 7, in full.
+
+| Source | What was read | Result |
+|---|---|---|
+| Perrotin, Galimullin, Canu & Alechina, "Public Group Announcements and Trust in Doxastic Logic" | §3 (semantics), §7 (discussion), headings, references | **Read.** The logic is SDDLT: *syntactic* belief bases (sets of formulas over `B_a`, closed under the trust-chain relation) and a trust *set* per agent, with simultaneous public group announcements. Trust can only be lost; announcements that contradict each other, with neither supported by the receiver's beliefs, cost both announcers their trust. Complete axiomatization by reduction axioms (Theorem 1). It does **not** cite Liu & Lorini (DL-BET), uses no evidence sets or possible worlds, and is a different framework, not an extension of `EvidenceTrust`. Venue and year are still absent from the PDF text: unverified. |
+| Hunter 2023 (Booth), "Joint Trust for Belief Revision" | Header, abstract | Venue verified from the PDF header: the 36th Canadian Conference on Artificial Intelligence. |
+| Hunter 2023, "Reports, Observations, and Belief Change"; 2024, "Combined Change Operators for Trust and Belief"; 2026 (Lepke), "Belief Revision with Two Kinds of Trust"; 2026, "Belief Change with Full Memory and Trust" | Abstracts only | These are AGM/Darwiche-Pearl-style postulate papers on trust-weighted revision (representation results, trust-change operators, honesty thresholds). They are not modal logics with a semantics to port. Venues and years unchecked; results not read beyond the abstracts. |
+
+Consequence for issue #4: the `EvidenceTrust.lean` docstring claim ("other components") should read as *related work*, not as components of DL-BET. Neither source is a natural next module.

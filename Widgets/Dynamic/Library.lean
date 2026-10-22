@@ -22,9 +22,21 @@ def handoff : Except String Scenario :=
   load "data/scenarios/handoff.json"
     (include_str ".." / ".." / "data" / "scenarios" / "handoff.json")
 
+/-- Scenario 2 (ATL-D, grant): the patient lacks the referral action. -/
+def wouldIfCould : Except String Scenario :=
+  load "data/scenarios/would-if-could.json"
+    (include_str ".." / ".." / "data" / "scenarios" / "would-if-could.json")
+
+/-- Scenario 3 (ATL-D, revoke): revoking an override, and the reasonableness rule. -/
+def safetyAccess : Except String Scenario :=
+  load "data/scenarios/safety-access.json"
+    (include_str ".." / ".." / "data" / "scenarios" / "safety-access.json")
+
 /-- Every scenario, with the data file it comes from. -/
 def allScenarios : List (String × Except String Scenario) :=
-  [("data/scenarios/handoff.json", handoff)]
+  [("data/scenarios/handoff.json", handoff),
+   ("data/scenarios/would-if-could.json", wouldIfCould),
+   ("data/scenarios/safety-access.json", safetyAccess)]
 
 end Gamen.Widgets.Dynamic.Library
 

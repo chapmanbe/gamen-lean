@@ -1,0 +1,112 @@
+{
+  "id": "would-if-could",
+  "title": "I would if I could: the missing referral",
+  "setup": "A patient (patient) wants specialist treatment. From home the patient can visit primary care; at primary the patient can only wait, because seeing the specialist needs a referral, and nobody has the action refer yet. At the specialist the patient can attend treatment, which leads to treated. The clinic staff (staff) can only wait. Each control is an update clause, condition : action → {agents}: it grants the action to those agents at every state where the condition holds, judged in the model before the update. Tick clauses, then press Apply.",
+  "mode": "atlD",
+  "model": {
+    "states": ["home", "primary", "specialist", "treated"],
+    "agents": ["patient", "staff"],
+    "actions": ["wait", "visit", "refer", "attend"],
+    "moves": {
+      "home": {"patient": ["wait", "visit"], "staff": ["wait"]},
+      "primary": {"patient": ["wait"], "staff": ["wait"]},
+      "specialist": {"patient": ["wait", "attend"], "staff": ["wait"]},
+      "treated": {"patient": ["wait"], "staff": ["wait"]}
+    },
+    "transitions": [
+      {"state": "home", "moves": {"patient": "visit", "staff": "wait"}, "next": "primary"},
+      {"state": "primary", "moves": {"patient": "refer", "staff": "wait"}, "next": "specialist"},
+      {"state": "primary", "moves": {"patient": "wait", "staff": "refer"}, "next": "specialist"},
+      {"state": "primary", "moves": {"patient": "refer", "staff": "refer"}, "next": "specialist"},
+      {"state": "specialist", "moves": {"patient": "attend", "staff": "wait"}, "next": "treated"}
+    ],
+    "default_next": {"stay": true},
+    "valuation": {"primary": ["primary"], "treated": ["treated"]}
+  },
+  "controls": {
+    "mode": "perfect",
+    "clauses": [
+      {"label": "grant primary : refer → {patient}", "kind": "grant",
+       "cond": "primary", "action": "refer", "agents": ["patient"]},
+      {"label": "grant primary : refer → {staff}", "kind": "grant",
+       "cond": "primary", "action": "refer", "agents": ["staff"]},
+      {"label": "grant ⟨⟨patient⟩⟩F treated : refer → {patient}", "kind": "grant",
+       "cond": "⟨⟨patient⟩⟩F treated", "action": "refer", "agents": ["patient"]}
+    ]
+  },
+  "layout": [
+    {"name": "home", "x": 0.1, "y": 0.5},
+    {"name": "primary", "x": 0.37, "y": 0.5},
+    {"name": "specialist", "x": 0.63, "y": 0.5},
+    {"name": "treated", "x": 0.9, "y": 0.5}
+  ],
+  "checks": ["has(patient,visit)", "has(staff,refer)"],
+  "questions": [
+    {
+      "id": "click-would-before",
+      "prompt": "The model before any grant: press Reset, then press Apply with no box ticked. Click the states where ⟨⟨patient⟩⟩F treated holds.",
+      "kind": {"clickWorlds": {"formula": "⟨⟨patient⟩⟩F treated"}},
+      "answer": "specialist,treated",
+      "hints": [
+        {"answer": "treated",
+         "text": "F includes the present, so treated qualifies, but so does specialist: there the patient can attend, and the next state is treated whatever the staff does."},
+        {"answer": "home,primary,specialist,treated",
+         "text": "From home the patient can reach primary, but at primary the patient's only action is wait, which stays at primary. Without refer, the patient cannot get past primary."},
+        {"answer": "",
+         "text": "At least one state qualifies: F includes the present, so check treated itself."}
+      ]
+    },
+    {
+      "id": "reach-would",
+      "prompt": "Tick the fewest grant clauses that make ⟨⟨patient⟩⟩F treated true at home, then press Check (Apply is optional here).",
+      "kind": {"reachGoal": {"goal": "⟨⟨patient⟩⟩F treated", "atWorld": "home"}},
+      "answer": "grant primary : refer → {patient}",
+      "hints": [
+        {"answer": "grant primary : refer → {staff}",
+         "text": "Now the staff can refer at primary, but ⟨⟨patient⟩⟩ asks what the patient can force alone. The staff might keep waiting, so the patient still cannot get past primary."},
+        {"answer": "grant ⟨⟨patient⟩⟩F treated : refer → {patient}",
+         "text": "The condition is judged in the model before the grant, where ⟨⟨patient⟩⟩F treated holds only at specialist and treated. So refer is granted there, where it leads nowhere, and not at primary, where it is needed."},
+        {"answer": "",
+         "text": "With no grant, the patient at primary can only wait. Which action is missing there, and who needs it?"}
+      ]
+    },
+    {
+      "id": "click-would-after",
+      "prompt": "Press Reset, tick only \"grant primary : refer → {patient}\", and press Apply. Click the states where ⟨⟨patient⟩⟩F treated holds now.",
+      "kind": {"clickWorlds": {"formula": "⟨⟨patient⟩⟩F treated"}},
+      "answer": "home,primary,specialist,treated",
+      "hints": [
+        {"answer": "specialist,treated",
+         "text": "That was the answer before the grant. Now the patient at primary has refer, which leads to specialist."},
+        {"answer": "primary,specialist,treated",
+         "text": "From home the patient can visit primary, and from primary the patient can now refer. Abilities chain: home qualifies too."}
+      ]
+    },
+    {
+      "id": "write-has-refer",
+      "prompt": "Keep \"grant primary : refer → {patient}\" applied (Reset, tick it, Apply). Write a formula true exactly at the states where the patient has the action refer.",
+      "kind": {"writeFormula": {"target": ["primary"]}},
+      "answer": "has(patient,refer)",
+      "hints": [
+        {"answer": "refer",
+         "text": "refer is an action, not an atom: no state is labeled refer, so this formula is true nowhere. The formula for having an action is has(agent,action)."},
+        {"answer": "⟨⟨patient⟩⟩F treated",
+         "text": "That is what the grant makes possible, and it is true at every state. The question asks where the patient has the action itself."},
+        {"answer": "has(staff,refer)",
+         "text": "This grant gives refer to the patient, not the staff; the staff has refer nowhere."}
+      ]
+    },
+    {
+      "id": "click-staff-refer",
+      "prompt": "Press Reset, tick only \"grant primary : refer → {staff}\", and press Apply. Click the states where ⟨⟨patient⟩⟩F treated holds.",
+      "kind": {"clickWorlds": {"formula": "⟨⟨patient⟩⟩F treated"}},
+      "answer": "specialist,treated",
+      "hints": [
+        {"answer": "home,primary,specialist,treated",
+         "text": "The staff can now refer at primary, but ⟨⟨patient⟩⟩ needs a strategy for the patient alone that works whatever the staff does, and the staff may keep waiting. Patient and staff together, ⟨⟨patient,staff⟩⟩F treated, would hold at every state."},
+        {"answer": "primary,specialist,treated",
+         "text": "At primary the patient still has only wait, and the staff may keep waiting too, so the patient cannot force leaving primary."}
+      ]
+    }
+  ]
+}

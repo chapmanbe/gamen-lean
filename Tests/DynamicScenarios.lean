@@ -34,6 +34,10 @@ def referStaff : String := "grant primary : refer → {staff}"
 def referWhereTreatable : String := "grant ⟨⟨patient⟩⟩F treated : refer → {patient}"
 def revokeAll : String := "revoke ⊤ : override → {team}"
 def revokeRoutine : String := "revoke routine : override → {team}"
+def grantHandoff : String := "grant handoff : order → {incoming}"
+def grantHandoffInform : String := "grant handoff : order → {incoming} and inform {pharmacist}"
+def grantEverywhere : String := "grant ⊤ : order → {incoming}"
+def revokeOutgoing : String := "revoke handoff : order → {outgoing}"
 
 /-- The controls applied before a click or formula question is answered. -/
 def intendedSelection : String → List String
@@ -47,6 +51,11 @@ def intendedSelection : String → List String
   | "click-harm-before" => []
   | "click-given-revoked" => [revokeAll]
   | "click-has-override" => [revokeAll]
+  | "click-unaware" => [grantHandoff, revokeOutgoing]
+  | "click-incoming-can" => [grantHandoff, revokeOutgoing]
+  | "write-knows-whether" => [grantHandoff, revokeOutgoing]
+  | "click-pharmacist-informed" => [grantHandoffInform, revokeOutgoing]
+  | "click-everywhere" => [grantEverywhere]
   | _ => []
 
 /-- An answer in normalized form, as the question's kind expects it. -/
@@ -96,6 +105,20 @@ def dTruth (sc : Except String Scenario) (f : String) : Except String (List Stri
   let sc ← sc
   let m ← (Gamen.CgsJson.decodeDyn sc.model).mapError (·.message)
   pure (← Atl.Dynamic.dsat m .perfect (← Atl.Dynamic.parseDFormula f)).toList
+
+/-- `dTruth` under a given `IrMode` (the shift-change scenario is ATEL-D, subjective). -/
+def dTruthIn (mode : Atl.Dynamic.IrMode) (sc : Except String Scenario) (f : String) :
+    Except String (List String) := do
+  let sc ← sc
+  let m ← (Gamen.CgsJson.decodeDyn sc.model).mapError (·.message)
+  pure (← Atl.Dynamic.dsat m mode (← Atl.Dynamic.parseDFormula f)).toList
+
+/-- Grade a question of the shift-change scenario: (correct, message). -/
+def gradeShift (id : String) (ans : String) : Except String (Bool × String) := do
+  let sc ← shiftChange
+  let q ← (sc.questions.find? (·.id == id)).elim (throw s!"no question {id}") pure
+  let f ← feedbackOf sc q ans
+  pure (f.correct, f.message)
 
 /-- A scenario's clauses as an update-search pool, with their labels. -/
 def poolOf (sc : Scenario) : Except String (List (String × Atl.Dynamic.Candidate)) := do
@@ -225,6 +248,58 @@ def cases : List (String × Bool) := [
     reachWould [referPatient] == .ok (true, "Correct.")),
   ("write-has-refer: the atom primary no longer picks out the target",
     writeHasRefer "primary" == .ok false),
+  ("shift-change has 4-6 questions and is ATEL-D in subjective mode",
+    match shiftChange with
+    | .ok sc => sc.questions.length ≥ 4 && sc.questions.length ≤ 6
+        && (sc.controls.getObjValD "mode").getStr? == .ok "subjective"
+    | .error _ => false),
+  ("library claim: before any update, the pharmacist cannot tell new-shift from old-shift",
+    dTruthIn .subjective shiftChange "handoff ∧ ¬K[pharmacist]handoff" == .ok ["new-shift"]
+      && dTruthIn .subjective shiftChange "K[pharmacist]handoff" == .ok ["new-shift-present"]),
+  ("library claim: both clinicians know whether the shift has changed, not whether the pharmacist was there",
+    ["incoming", "outgoing"].all fun a =>
+      dTruthIn .subjective shiftChange s!"K[{a}]handoff ∨ K[{a}]¬handoff"
+        == .ok ["new-shift", "new-shift-present", "old-shift", "ordered"]
+      && dTruthIn .subjective shiftChange s!"K[{a}]K[pharmacist]handoff" == .ok []),
+  ("library claim: the ⊤ grant lets the incoming clinician order before the shift change",
+    (dTruthIn .subjective shiftChange "[⊤:order→{incoming}]+has(incoming,order)").map (·.contains "old-shift")
+      == .ok true),
+  ("library claim: after the handoff grant and revoke, incoming can order and knows it, the pharmacist does not know it",
+    dTruthIn .subjective shiftChange
+      "[handoff:order→{incoming},{incoming}]+([handoff:order→{outgoing}]-(has(incoming,order) ∧ K[incoming]has(incoming,order) ∧ ¬K[pharmacist]has(incoming,order)))"
+      == .ok ["new-shift"]),
+  ("library claim: with the pharmacist informed, the pharmacist knows incoming can order",
+    dTruthIn .subjective shiftChange
+      "[handoff:order→{incoming},{pharmacist}]+([handoff:order→{outgoing}]-K[pharmacist]has(incoming,order))"
+      == .ok ["new-shift", "new-shift-present"]),
+  ("library claim: a grant whose condition is ⊤ is known to the pharmacist everywhere, informed or not",
+    dTruthIn .subjective shiftChange "[⊤:order→{incoming}]+K[pharmacist]has(incoming,order)"
+      == .ok ["new-shift", "new-shift-present", "old-shift", "ordered"]
+      && dTruthIn .subjective shiftChange "[⊤:order→{incoming},{pharmacist}]+K[pharmacist]has(incoming,order)"
+        == .ok ["new-shift", "new-shift-present", "old-shift", "ordered"]),
+  ("library claim (subjective): the ability to have an order placed moves from outgoing to incoming at the new-shift states",
+    dTruthIn .subjective shiftChange "⟨⟨incoming⟩⟩X ordered" == .ok ["ordered"]
+      && dTruthIn .subjective shiftChange "⟨⟨outgoing⟩⟩X ordered"
+        == .ok ["new-shift", "new-shift-present", "old-shift", "ordered"]
+      && dTruthIn .subjective shiftChange
+        "[handoff:order→{incoming}]+([handoff:order→{outgoing}]-⟨⟨incoming⟩⟩X ordered)"
+        == .ok ["new-shift", "new-shift-present", "ordered"]
+      && dTruthIn .subjective shiftChange
+        "[handoff:order→{incoming}]+([handoff:order→{outgoing}]-⟨⟨outgoing⟩⟩X ordered)"
+        == .ok ["old-shift", "ordered"]),
+  ("the shift-change revoke triggers no reasonableness note",
+    ((do pure (← (← shiftChange).after [grantHandoff, revokeOutgoing]).notes) : Except String _) == .ok []),
+  ("reach-informed is minimal; the handoff grant without informing grades incorrect",
+    (shiftChange.toOption.bind (·.questions.find? (·.id == "reach-informed"))).map (·.minimal) == some true
+      && (gradeShift "reach-informed" s!"{grantHandoff},{revokeOutgoing}").map (·.1) == .ok false),
+  ("reach-informed: both handoff grants plus the revoke works but names the uninformed grant as not needed",
+    gradeShift "reach-informed" s!"{grantHandoff},{grantHandoffInform},{revokeOutgoing}" == .ok (false,
+      s!"That works, but {grantHandoff} is not needed: the goal is reached without it.")),
+  ("reach-informed: the ⊤ grant plus the revoke grades incorrect (incoming could order before the handoff)",
+    (gradeShift "reach-informed" s!"{grantEverywhere},{revokeOutgoing}").map (·.1) == .ok false),
+  ("write-knows-whether: the atoms handoff and ordered do not pick out the target",
+    (gradeShift "write-knows-whether" "handoff ∨ ordered").map (·.1) == .ok false
+      && (gradeShift "write-knows-whether" "handoff").map (·.1) == .ok false),
   ("a load error names the data file",
     match load "x.json" "{" with
     | .error e => e.startsWith "x.json: "

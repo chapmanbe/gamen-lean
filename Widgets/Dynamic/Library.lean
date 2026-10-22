@@ -32,11 +32,18 @@ def safetyAccess : Except String Scenario :=
   load "data/scenarios/safety-access.json"
     (include_str ".." / ".." / "data" / "scenarios" / "safety-access.json")
 
+/-- Scenario 5 (ATEL-D): ordering authority changes hands at shift change, and
+the pharmacist is not told. -/
+def shiftChange : Except String Scenario :=
+  load "data/scenarios/shift-change.json"
+    (include_str ".." / ".." / "data" / "scenarios" / "shift-change.json")
+
 /-- Every scenario, with the data file it comes from. -/
 def allScenarios : List (String × Except String Scenario) :=
   [("data/scenarios/handoff.json", handoff),
    ("data/scenarios/would-if-could.json", wouldIfCould),
-   ("data/scenarios/safety-access.json", safetyAccess)]
+   ("data/scenarios/safety-access.json", safetyAccess),
+   ("data/scenarios/shift-change.json", shiftChange)]
 
 end Gamen.Widgets.Dynamic.Library
 

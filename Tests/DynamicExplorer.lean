@@ -114,6 +114,9 @@ def cases : List (String × Bool) := [
         \"questions\":[{\"id\":\"q\",\"prompt\":\"\",\"answer\":\"\",
           \"kind\":{\"clickWorlds\":{\"formula\":\"p\"}}}]}")).map
       (fun s => s.checks.length + (s.questions.map (·.hints.length)).sum)) == .ok 0),
+  ("ofJson: a non-object question is an error, not a panic",
+    isError (Scenario.ofJson (Json.mkObj [("questions", Json.arr #[Json.str "x"])]))),
+  ("ofJson: a non-object scenario is an error", isError (Scenario.ofJson (Json.str "x"))),
   ("ATL-D: a skipped revoke leaves a note naming the agent and state",
     dynNotes.any (fun n => n.contains "nurse" && n.contains "s0")),
   ("ATL-D: no note where the revoke applied", !dynNotes.any (·.contains "s1")),

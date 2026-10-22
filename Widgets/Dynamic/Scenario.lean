@@ -124,13 +124,15 @@ private def entries (j : Json) (k ctx : String) : Except String (List (String ×
 
 /-- Decode a scenario. `hints` and `checks` may be omitted (empty). -/
 def Scenario.ofJson (j : Json) : Except String Scenario := do
-  let withDefault (o : Json) (k : String) : Json :=
-    match o.getObjVal? k with
-    | .ok _ => o
-    | .error _ => o.setObjVal! k (Json.arr #[])
+  -- no `setObjVal!`: on a non-object it panics and continues with a default
+  let obj (ctx : String) (o : Json) := o.getObj?.mapError fun e => s!"{ctx}: {e}"
+  let withDefault (ctx : String) (o : Json) (k : String) : Except String Json := do
+    let m ← obj ctx o
+    pure (if m.contains k then o else Json.obj (m.insert k (Json.arr #[])))
+  let m ← obj "scenario" (← withDefault "scenario" j "checks")
   let qs ← (j.getObjValD "questions").getArr?.mapError fun e => s!"scenario.questions: {e}"
-  let j := (withDefault j "checks").setObjVal! "questions"
-    (Json.arr (qs.map fun q => withDefault q "hints"))
+  let qs ← qs.mapM fun q => withDefault "scenario.questions[]" q "hints"
+  let j := Json.obj (m.insert "questions" (Json.arr qs))
   (fromJson? j : Except String Scenario).mapError fun e => s!"scenario: {e}"
 
 /-- A key `selected` that names no control is an error, not ignored. -/

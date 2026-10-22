@@ -102,6 +102,32 @@ def viewField (s : ExplorerState) (k : String) : Json := (view s).getObjValD k
 def viewWorlds (s : ExplorerState) : Nat :=
   (((viewField s "model").getObjValD "worlds").getArr?.toOption.map (·.size)).getD 99
 
+/-- (name, x, y) of each world drawn. -/
+def drawn (s : ExplorerState) : List (String × Float × Float) :=
+  ((((viewField s "model").getObjValD "worlds").getArr?.toOption.getD #[]).toList.map fun w =>
+    ((w.getObjValD "name").getStr?.toOption.getD "",
+     ((Lean.fromJson? (w.getObjValD "x") : Except String Float).toOption.getD (-1)),
+     ((Lean.fromJson? (w.getObjValD "y") : Except String Float).toOption.getD (-1))))
+
+def afterD (layout : List WorldPos) : ExplorerState :=
+  replayOn { sc with layout := layout } [.toggleControl "D", .apply]
+
+def msgText (s : ExplorerState) : String := (viewField s "message").getStr?.toOption.getD ""
+
+def inUnit (p : String × Float × Float) : Bool :=
+  p.2.1 ≥ 0 && p.2.1 ≤ 1 && p.2.2 ≥ 0 && p.2.2 ≤ 1
+
+/-- A nurse scenario with a layout and a question, so clicks and submits work. -/
+def dscQ : Scenario :=
+  { dsc with layout := [⟨"s0", 0, 0⟩, ⟨"s1", 1, 0⟩]
+             questions := [{ id := "d1", prompt := "Where does the nurse have x?",
+                             kind := .clickWorlds "has(nurse,x)", answer := "s0" }] }
+
+def dNoted : ExplorerState := replayOn dscQ [.toggleControl "noX", .apply]
+
+def notesOf (s : ExplorerState) : List String :=
+  ((viewField s "notes").getArr?.toOption.getD #[]).toList.filterMap (·.getStr?.toOption)
+
 def cases : List (String × Bool) := [
   ("before has 2 worlds", ((sc.before).map (·.worlds.length)) == .ok 2),
   ("after, D observes: 3 worlds",
@@ -194,6 +220,28 @@ def cases : List (String × Bool) := [
   ("view marks clicked worlds",
     (toJson (view (replay [.toggleControl "D", .apply, .clickWorld "w1×sent"]))).compress.contains
       "\"clicked\":true"),
+  ("layout: product worlds are not flagged and message is null",
+    (afterD sc.layout).message.isNone && (viewField (afterD sc.layout) "message") == Json.null),
+  ("layout: three after-model worlds drawn, inside [0,1]",
+    (drawn (afterD sc.layout)).length == 3 && (drawn (afterD sc.layout)).all inUnit),
+  ("layout: w1 siblings get distinct positions, w2 product world sits at w2",
+    match drawn (afterD sc.layout) with
+    | [(_, x1, y1), (_, x2, y2), (_, x3, y3)] =>
+      (x1 != x2 || y1 != y2) && x1 == 0 && x2 == 0 && y1 == 0 && y2 - y1 > 0.1 && x3 == 1 && y3 == 0
+    | _ => false),
+  ("layout: an exact-name entry beats the prefix lookup",
+    (drawn (afterD (⟨"w1×sent", 0.9, 0.8⟩ :: sc.layout))).any
+      fun (n, x, y) => n == "w1×sent" && x == 0.9 && y == 0.8),
+  ("layout: a world whose base is also missing is flagged",
+    (msgText (afterD [⟨"w1", 0, 0⟩])).contains "w2×lost"
+      && !(msgText (afterD [⟨"w1", 0, 0⟩])).contains "w1×"),
+  ("notes: apply puts the skipped-revoke note in view, not in message",
+    (notesOf dNoted).any (fun n => n.contains "nurse" && n.contains "s0") && dNoted.message.isNone),
+  ("notes: survive a click and a submit",
+    let s := step (step dNoted (.clickWorld "s0")) .submit
+    s.feedback.isSome && (notesOf s).any (·.contains "nurse")),
+  ("notes: cleared by un-applying and by reset",
+    (notesOf (step dNoted (.toggleControl "noX"))).isEmpty && (notesOf (step dNoted .reset)).isEmpty),
   ("view of a world missing from layout notes it",
     let s := replayOn { sc with layout := [] } []
     ((viewField s "message").getStr?.toOption.getD "").contains "w1")

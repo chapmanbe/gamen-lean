@@ -28,8 +28,10 @@ structure ExplorerState where
   clicked : List String := []
   formulaText : String := ""
   feedback : Option Feedback := none
-  /-- Errors and notes, shown verbatim. -/
+  /-- Errors and prompts, shown verbatim; replaced by the next event. -/
   message : Option String := none
+  /-- What the update did (e.g. a skipped revoke); kept while the after model is shown. -/
+  notes : List String := []
   deriving ToJson, FromJson, Inhabited
 
 inductive Event
@@ -64,11 +66,11 @@ private def ExplorerState.doApply (s : ExplorerState) : ExplorerState :=
   | .error e => { s with message := some e }
   | .ok ev =>
     if ev.worlds.isEmpty then
-      { s with applied := false, clicked := [], feedback := none,
+      { s with applied := false, clicked := [], feedback := none, notes := [],
                message := some "No world survives this update." }
     else
       { s with applied := true, clicked := [], feedback := none,
-               message := if ev.notes.isEmpty then none else some (" ".intercalate ev.notes) }
+               message := none, notes := ev.notes }
 
 private def ExplorerState.doClick (s : ExplorerState) (w : String) : ExplorerState :=
   match s.shown with
@@ -99,7 +101,7 @@ def step (s : ExplorerState) (e : Event) : ExplorerState :=
   match e with
   | .toggleControl k =>
     { s with selected := toggle k s.selected, applied := false, clicked := [],
-             feedback := none, message := none }
+             feedback := none, message := none, notes := [] }
   | .apply => s.doApply
   | .reset => { ExplorerState.init s.scenario with question := s.question }
   | .clickWorld w => s.doClick w
@@ -111,8 +113,13 @@ def step (s : ExplorerState) (e : Event) : ExplorerState :=
 
 /-! ## View -/
 
+/-- Vertical gap between product worlds sharing a layout entry. Assumes layout
+coordinates in [0, 1] and nodes drawn at most 0.1 across. -/
+private def siblingGap : Float := 0.12
+
 /-- A world's drawing position: from the layout (a product world `w×e` takes `w`'s
-position, nudged by its index among the worlds sharing it), else on a circle. -/
+position, stacked vertically by `siblingGap` by its index among the worlds sharing
+it, toward the middle of [0, 1] and clamped into it), else on a circle. -/
 private def position (layout : List WorldPos) (worlds : List String) (w : String) :
     Option (Float × Float) :=
   let base (v : String) := (v.splitOn "×").headD v
@@ -122,7 +129,8 @@ private def position (layout : List WorldPos) (worlds : List String) (w : String
     (layout.find? (·.name == base w)).map fun p =>
       let siblings := worlds.filter (base · == base w)
       let k := (siblings.findIdx? (· == w)).getD 0
-      (p.x + 0.06 * k.toFloat, p.y + 0.06 * k.toFloat)
+      let dir := if p.y + siblingGap * (siblings.length - 1).toFloat ≤ 1 then 1.0 else -1.0
+      (min 1 (max 0 p.x), min 1 (max 0 (p.y + dir * siblingGap * k.toFloat)))
 
 private def circle (n i : Nat) : Float × Float :=
   let a := 2 * 3.141592653589793 * i.toFloat / (max n 1).toFloat
@@ -180,6 +188,6 @@ def view (s : ExplorerState) : Json :=
       Json.mkObj [("key", toJson k), ("label", toJson k), ("on", toJson (s.selected.contains k))]).toArray),
     ("model", model), ("checks", Json.arr checks.toArray),
     ("question", question), ("formulaText", toJson s.formulaText),
-    ("feedback", toJson s.feedback), ("message", message), ("applied", toJson s.applied)]
+    ("feedback", toJson s.feedback), ("message", message), ("notes", toJson s.notes), ("applied", toJson s.applied)]
 
 end Gamen.Widgets.Dynamic

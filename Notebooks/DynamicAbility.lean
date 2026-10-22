@@ -75,7 +75,9 @@ In the explorer, each update clause is a checkbox, labeled with its kind and
 the clause, e.g. `grant primary : refer → {patient}`. Ticked clauses are
 applied in the order listed; consecutive clauses of the same kind form one
 simultaneous update. You do not type updates yourself: you tick them, and your
-formulas are evaluated in the model the explorer shows.
+formulas are evaluated in the model the explorer shows. A question about a
+particular update is graded only with exactly its clauses ticked and applied;
+otherwise the explorer tells you which to tick.
 
 ## Scenario 2: the missing referral
 

@@ -72,6 +72,10 @@ structure Question where
   /-- The reference answer, normalized. -/
   answer : String
   hints : List Hint := []
+  /-- For `reachGoal` only: also require the selection to be minimal. A selection
+  that reaches the goal grades incorrect when a strict subset of it also does
+  (`gradeAnswer`). Optional in the JSON (absent: `false`). -/
+  minimal : Bool := false
   deriving ToJson, FromJson, Inhabited
 
 structure Scenario where
@@ -122,16 +126,20 @@ private def entries (j : Json) (k ctx : String) : Except String (List (String ×
     let o ← v.getObj?.mapError fun e => s!"{ctx}.{k}: {e}"
     pure o.toList
 
-/-- Decode a scenario. `hints` and `checks` may be omitted (empty). -/
+/-- Decode a scenario. `hints` and `checks` may be omitted (empty), and a
+question's `minimal` (`false`). -/
 def Scenario.ofJson (j : Json) : Except String Scenario := do
   -- no `setObjVal!`: on a non-object it panics and continues with a default
   let obj (ctx : String) (o : Json) := o.getObj?.mapError fun e => s!"{ctx}: {e}"
-  let withDefault (ctx : String) (o : Json) (k : String) : Except String Json := do
+  let withDefault (ctx : String) (o : Json) (k : String) (d : Json := Json.arr #[]) :
+      Except String Json := do
     let m ← obj ctx o
-    pure (if m.contains k then o else Json.obj (m.insert k (Json.arr #[])))
+    pure (if m.contains k then o else Json.obj (m.insert k d))
   let m ← obj "scenario" (← withDefault "scenario" j "checks")
   let qs ← (j.getObjValD "questions").getArr?.mapError fun e => s!"scenario.questions: {e}"
-  let qs ← qs.mapM fun q => withDefault "scenario.questions[]" q "hints"
+  let qs ← qs.mapM fun q => do
+    withDefault "scenario.questions[]" (← withDefault "scenario.questions[]" q "hints")
+      "minimal" (Json.bool false)
   let j := Json.obj (m.insert "questions" (Json.arr qs))
   (fromJson? j : Except String Scenario).mapError fun e => s!"scenario: {e}"
 

@@ -39,7 +39,7 @@ whatever the other agents do, ...". It is followed by a temporal operator:
 Two details matter in the questions. First, `F` and `G` include the present
 state: `⟨⟨A⟩⟩F φ` is true wherever `φ` already is. Second, the other agents are
 opponents: a strategy for `A` must work whatever they choose, so an action held
-by someone outside `A` does not help `A`. For example, in the first scenario
+by someone outside `A` does not help `A`. For example, in the referral scenario
 below, at `home` the patient can make sure the next state is `primary`
 (`⟨⟨patient⟩⟩X primary`, by visiting), and can also keep away from treatment
 forever (`⟨⟨patient⟩⟩G ¬treated`, by waiting).
@@ -90,8 +90,8 @@ open scoped ProofWidgets.Jsx
 
 Taking an action away to prevent harm can take it away where it is needed.
 Here a care team can override a pharmacy check. In routine care the override
-lets an error through; in an emergency it is how the medication gets given
-without delay. Watch the notes box: one revoke is not applied everywhere you
+lets an error through; in an emergency it is the only way the medication gets
+given, since waiting for verification stays in the emergency. Watch the notes box: one revoke is not applied everywhere you
 might expect, because of the reasonableness rule.
 -/
 

@@ -61,6 +61,7 @@
       "prompt": "Tick the fewest grant clauses that make ⟨⟨patient⟩⟩F treated true at home, then press Check (Apply is optional here).",
       "kind": {"reachGoal": {"goal": "⟨⟨patient⟩⟩F treated", "atWorld": "home"}},
       "answer": "grant primary : refer → {patient}",
+      "minimal": true,
       "hints": [
         {"answer": "grant primary : refer → {staff}",
          "text": "Now the staff can refer at primary, but ⟨⟨patient⟩⟩ asks what the patient can force alone. The staff might keep waiting, so the patient still cannot get past primary."},
@@ -84,16 +85,18 @@
     },
     {
       "id": "write-has-refer",
-      "prompt": "Keep \"grant primary : refer → {patient}\" applied (Reset, tick it, Apply). Write a formula true exactly at the states where the patient has the action refer.",
-      "kind": {"writeFormula": {"target": ["primary"]}},
+      "prompt": "Press Reset, tick both \"grant primary : refer → {patient}\" and \"grant ⟨⟨patient⟩⟩F treated : refer → {patient}\", and press Apply. Write a formula true exactly at the states where the patient has the action refer.",
+      "kind": {"writeFormula": {"target": ["primary", "specialist", "treated"]}},
       "answer": "has(patient,refer)",
       "hints": [
+        {"answer": "primary",
+         "text": "The first grant gave refer at primary, but the second also gave it wherever ⟨⟨patient⟩⟩F treated held before the update: at specialist and treated. The formula for having an action is has(agent,action)."},
         {"answer": "refer",
          "text": "refer is an action, not an atom: no state is labeled refer, so this formula is true nowhere. The formula for having an action is has(agent,action)."},
         {"answer": "⟨⟨patient⟩⟩F treated",
          "text": "That is what the grant makes possible, and it is true at every state. The question asks where the patient has the action itself."},
         {"answer": "has(staff,refer)",
-         "text": "This grant gives refer to the patient, not the staff; the staff has refer nowhere."}
+         "text": "These grants give refer to the patient, not the staff; the staff has refer nowhere."}
       ]
     },
     {

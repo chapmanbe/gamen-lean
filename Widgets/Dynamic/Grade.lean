@@ -10,7 +10,10 @@ update:
 * `writeFormula`: the student formula's truth set against the target, so any
   equivalent formula passes;
 * `reachGoal`: the model after the *student's* selection, with the goal true at
-  the named world (or at every world).
+  the named world (or at every world). When the question sets `minimal`, a
+  selection is also incorrect if a strict subset of it reaches the goal (the
+  message names a control that is not needed); at most `maxMinimalControls`
+  controls, so at most `2 ^ 8 - 1` subsets are tried.
 
 A parse or evaluation error is an `Except` error, never `correct := false`.
 The message is the question's `Hint` for the normalized answer when there is
@@ -80,6 +83,32 @@ private def clickMessage (mode : Mode) (ev : Evaluable) (f : String)
     parts := parts ++ [s!"{f} is also true at {showSet missing}, which you did not select."]
   pure (" ".intercalate parts)
 
+/-- Does the selection reach the goal, and the message if not. -/
+private def reachVerdict (sc : Scenario) (goal : String) (atWorld : Option String)
+    (sel : List String) : Except String (Bool × String) := do
+  let ev ← sc.after sel
+  let truth ← ev.truthSet goal
+  match atWorld with
+  | some w =>
+    if !ev.worlds.contains w then
+      pure (false, s!"With that choice there is no world {w}.")
+    else if truth.contains w then pure (true, "Correct.")
+    else pure (false, s!"With that choice, {goal} is not true at {w}.")
+  | none =>
+    let failing := ev.worlds.filter (!truth.contains ·)
+    if failing.isEmpty then pure (true, "Correct.")
+    else pure (false, s!"With that choice, {goal} is true at {showSet truth} but not at {showSet failing}.")
+
+/-- Every sublist, order kept: `2 ^ n` of them. -/
+private def subsets : List String → List (List String)
+  | [] => [[]]
+  | x :: xs => let r := subsets xs; r.map (x :: ·) ++ r
+
+/-- The minimality check tries every strict subset of the selection, `2 ^ n - 1`
+updates for `n` controls; scenarios have a handful of controls, so a selection
+of more than this many is an error rather than a long search. -/
+def maxMinimalControls : Nat := 8
+
 /-- Grade answer `a` to question `q`; `selected` is the scenario's current
 controls (used by `clickWorlds` and `writeFormula`; `reachGoal` uses the
 student's own selection). -/
@@ -107,18 +136,21 @@ def gradeAnswer (sc : Scenario) (selected : List String) (q : Question) (a : Ans
           (if missing.isEmpty then [] else [s!"Your formula is not true at {showSet missing} but should be."])
         pure (false, " ".intercalate parts)
     | .reachGoal goal atWorld, .controls sel => do
-      let ev ← sc.after sel
-      let truth ← ev.truthSet goal
-      match atWorld with
-      | some w =>
-        if !ev.worlds.contains w then
-          pure (false, s!"With that choice there is no world {w}.")
-        else if truth.contains w then pure (true, "Correct.")
-        else pure (false, s!"With that choice, {goal} is not true at {w}.")
-      | none =>
-        let failing := ev.worlds.filter (!truth.contains ·)
-        if failing.isEmpty then pure (true, "Correct.")
-        else pure (false, s!"With that choice, {goal} is true at {showSet truth} but not at {showSet failing}.")
+      let (ok, msg) ← reachVerdict sc goal atWorld sel
+      if !ok || !q.minimal then pure (ok, msg)
+      else
+        let sel := sortedSet sel
+        if sel.length > maxMinimalControls then
+          throw s!"minimality check: at most {maxMinimalControls} controls, not {sel.length}"
+        -- strict subsets, smallest first; the first that reaches the goal witnesses it
+        let strict := (subsets sel).filter (·.length < sel.length) |>.mergeSort (·.length ≤ ·.length)
+        let witness ← strict.findM? fun sub => do pure (← reachVerdict sc goal atWorld sub).1
+        match witness with
+        | none => pure (true, "Correct.")
+        | some sub =>
+          let extra := sel.filter (!sub.contains ·)
+          pure (false, s!"That works, but {", ".intercalate extra} {if extra.length == 1 then "is" else "are"} \
+            not needed: the goal is reached without {if extra.length == 1 then "it" else "them"}.")
     | .clickWorlds _, _ => throw "this question expects a set of worlds"
     | .writeFormula _, _ => throw "this question expects a formula"
     | .reachGoal _ _, _ => throw "this question expects a choice of controls"

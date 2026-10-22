@@ -31,6 +31,7 @@ def isOk {α : Type} (r : Except String α) : Bool :=
 /-- Clause labels, as in the scenario files. -/
 def referPatient : String := "grant primary : refer → {patient}"
 def referStaff : String := "grant primary : refer → {staff}"
+def referWhereTreatable : String := "grant ⟨⟨patient⟩⟩F treated : refer → {patient}"
 def revokeAll : String := "revoke ⊤ : override → {team}"
 def revokeRoutine : String := "revoke routine : override → {team}"
 
@@ -41,7 +42,7 @@ def intendedSelection : String → List String
   | "click-nurse-knows" => ["D", "N"]
   | "click-would-before" => []
   | "click-would-after" => [referPatient]
-  | "write-has-refer" => [referPatient]
+  | "write-has-refer" => [referPatient, referWhereTreatable]
   | "click-staff-refer" => [referStaff]
   | "click-harm-before" => []
   | "click-given-revoked" => [revokeAll]
@@ -137,6 +138,19 @@ def smallestGrantClaim : Except String Bool := do
 def revokeAllNotes : Except String (List String) := do
   pure (← (← safetyAccess).after [revokeAll]).notes
 
+/-- Grade a selection for `reach-would`: (correct, message). -/
+def reachWould (sel : List String) : Except String (Bool × String) := do
+  let sc ← wouldIfCould
+  let q ← (sc.questions.find? (·.id == "reach-would")).elim (throw "no question reach-would") pure
+  let f ← gradeAnswer sc [] q (.controls sel)
+  pure (f.correct, f.message)
+
+/-- Whether `text` grades correct for `write-has-refer`. -/
+def writeHasRefer (text : String) : Except String Bool := do
+  let sc ← wouldIfCould
+  let q ← (sc.questions.find? (·.id == "write-has-refer")).elim (throw "no question write-has-refer") pure
+  pure (← feedbackOf sc q text).correct
+
 def contains (s sub : String) : Bool := (s.splitOn sub).length > 1
 
 def cases : List (String × Bool) := [
@@ -197,6 +211,20 @@ def cases : List (String × Bool) := [
     | _ => false),
   ("the targeted revoke triggers no reasonableness note",
     ((do pure (← (← safetyAccess).after [revokeRoutine]).notes) : Except String _) == .ok []),
+  ("reach-would asks for a minimal selection; handoff's reachGoal (no minimal field) decodes as not minimal",
+    (wouldIfCould.toOption.bind (·.questions.find? (·.id == "reach-would"))).map (·.minimal) == some true
+      && (handoff.toOption.bind (·.questions.find? (·.id == "reach-handoff"))).map (·.minimal)
+        == some false),
+  ("reach-would: every grant ticked works but grades incorrect, naming unneeded grants",
+    reachWould [referPatient, referStaff, referWhereTreatable] == .ok (false,
+      s!"That works, but {referStaff}, {referWhereTreatable} are not needed: the goal is reached without them.")),
+  ("reach-would: the right grant plus the staff grant grades incorrect, naming the staff grant",
+    reachWould [referPatient, referStaff] == .ok (false,
+      s!"That works, but {referStaff} is not needed: the goal is reached without it.")),
+  ("reach-would: the right grant alone grades correct",
+    reachWould [referPatient] == .ok (true, "Correct.")),
+  ("write-has-refer: the atom primary no longer picks out the target",
+    writeHasRefer "primary" == .ok false),
   ("a load error names the data file",
     match load "x.json" "{" with
     | .error e => e.startsWith "x.json: "

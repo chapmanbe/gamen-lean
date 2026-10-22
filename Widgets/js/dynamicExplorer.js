@@ -114,14 +114,9 @@ export default function DynamicExplorer(props) {
   const [rpcError, setRpcError] = React.useState(null)
   const latest = React.useRef(result)
   const chain = React.useRef(Promise.resolve())
-
-  // A re-elaborated `#html` command gives new props: start over from them.
-  React.useEffect(() => {
-    const r = { state: props.state, view: props.view }
-    latest.current = r
-    setResult(r)
-    setDraft(props.view.formulaText || '')
-  }, [props.state, props.view])
+  // State is seeded from props once and never reset from them, as ProofWidgets'
+  // InteractiveSvg does: the infoview re-parses props into new objects whenever
+  // it re-fetches widgets (e.g. a cursor move), and a reset would wipe progress.
 
   const send = event => {
     chain.current = chain.current.then(async () => {

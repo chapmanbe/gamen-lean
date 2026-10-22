@@ -1,0 +1,76 @@
+{
+  "id": "handoff",
+  "title": "The lab page that may be lost",
+  "setup": "A lab system pages the covering team about a result: the patient's potassium is high (p). In w1 it is high; in w2 it is not. Neither the nurse (N) nor the doctor (D) can tell w1 from w2 until the page arrives. Two things can happen: the page is sent (possible only where p holds), or it is lost (possible anywhere). Choose who observes what happens, then apply the update.",
+  "mode": "epistemic",
+  "model": {
+    "worlds": ["w1", "w2"],
+    "agents": ["N", "D"],
+    "indistinguishable": {"N": [["w1", "w2"]], "D": [["w1", "w2"]]},
+    "valuation": {"w1": ["p"]}
+  },
+  "controls": {
+    "events": ["sent", "lost"],
+    "pre": {"sent": "p"},
+    "post": {},
+    "toggleable": ["N", "D"],
+    "observers": []
+  },
+  "layout": [
+    {"name": "w1", "x": 0.2, "y": 0.5},
+    {"name": "w2", "x": 0.8, "y": 0.5}
+  ],
+  "checks": ["p", "K[D]p"],
+  "questions": [
+    {
+      "id": "click-handoff",
+      "prompt": "Select D only, then apply. Click the worlds where D knows the potassium is high, but N does not know that D knows it.",
+      "kind": {"clickWorlds": {"formula": "K[D]p ∧ ¬K[N]K[D]p"}},
+      "answer": "w1×sent",
+      "hints": [
+        {"answer": "w1×lost,w1×sent",
+         "text": "Potassium is high at both of those worlds, but at w1×lost the page never reached D, so D does not know it. Check K[D]p world by world, not p."},
+        {"answer": "",
+         "text": "At least one world qualifies: D saw the page, and N cannot rule out that it was lost. Look at w1×sent."}
+      ]
+    },
+    {
+      "id": "write-lost-high",
+      "prompt": "With D observing (apply it), write a formula true exactly at w1×lost: the page was lost and potassium is high.",
+      "kind": {"writeFormula": {"target": ["w1×lost"]}},
+      "answer": "p ∧ ¬K[D]p",
+      "hints": [
+        {"answer": "p",
+         "text": "p is also true at w1×sent, where the page arrived. Add what separates the two: only at w1×lost does D not know p."},
+        {"answer": "¬K[D]p",
+         "text": "D also fails to know p at w2×lost, where potassium is not high. Combine it with p."}
+      ]
+    },
+    {
+      "id": "reach-handoff",
+      "prompt": "Choose who observes so that D knows the potassium is high and N knows that D knows it, at w1×sent.",
+      "kind": {"reachGoal": {"goal": "K[D]p ∧ K[N]K[D]p", "atWorld": "w1×sent"}},
+      "answer": "D,N",
+      "hints": [
+        {"answer": "D",
+         "text": "D observing is not enough. N still considers the page lost as possible, and when it was lost D does not know p, so N cannot know that D knows."},
+        {"answer": "N",
+         "text": "N sees what happened, but D still considers the page lost as possible, so D does not yet know p."},
+        {"answer": "",
+         "text": "If nobody observes, nobody learns anything from the page: both still consider lost and sent possible."}
+      ]
+    },
+    {
+      "id": "click-nurse-knows",
+      "prompt": "Select both N and D, then apply. Click the worlds where N knows the potassium is high.",
+      "kind": {"clickWorlds": {"formula": "K[N]p"}},
+      "answer": "w1×sent",
+      "hints": [
+        {"answer": "w1×lost,w1×sent",
+         "text": "Potassium is high at w1×lost, but N cannot rule out w2×lost there, where it is not. Knowing p needs p at every world N considers possible."},
+        {"answer": "",
+         "text": "With N observing, N knows p wherever N saw the page arrive. Try w1×sent."}
+      ]
+    }
+  ]
+}

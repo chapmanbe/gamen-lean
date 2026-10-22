@@ -1,0 +1,42 @@
+import Widgets.Dynamic.Widget
+
+/-!
+# Dynamic-scenarios explorer: the scenario library
+
+Scenarios are data, in `data/scenarios/*.json` (Buchanan's separation
+principle). Each is read at compile time with `include_str` and decoded by
+`Scenario.ofJson`, so a malformed file is an `Except` error that
+`dynamicExplorerOr` shows on the page, never a crash.
+-/
+
+namespace Gamen.Widgets.Dynamic.Library
+
+open Lean (Json)
+
+/-- Parse and decode scenario JSON text; errors name the file. -/
+def load (file text : String) : Except String Scenario :=
+  (do Scenario.ofJson (← Json.parse text)).mapError fun e => s!"{file}: {e}"
+
+/-- Scenario 1: a lab page that may be lost. -/
+def handoff : Except String Scenario :=
+  load "data/scenarios/handoff.json"
+    (include_str ".." / ".." / "data" / "scenarios" / "handoff.json")
+
+/-- Every scenario, with the data file it comes from. -/
+def allScenarios : List (String × Except String Scenario) :=
+  [("data/scenarios/handoff.json", handoff)]
+
+end Gamen.Widgets.Dynamic.Library
+
+namespace Gamen.Widgets
+
+open ProofWidgets
+
+/-- The explorer for a loaded scenario, or a visible error message (which names
+the data file) when the scenario did not load. Notebooks call this one. -/
+def dynamicExplorerOr (r : Except String Dynamic.Scenario) : Html :=
+  match r with
+  | .ok sc => dynamicExplorer sc
+  | .error e => Html.element "p" #[] #[Html.text s!"The scenario did not load. {e}"]
+
+end Gamen.Widgets

@@ -3521,6 +3521,9 @@ def properties : List (String × IO Bool) :=
     ("Input: parseFormula f.toString = f on the supported epistemic fragment",
       run (NamedBinder "f" <| ∀ f : DynamicInputTests.EpiFormula,
         DynamicInputTests.roundTrips f.getFormula = true)),
+    ("Input: parseDFormula f.toInput = f on ATL-D formulas",
+      run (NamedBinder "f" <| ∀ f : DynamicInputTests.DForm,
+        DynamicInputTests.dRoundTrips f.getFormula = true)),
     -- Gamen.ManyValued (Lean-only; plans/three-valued-logic-2026-09-29.md).
     ("ManyValued: K3 on {t,f}-valuations equals Semantics.satisfies (one-world model)",
       run (NamedBinder "f" <| ∀ f : ManyValuedTests.CoreFormula,

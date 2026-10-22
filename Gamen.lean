@@ -36,6 +36,7 @@ import Gamen.AngelsDemons
 import Gamen.EvidenceTrust
 import Gamen.ActionModel
 import Gamen.Input
+import Gamen.Atl.DynamicInput
 import Gamen.EpistemicJson
 import Gamen.Dcleg
 import Gamen.Service.Protocol

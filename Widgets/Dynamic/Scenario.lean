@@ -76,6 +76,13 @@ structure Question where
   that reaches the goal grades incorrect when a strict subset of it also does
   (`gradeAnswer`). Optional in the JSON (absent: `false`). -/
   minimal : Bool := false
+  /-- For `clickWorlds` and `writeFormula`: the controls the question is about.
+  These are graded on the model after the student's current selection, so a
+  different selection is refused with a message saying what to tick
+  (`gradeAnswer`), rather than graded on a model the question does not mean.
+  `some []` is the model before any update. Optional in the JSON (absent:
+  `none`, any selection). -/
+  selection : Option (List String) := none
   deriving ToJson, FromJson, Inhabited
 
 structure Scenario where
@@ -126,8 +133,8 @@ private def entries (j : Json) (k ctx : String) : Except String (List (String ×
     let o ← v.getObj?.mapError fun e => s!"{ctx}.{k}: {e}"
     pure o.toList
 
-/-- Decode a scenario. `hints` and `checks` may be omitted (empty), and a
-question's `minimal` (`false`). -/
+/-- Decode a scenario. `hints` and `checks` may be omitted (empty), a
+question's `minimal` (`false`) and its `selection` (`none`). -/
 def Scenario.ofJson (j : Json) : Except String Scenario := do
   -- no `setObjVal!`: on a non-object it panics and continues with a default
   let obj (ctx : String) (o : Json) := o.getObj?.mapError fun e => s!"{ctx}: {e}"
@@ -138,8 +145,9 @@ def Scenario.ofJson (j : Json) : Except String Scenario := do
   let m ← obj "scenario" (← withDefault "scenario" j "checks")
   let qs ← (j.getObjValD "questions").getArr?.mapError fun e => s!"scenario.questions: {e}"
   let qs ← qs.mapM fun q => do
-    withDefault "scenario.questions[]" (← withDefault "scenario.questions[]" q "hints")
-      "minimal" (Json.bool false)
+    let q ← withDefault "scenario.questions[]" q "hints"
+    let q ← withDefault "scenario.questions[]" q "minimal" (Json.bool false)
+    withDefault "scenario.questions[]" q "selection" Json.null
   let j := Json.obj (m.insert "questions" (Json.arr qs))
   (fromJson? j : Except String Scenario).mapError fun e => s!"scenario: {e}"
 

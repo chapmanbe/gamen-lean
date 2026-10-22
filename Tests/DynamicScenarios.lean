@@ -9,9 +9,9 @@ stored `answer` grades correct, and each hint's `answer` grades incorrect with
 exactly that hint's text.
 
 `clickWorlds` and `writeFormula` are graded on the model after the update the
-student has applied, so the key needs that selection. `intendedSelection`
-records it per question id; `reachGoal` questions are graded on the answer
-itself, which is the selection.
+student has applied, so the key needs that selection: each such question names
+it in the data (`selection`), and any other selection is refused. `reachGoal`
+questions are graded on the answer itself, which is the selection.
 -/
 
 namespace DynamicScenariosTests
@@ -39,25 +39,6 @@ def grantHandoffInform : String := "grant handoff : order → {incoming} and inf
 def grantEverywhere : String := "grant ⊤ : order → {incoming}"
 def revokeOutgoing : String := "revoke handoff : order → {outgoing}"
 
-/-- The controls applied before a click or formula question is answered. -/
-def intendedSelection : String → List String
-  | "click-handoff" => ["D"]
-  | "write-lost-high" => ["D"]
-  | "click-nurse-knows" => ["D", "N"]
-  | "click-would-before" => []
-  | "click-would-after" => [referPatient]
-  | "write-has-refer" => [referPatient, referWhereTreatable]
-  | "click-staff-refer" => [referStaff]
-  | "click-harm-before" => []
-  | "click-given-revoked" => [revokeAll]
-  | "click-has-override" => [revokeAll]
-  | "click-unaware" => [grantHandoff, revokeOutgoing]
-  | "click-incoming-can" => [grantHandoff, revokeOutgoing]
-  | "write-knows-whether" => [grantHandoff, revokeOutgoing]
-  | "click-pharmacist-informed" => [grantHandoffInform, revokeOutgoing]
-  | "click-everywhere" => [grantEverywhere]
-  | _ => []
-
 /-- An answer in normalized form, as the question's kind expects it. -/
 def answerOf (q : Question) (s : String) : Answer :=
   match q.kind with
@@ -65,10 +46,26 @@ def answerOf (q : Question) (s : String) : Answer :=
   | .writeFormula _ => .formula s
   | .reachGoal _ _ => .controls (if s.isEmpty then [] else s.splitOn ",")
 
+/-- The selection a click or formula question is graded under: its own
+`selection` from the data (every shipped one has it; see the case below). -/
 def selectionFor (q : Question) : List String :=
   match q.kind with
   | .reachGoal _ _ => []
-  | _ => intendedSelection q.id
+  | _ => q.selection.getD []
+
+/-- Click and formula questions name their selection; `reachGoal` grades the
+selection itself, so it names none. -/
+def selectionNamed (q : Question) : Bool :=
+  match q.kind with
+  | .reachGoal _ _ => q.selection.isNone
+  | _ => q.selection.isSome
+
+/-- Grade `ans` to question `id` of `sc` under the controls `sel`. -/
+def gradeUnder (sc : Except String Scenario) (id : String) (sel : List String) (ans : Answer) :
+    Except String Feedback := do
+  let sc ← sc
+  let q ← (sc.questions.find? (·.id == id)).elim (throw s!"no question {id}") pure
+  gradeAnswer sc sel q ans
 
 /-- Grade `s` as an answer to `q` in `sc`. -/
 def feedbackOf (sc : Scenario) (q : Question) (s : String) : Except String Feedback :=
@@ -189,6 +186,33 @@ def cases : List (String × Bool) := [
     allQuestions.all fun (sc, q) => keyOk sc q),
   ("every hint grades incorrect with exactly its text",
     allQuestions.all fun (sc, q) => hintsOk sc q),
+  ("every click and formula question names its selection; no reachGoal does",
+    allQuestions.all fun (_, q) => selectionNamed q),
+  ("a stored answer grades with \"Correct.\", never a hint's text",
+    allQuestions.all fun (sc, q) => ((feedbackOf sc q q.answer).map (·.message)) == .ok "Correct."),
+  ("click-handoff: nobody observing and nothing clicked is refused, naming D",
+    (gradeUnder handoff "click-handoff" [] (.worlds [])).map (·.correct) == .error
+      "This question is about the model after selecting D only: tick D, press Apply, then answer."),
+  ("click-nurse-knows: nothing clicked under no selection is refused",
+    isOk (gradeUnder handoff "click-nurse-knows" [] (.worlds [])) == false),
+  ("click-nurse-knows: nothing clicked under its own selection grades incorrect",
+    ((gradeUnder handoff "click-nurse-knows" ["N", "D"] (.worlds [])).map (·.correct)) == .ok false),
+  ("click-harm-before: after the ⊤ revoke, clicking only error is refused, asking for no update",
+    (gradeUnder safetyAccess "click-harm-before" [revokeAll] (.worlds ["error"])).map (·.correct) == .error
+      "This question is about the model before any update: untick every control, press Apply, then answer."),
+  ("notebook claim (DynamicEpistemic): handoff's questions are click, formula, reach, click; \
+      the first, second and fourth name a selection, the third does not",
+    match handoff with
+    | .ok sc =>
+      (sc.questions.map fun q => match q.kind with
+        | .clickWorlds _ => "click" | .writeFormula _ => "formula" | .reachGoal .. => "reach")
+        == ["click", "formula", "reach", "click"]
+      && sc.questions.map (·.selection.isSome) == [true, true, false, true]
+    | .error _ => false),
+  ("a refusal quotes clause labels and joins them with and",
+    (gradeUnder shiftChange "click-unaware" [] (.worlds [])).map (·.correct) == .error
+      s!"This question is about the model after selecting \"{grantHandoff}\" and \"{revokeOutgoing}\" only: \
+        tick \"{grantHandoff}\" and \"{revokeOutgoing}\", press Apply, then answer."),
   ("library claim: K[D]p ∧ ¬K[N]K[D]p at w1×sent, built directly",
     handoffClaim == .ok true),
   ("would-if-could and safety-access have 3-6 questions each",

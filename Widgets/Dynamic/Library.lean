@@ -7,6 +7,11 @@ Scenarios are data, in `data/scenarios/*.json` (Buchanan's separation
 principle). Each is read at compile time with `include_str` and decoded by
 `Scenario.ofJson`, so a malformed file is an `Except` error that
 `dynamicExplorerOr` shows on the page, never a crash.
+
+Lake does not track `include_str` files: after editing one, change this file
+too (any real edit) so the build picks it up; `DynamicScenariosTests.diskCases`
+fails on a stale build. Every click and formula question names the controls it
+is about (`selection`).
 -/
 
 namespace Gamen.Widgets.Dynamic.Library

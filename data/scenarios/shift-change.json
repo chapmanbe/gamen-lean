@@ -61,6 +61,7 @@
       "id": "click-unaware",
       "prompt": "Press Reset, tick \"grant handoff : order → {incoming}\" and \"revoke handoff : order → {outgoing}\", and press Apply. Click the states where the incoming clinician can order but the pharmacist does not know it: has(incoming,order) ∧ ¬K[pharmacist]has(incoming,order).",
       "kind": {"clickWorlds": {"formula": "has(incoming,order) ∧ ¬K[pharmacist]has(incoming,order)"}},
+      "selection": ["grant handoff : order → {incoming}", "revoke handoff : order → {outgoing}"],
       "answer": "new-shift",
       "hints": [
         {"answer": "new-shift,new-shift-present",
@@ -75,6 +76,7 @@
       "id": "click-incoming-can",
       "prompt": "Keep the same update (Reset, tick \"grant handoff : order → {incoming}\" and \"revoke handoff : order → {outgoing}\", Apply). Click the states where ⟨⟨incoming⟩⟩X ordered holds: the incoming clinician can make sure an order is placed next.",
       "kind": {"clickWorlds": {"formula": "⟨⟨incoming⟩⟩X ordered"}},
+      "selection": ["grant handoff : order → {incoming}", "revoke handoff : order → {outgoing}"],
       "answer": "new-shift,new-shift-present,ordered",
       "hints": [
         {"answer": "new-shift,new-shift-present",
@@ -89,6 +91,7 @@
       "id": "write-knows-whether",
       "prompt": "Keep the same update (Reset, tick \"grant handoff : order → {incoming}\" and \"revoke handoff : order → {outgoing}\", Apply). Write a formula true exactly at the states where the pharmacist knows whether the incoming clinician can order: knows that it can, or knows that it cannot.",
       "kind": {"writeFormula": {"target": ["new-shift-present", "ordered"]}},
+      "selection": ["grant handoff : order → {incoming}", "revoke handoff : order → {outgoing}"],
       "answer": "K[pharmacist]has(incoming,order) ∨ K[pharmacist]¬has(incoming,order)",
       "hints": [
         {"answer": "K[pharmacist]has(incoming,order)",
@@ -103,6 +106,7 @@
       "id": "click-pharmacist-informed",
       "prompt": "Press Reset, tick \"grant handoff : order → {incoming} and inform {pharmacist}\" and \"revoke handoff : order → {outgoing}\", and press Apply. Click the states where K[pharmacist]has(incoming,order) holds now.",
       "kind": {"clickWorlds": {"formula": "K[pharmacist]has(incoming,order)"}},
+      "selection": ["grant handoff : order → {incoming} and inform {pharmacist}", "revoke handoff : order → {outgoing}"],
       "answer": "new-shift,new-shift-present",
       "hints": [
         {"answer": "new-shift-present",
@@ -117,6 +121,7 @@
       "id": "click-everywhere",
       "prompt": "Press Reset, tick only \"grant ⊤ : order → {incoming}\", and press Apply. The pharmacist is not informed. Click the states where K[pharmacist]has(incoming,order) holds.",
       "kind": {"clickWorlds": {"formula": "K[pharmacist]has(incoming,order)"}},
+      "selection": ["grant ⊤ : order → {incoming}"],
       "answer": "new-shift,new-shift-present,old-shift,ordered",
       "hints": [
         {"answer": "",

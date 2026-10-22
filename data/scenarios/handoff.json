@@ -26,6 +26,7 @@
       "id": "click-handoff",
       "prompt": "Select D only, then apply. Click the worlds where D knows the potassium is high, but N does not know that D knows it.",
       "kind": {"clickWorlds": {"formula": "K[D]p ∧ ¬K[N]K[D]p"}},
+      "selection": ["D"],
       "answer": "w1×sent",
       "hints": [
         {"answer": "w1×lost,w1×sent",
@@ -38,6 +39,7 @@
       "id": "write-lost-high",
       "prompt": "With D observing (apply it), write a formula true exactly at w1×lost: the page was lost and potassium is high.",
       "kind": {"writeFormula": {"target": ["w1×lost"]}},
+      "selection": ["D"],
       "answer": "p ∧ ¬K[D]p",
       "hints": [
         {"answer": "p",
@@ -64,6 +66,7 @@
       "id": "click-nurse-knows",
       "prompt": "Select both N and D, then apply. Click the worlds where N knows the potassium is high.",
       "kind": {"clickWorlds": {"formula": "K[N]p"}},
+      "selection": ["D", "N"],
       "answer": "w1×sent",
       "hints": [
         {"answer": "w1×lost,w1×sent",

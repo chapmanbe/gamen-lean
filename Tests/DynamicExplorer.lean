@@ -155,6 +155,27 @@ def cases : List (String × Bool) := [
     isError (sc.after ["D"] |>.bind (·.truthSet "K[X]p"))),
   ("parse error is an error, not wrong", isError (gradeAnswer sc ["D"] q2 (.formula "K[D"))),
   ("hint matched before generated", gradeMsg q1 (.worlds []) == "Select at least one world."),
+  ("a hint keyed on the correct answer is not shown: correct says Correct.",
+    (gradeAnswer sc ["D"] { q1 with hints := [{ answer := "w1×sent", text := "Wrong!" }] }
+      (.worlds ["w1×sent"])).map (fun f => (f.correct, f.message)) == .ok (true, "Correct.")),
+  ("a question's selection: another selection is refused, its own is graded",
+    isError (gradeAnswer sc [] { q1 with selection := some ["D"] } (.worlds ["w1×sent"]))
+      && (gradeAnswer sc ["D"] { q1 with selection := some ["D"] } (.worlds ["w1×sent"])).map (·.correct)
+        == .ok true),
+  ("a reachGoal question ignores selection",
+    grade { q3 with selection := some [] } (.controls ["D"]) == .ok true),
+  ("submit under the wrong selection says what to tick, before asking to apply",
+    let s := replayOn { sc with questions := [{ q1 with selection := some ["D"] }] } [.submit]
+    s.message == some "This question is about the model after selecting D only: tick D, press Apply, then answer."),
+  ("ofJson: selection absent is none, present is some",
+    ((Scenario.ofJson (parsed
+      "{\"id\":\"s\",\"title\":\"t\",\"setup\":\"\",\"mode\":\"epistemic\",
+        \"model\":{},\"controls\":{},\"layout\":[],
+        \"questions\":[{\"id\":\"q\",\"prompt\":\"\",\"answer\":\"\",
+          \"kind\":{\"clickWorlds\":{\"formula\":\"p\"}}},
+          {\"id\":\"r\",\"prompt\":\"\",\"answer\":\"\",\"selection\":[\"D\"],
+          \"kind\":{\"clickWorlds\":{\"formula\":\"p\"}}}]}")).map
+      (fun s => s.questions.map (·.selection))) == .ok [none, some ["D"]]),
   ("reachGoal: D observing reaches the goal", grade q3 (.controls ["D"]) == .ok true),
   ("reachGoal: nobody observing misses it", grade q3 (.controls []) == .ok false),
   ("reachGoal: unknown control is an error", isError (gradeAnswer sc ["D"] q3 (.controls ["Z"]))),

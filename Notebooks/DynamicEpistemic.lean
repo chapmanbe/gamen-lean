@@ -53,8 +53,11 @@ Two things to watch for as you work:
 
 ## The explorer
 
-Work through the four questions in order. The first, third and fourth tell you
-what to select; the second asks for a formula.
+Work through the four questions in order. The first, second and fourth tell
+you which observers to tick before you press *Apply*; an answer given under any
+other choice is not graded, and the explorer says what to tick instead. The
+first and fourth ask you to click worlds and the second to write a formula. The
+third asks you to choose the observers yourself.
 -/
 
 open Gamen.Widgets Gamen.Widgets.Dynamic ProofWidgets

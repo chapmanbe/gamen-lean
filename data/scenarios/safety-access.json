@@ -55,6 +55,7 @@
       "id": "click-harm-before",
       "prompt": "The model before any revoke: press Reset, then press Apply with no box ticked. Click the states where ⟨⟨team⟩⟩F harm holds: the team can bring about harm.",
       "kind": {"clickWorlds": {"formula": "⟨⟨team⟩⟩F harm"}},
+      "selection": [],
       "answer": "error,routine",
       "hints": [
         {"answer": "routine",
@@ -67,6 +68,7 @@
       "id": "click-given-revoked",
       "prompt": "Press Reset, tick only \"revoke ⊤ : override → {team}\", and press Apply. Click the states where ⟨⟨team⟩⟩F given holds now.",
       "kind": {"clickWorlds": {"formula": "⟨⟨team⟩⟩F given"}},
+      "selection": ["revoke ⊤ : override → {team}"],
       "answer": "crisis,given,routine",
       "hints": [
         {"answer": "crisis,emergency,given,routine",
@@ -81,6 +83,7 @@
       "id": "click-has-override",
       "prompt": "Keep \"revoke ⊤ : override → {team}\" applied (Reset, tick it, Apply). Click the states where the team still has override: has(team,override).",
       "kind": {"clickWorlds": {"formula": "has(team,override)"}},
+      "selection": ["revoke ⊤ : override → {team}"],
       "answer": "crisis",
       "hints": [
         {"answer": "",

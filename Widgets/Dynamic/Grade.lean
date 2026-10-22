@@ -15,9 +15,15 @@ update:
   message names a control that is not needed); at most `maxMinimalControls`
   controls, so at most `2 ^ 8 - 1` subsets are tried.
 
+`clickWorlds` and `writeFormula` are graded under the student's current
+selection; a question that names its `selection` refuses any other one with an
+error saying what to tick (`checkSelection`), so an answer is never graded on a
+model the question is not about.
+
 A parse or evaluation error is an `Except` error, never `correct := false`.
-The message is the question's `Hint` for the normalized answer when there is
-one, otherwise generated from the worlds where the answer and the truth differ.
+For an incorrect answer the message is the question's `Hint` for the normalized
+answer when there is one, otherwise generated from the worlds where the answer
+and the truth differ; a correct answer never gets a hint.
 -/
 
 namespace Gamen.Widgets.Dynamic
@@ -109,11 +115,37 @@ updates for `n` controls; scenarios have a handful of controls, so a selection
 of more than this many is an error rather than a long search. -/
 def maxMinimalControls : Nat := 8
 
+/-- `a`, `a and b`, `a, b and c`; a control with a space is quoted. -/
+private def showControls (xs : List String) : String :=
+  let xs := xs.map fun x => if x.contains ' ' then s!"\"{x}\"" else x
+  match xs.reverse with
+  | [] => ""
+  | [x] => x
+  | last :: rest => s!"{", ".intercalate rest.reverse} and {last}"
+
+/-- A `clickWorlds` or `writeFormula` question with a `selection` is about the
+model after exactly those controls; any other selection is an error naming
+what to tick. `reachGoal` grades the selection itself, so it is not checked. -/
+def checkSelection (q : Question) (selected : List String) : Except String Unit :=
+  match q.kind, q.selection with
+  | .reachGoal .., _ | _, none => pure ()
+  | _, some want =>
+    if sortedSet want == sortedSet selected then pure ()
+    else if want.isEmpty then
+      throw "This question is about the model before any update: untick every control, \
+        press Apply, then answer."
+    else
+      let w := showControls want
+      throw s!"This question is about the model after selecting {w} only: tick {w}, \
+        press Apply, then answer."
+
 /-- Grade answer `a` to question `q`; `selected` is the scenario's current
-controls (used by `clickWorlds` and `writeFormula`; `reachGoal` uses the
-student's own selection). -/
+controls (used by `clickWorlds` and `writeFormula`, refused by
+`checkSelection` when the question names other controls; `reachGoal` uses the
+student's own selection). A hint is the message only for an incorrect answer. -/
 def gradeAnswer (sc : Scenario) (selected : List String) (q : Question) (a : Answer) :
     Except String Feedback := do
+  checkSelection q selected
   let (correct, generated) ← match q.kind, a with
     | .clickWorlds f, .worlds ws => do
       let ev ← sc.after selected
@@ -155,9 +187,9 @@ def gradeAnswer (sc : Scenario) (selected : List String) (q : Question) (a : Ans
     | .writeFormula _, _ => throw "this question expects a formula"
     | .reachGoal _ _, _ => throw "this question expects a choice of controls"
   let norm := a.normalize
-  let message := match q.hints.find? (·.answer == norm) with
-    | some h => h.text
-    | none => generated
+  let message := match correct, q.hints.find? (·.answer == norm) with
+    | false, some h => h.text
+    | _, _ => generated
   pure { correct, message }
 
 end Gamen.Widgets.Dynamic

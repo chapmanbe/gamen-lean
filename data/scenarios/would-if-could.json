@@ -46,6 +46,7 @@
       "id": "click-would-before",
       "prompt": "The model before any grant: press Reset, then press Apply with no box ticked. Click the states where ⟨⟨patient⟩⟩F treated holds.",
       "kind": {"clickWorlds": {"formula": "⟨⟨patient⟩⟩F treated"}},
+      "selection": [],
       "answer": "specialist,treated",
       "hints": [
         {"answer": "treated",
@@ -75,6 +76,7 @@
       "id": "click-would-after",
       "prompt": "Press Reset, tick only \"grant primary : refer → {patient}\", and press Apply. Click the states where ⟨⟨patient⟩⟩F treated holds now.",
       "kind": {"clickWorlds": {"formula": "⟨⟨patient⟩⟩F treated"}},
+      "selection": ["grant primary : refer → {patient}"],
       "answer": "home,primary,specialist,treated",
       "hints": [
         {"answer": "specialist,treated",
@@ -87,6 +89,7 @@
       "id": "write-has-refer",
       "prompt": "Press Reset, tick both \"grant primary : refer → {patient}\" and \"grant ⟨⟨patient⟩⟩F treated : refer → {patient}\", and press Apply. Write a formula true exactly at the states where the patient has the action refer.",
       "kind": {"writeFormula": {"target": ["primary", "specialist", "treated"]}},
+      "selection": ["grant primary : refer → {patient}", "grant ⟨⟨patient⟩⟩F treated : refer → {patient}"],
       "answer": "has(patient,refer)",
       "hints": [
         {"answer": "primary",
@@ -103,6 +106,7 @@
       "id": "click-staff-refer",
       "prompt": "Press Reset, tick only \"grant primary : refer → {staff}\", and press Apply. Click the states where ⟨⟨patient⟩⟩F treated holds.",
       "kind": {"clickWorlds": {"formula": "⟨⟨patient⟩⟩F treated"}},
+      "selection": ["grant primary : refer → {staff}"],
       "answer": "specialist,treated",
       "hints": [
         {"answer": "home,primary,specialist,treated",

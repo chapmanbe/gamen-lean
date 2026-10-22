@@ -10,8 +10,9 @@ student verbatim.
 
 The student toggles controls, applies the update to see the model after it, then
 answers the current question. `clickWorlds` and `writeFormula` questions are about
-the model *after* the update, so they need `apply` first; `reachGoal` grades the
-selected controls themselves.
+the model *after* the update, so they need `apply` first (and, when the question
+names its `selection`, exactly those controls); `reachGoal` grades the selected
+controls themselves.
 -/
 
 namespace Gamen.Widgets.Dynamic
@@ -85,7 +86,8 @@ private def ExplorerState.doSubmit (s : ExplorerState) : ExplorerState :=
   match s.currentQuestion with
   | none => { s with message := some "There is no question to answer." }
   | some q =>
-    let answer : Except String Answer :=
+    -- a wrong selection says what to tick before "Apply the update first."
+    let answer : Except String Answer := checkSelection q s.selected *>
       match q.kind with
       | .reachGoal .. => pure (.controls s.selected)
       | .clickWorlds _ =>

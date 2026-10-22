@@ -100,4 +100,19 @@ def cases : List (String × Bool) := [
     | _ => false)
 ]
 
+/-- `include_str` data is not tracked by Lake, so a stale build would grade the
+old JSON. Re-read each scenario file at run time (relative to the repository
+root, where `lake test` runs, like `data/specs/`) and compare with the embedded
+scenario. -/
+def diskCases : IO (List (String × Bool)) := do
+  let mut out := []
+  for (file, embedded) in allScenarios do
+    let text ← try IO.FS.readFile file catch e => pure s!"<unreadable: {e}>"
+    let fresh := load file text
+    let same := match fresh, embedded with
+      | .ok a, .ok b => Lean.toJson a == Lean.toJson b
+      | _, _ => false
+    out := out ++ [(s!"{file}: embedded scenario matches the file on disk (rebuild if not)", same)]
+  return out
+
 end DynamicScenariosTests

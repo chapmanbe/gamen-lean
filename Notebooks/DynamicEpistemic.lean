@@ -10,8 +10,8 @@ KR 2022 (Defs 7-9), as implemented in `Gamen/ActionModel.lean`.*
 **How to use this file.** Open it in VS Code (with the Lean 4 extension) or in
 the course's Lean web editor, and put your cursor on the `#html` line below.
 The explorer appears in the panel on the right. You work entirely inside it:
-tick the observers, press *Apply update*, click worlds or type formulas, and
-press *Submit* to get graded feedback. Nothing in this file needs editing.
+tick the observers, press *Apply*, click worlds or type formulas, and
+press *Check* to get graded feedback (*Reset* starts over). Nothing in this file needs editing.
 
 ## A page that may be lost
 

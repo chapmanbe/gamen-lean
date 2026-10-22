@@ -94,8 +94,8 @@
       "hints": [
         {"answer": "primary",
          "text": "The first grant gave refer at primary, but the second also gave it wherever ⟨⟨patient⟩⟩F treated held before the update: at specialist and treated. The formula for having an action is has(agent,action)."},
-        {"answer": "refer",
-         "text": "refer is an action, not an atom: no state is labeled refer, so this formula is true nowhere. The formula for having an action is has(agent,action)."},
+        {"answer": "primary ∨ treated",
+         "text": "That picks out primary and treated by their labels, but the patient also has refer at specialist, where the second grant gave it. Describe the action, not the states: the formula for having an action is has(agent,action)."},
         {"answer": "⟨⟨patient⟩⟩F treated",
          "text": "That is what the grant makes possible, and it is true at every state. The question asks where the patient has the action itself."},
         {"answer": "has(staff,refer)",

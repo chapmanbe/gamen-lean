@@ -198,6 +198,15 @@ def cases : List (String × Bool) := [
   ("ATL-D: revoke applied at s1", ((dsc.after ["noX"]).bind (·.truthSet "has(nurse,x)")) == .ok ["s0"]),
   ("ATL-D: before, x everywhere", ((dsc.before).bind (·.truthSet "has(nurse,x)")) == .ok ["s0", "s1"]),
   ("ATL-D: unknown clause label is an error", isError (dsc.after ["nope"])),
+  ("ATL-D: a clause condition naming an unknown atom is an error, before and after",
+    let bad : Scenario := { dsc with controls := (parsed
+      "{\"mode\":\"perfect\",\"clauses\":[{\"label\":\"c\",\"kind\":\"revoke\",\"cond\":\"zz\",
+        \"action\":\"x\",\"agents\":[\"nurse\"]}]}") }
+    isError bad.before && isError (bad.after ["c"])),
+  ("epistemic: a pre condition naming an unknown atom is an error",
+    let bad : Scenario := { sc with controls := (parsed
+      "{\"events\":[\"sent\"],\"pre\":{\"sent\":\"zz\"},\"post\":{},\"toggleable\":[],\"observers\":[]}") }
+    isError (bad.after [])),
   ("submit before apply asks to apply",
     (replay [.submit]).message == some "Apply the update first."),
   ("apply then correct click grades true",

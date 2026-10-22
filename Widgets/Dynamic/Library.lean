@@ -11,7 +11,8 @@ principle). Each is read at compile time with `include_str` and decoded by
 Lake does not track `include_str` files: after editing one, change this file
 too (any real edit) so the build picks it up; `DynamicScenariosTests.diskCases`
 fails on a stale build. Every click and formula question names the controls it
-is about (`selection`).
+is about (`selection`), and every formula uses only the model's atoms (an
+action is written `has(agent,action)`).
 -/
 
 namespace Gamen.Widgets.Dynamic.Library

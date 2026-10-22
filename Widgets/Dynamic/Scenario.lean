@@ -28,7 +28,9 @@ Controls, per mode (`selected` holds control keys):
   (it would leave an agent no action at a state), the `Evaluable` carries a note.
 
 Every failure (decoding, parsing, evaluation) is an `Except` error, never a
-default value.
+default value. That includes a formula (or clause condition, `pre` or `post`)
+naming an atom the model does not have, which the evaluators alone would read
+as false everywhere.
 -/
 
 namespace Gamen.Widgets.Dynamic
@@ -157,9 +159,37 @@ private def checkKeys (keys selected : List String) : Except String Unit :=
   | some k => throw s!"unknown control \"{k}\""
   | none => pure ()
 
+/-! ## Atoms
+
+The evaluators read an atom the model does not have as false everywhere, so a
+typo, or an action or state name written as an atom, would grade as "true
+nowhere". Every formula is checked against the model's atoms first. -/
+
+/-- An error naming each atom of `used` not in `known`. `atl` adds the advice
+for actions, which only ATL-D formulas have. -/
+private def checkAtoms (atl : Bool) (known used : List String) : Except String Unit :=
+  let unknown := (used.filter (!known.contains ·)).eraseDups
+  if unknown.isEmpty then pure () else
+  let names := ", ".intercalate unknown
+  let what := if unknown.length == 1 then s!"{names} is not an atom" else s!"{names} are not atoms"
+  let atoms := if known.isEmpty then "none" else ", ".intercalate known
+  throw s!"{what} of this model (atoms: {atoms}).\
+    {if atl then " For an action, write has(agent,action)." else ""}"
+
+private def epiAtoms (m : EpistemicModel) : List String :=
+  (Std.TreeSet.ofList (m.eValuation.toList.map (·.1.name))).toList
+
+/-- Parse an epistemic formula and check its atoms (including inside
+announcements) against `known`. -/
+private def parseEpi (known : List String) (s : String) : Except String Formula := do
+  let f ← parseFormula s
+  checkAtoms false known (f.atoms.toList.map (·.name))
+  pure f
+
 /-! ## Epistemic mode -/
 
-private def epiEvaluable (m : EpistemicModel) : Evaluable :=
+/-- `known`: the atoms formulas may use (the model's, before and after). -/
+private def epiEvaluable (m : EpistemicModel) (known : List String) : Evaluable :=
   let ws := m.eFrame.eWorlds.toList
   { worlds := ws
     edges := m.eFrame.eRelations.toList.flatMap fun (a, r) =>
@@ -167,7 +197,7 @@ private def epiEvaluable (m : EpistemicModel) : Evaluable :=
     facts := ws.map fun w =>
       (w, m.eValuation.toList.filterMap fun (p, s) => if s.contains w then some p.name else none)
     truthSet := fun s => do
-      let f ← parseFormula s
+      let f ← parseEpi known s
       ws.filterM fun w => eSatisfies m w f
     access := fun a w =>
       match eAccessible m.eFrame a w with
@@ -178,18 +208,19 @@ private def epiModel (sc : Scenario) : Except String EpistemicModel :=
   (EpistemicJson.decodeModel sc.model).mapError (·.message)
 
 /-- The action model the selection describes. -/
-private def epiActionModel (agents : List String) (c : Json) (selected : List String) :
+private def epiActionModel (known agents : List String) (c : Json) (selected : List String) :
     Except String ActionModel := do
   let events ← strList "controls.events" (← field c "events" "controls")
   let toggleable ← strList "controls.toggleable" ((c.getObjVal? "toggleable").toOption.getD (.arr #[]))
   let observers ← strList "controls.observers" ((c.getObjVal? "observers").toOption.getD (.arr #[]))
   checkKeys toggleable selected
   let pre ← (← entries c "pre" "controls").mapM fun (e, f) => do
-    pure (e, ← parseFormula (← str s!"controls.pre.{e}" f))
+    pure (e, ← (parseEpi known (← str s!"controls.pre.{e}" f)).mapError (s!"controls.pre.{e}: " ++ ·))
   let post ← (← entries c "post" "controls").mapM fun (e, ps) => do
     let o ← ps.getObj?.mapError fun err => s!"controls.post.{e}: {err}"
     let ps ← o.toList.mapM fun (p, f) => do
-      pure (p, ← parseFormula (← str s!"controls.post.{e}.{p}" f))
+      pure (p, ← (parseEpi known (← str s!"controls.post.{e}.{p}" f)).mapError
+        (s!"controls.post.{e}.{p}: " ++ ·))
     pure (e, ps)
   let rels := agents.map fun a =>
     let observes := if toggleable.contains a then selected.contains a else observers.contains a
@@ -198,6 +229,30 @@ private def epiActionModel (agents : List String) (c : Json) (selected : List St
   mkActionModel events agents rels pre post
 
 /-! ## ATL-D mode -/
+
+mutual
+/-- The atoms of an ATL-D formula, including inside update conditions. -/
+private def dAtoms : DFormula → List String
+  | .bot | .has .. => []
+  | .atom n => [n]
+  | .not f | .knows _ f | .canNext _ f | .canAlways _ f | .canEventually _ f => dAtoms f
+  | .and l r | .or l r | .implies l r | .iff l r | .canUntil _ l r | .canRelease _ l r =>
+    dAtoms l ++ dAtoms r
+  | .grant us f | .revoke us f => uAtoms us ++ dAtoms f
+
+private def uAtoms : UpdateList → List String
+  | .nil => []
+  | .cons c _ _ _ rest => dAtoms c ++ uAtoms rest
+end
+
+private def dynAtoms (m : DynModel) : List String :=
+  (Std.TreeSet.ofList (m.cgs.cgsStates.toList.flatMap fun v => (m.cgs.cgsLabeling v).toList)).toList
+
+/-- Parse an ATL-D formula and check its atoms against `known`. -/
+private def parseDyn (known : List String) (s : String) : Except String DFormula := do
+  let f ← parseDFormula s
+  checkAtoms true known (dAtoms f)
+  pure f
 
 private structure DClause where
   label : String
@@ -241,13 +296,19 @@ private def dynEvaluable (m : DynModel) (mode : IrMode) (notes : List String) : 
         if m.specified v jm then some (jointLabel jm, v, cgs.cgsTransition v jm) else none
     facts := ws.map fun v => (v, (cgs.cgsLabeling v).toList)
     truthSet := fun s => do
-      let f ← parseDFormula s
+      let f ← parseDyn (dynAtoms m) s
       pure (← dsat m mode f).toList
     access := fun a v => (m.epistemic a v).toList
     notes }
 
-private def dynModel (sc : Scenario) : Except String DynModel :=
-  (CgsJson.decodeDyn sc.model).mapError (·.message)
+/-- The scenario's model, its `IrMode` and its clauses, every clause condition
+checked against the model's atoms. -/
+private def dynSetup (sc : Scenario) : Except String (DynModel × IrMode × List DClause) := do
+  let m ← (CgsJson.decodeDyn sc.model).mapError (·.message)
+  let (mode, clauses) ← dControls sc.controls
+  for c in clauses do
+    (checkAtoms true (dynAtoms m) (dAtoms c.cond)).mapError (s!"clause \"{c.label}\".cond: " ++ ·)
+  pure (m, mode, clauses)
 
 /-- Consecutive clauses of the same kind, in order. -/
 private def runs : List DClause → List (List DClause)
@@ -287,23 +348,24 @@ private def applyRun (m : DynModel) (mode : IrMode) (grant : Bool) (cs : List DC
 /-- The scenario's model, before any update. -/
 def Scenario.before (sc : Scenario) : Except String Evaluable := do
   match sc.mode with
-  | .epistemic => pure (epiEvaluable (← epiModel sc))
+  | .epistemic => let m ← epiModel sc; pure (epiEvaluable m (epiAtoms m))
   | .atlD =>
-    let (mode, _) ← dControls sc.controls
-    pure (dynEvaluable (← dynModel sc) mode [])
+    let (m, mode, _) ← dynSetup sc
+    pure (dynEvaluable m mode [])
 
 /-- The model after the update that the `selected` controls describe. -/
 def Scenario.after (sc : Scenario) (selected : List String) : Except String Evaluable := do
   match sc.mode with
   | .epistemic =>
     let m ← epiModel sc
-    let am ← epiActionModel (m.eFrame.eRelations.toList.map (·.1)) sc.controls selected
-    pure (epiEvaluable (← productUpdate m am))
+    let am ← epiActionModel (epiAtoms m) (m.eFrame.eRelations.toList.map (·.1)) sc.controls selected
+    let m' ← productUpdate m am
+    pure (epiEvaluable m' ((Std.TreeSet.ofList (epiAtoms m ++ epiAtoms m')).toList))
   | .atlD =>
-    let (mode, clauses) ← dControls sc.controls
+    let (m, mode, clauses) ← dynSetup sc
     checkKeys (clauses.map (·.label)) selected
     let chosen := clauses.filter (selected.contains ·.label)
-    let mut m ← dynModel sc
+    let mut m := m
     let mut notes : List String := []
     for run in runs chosen do
       match run with

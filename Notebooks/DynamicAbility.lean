@@ -47,7 +47,8 @@ forever (`⟨⟨patient⟩⟩G ¬treated`, by waiting).
 ## Having an action, and changing who has it
 
 ATL-D adds `has(a,α)`: agent `a` has action `α` available at the current state
-(Def 4). And it adds **updates** that change who has what. An update is a list
+(Def 4). An action's name on its own is not a formula: write `refer` and the
+explorer tells you it is not an atom of the model. And it adds **updates** that change who has what. An update is a list
 of clauses `φ : α → {A}`, each read "at every state where `φ` holds, the agents
 in `A` get (or lose) `α`":
 

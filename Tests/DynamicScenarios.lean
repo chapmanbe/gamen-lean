@@ -209,6 +209,30 @@ def cases : List (String × Bool) := [
         == ["click", "formula", "reach", "click"]
       && sc.questions.map (·.selection.isSome) == [true, true, false, true]
     | .error _ => false),
+  ("an unknown atom is an error: crisis (a state name) on safety-access",
+    ((do (← safetyAccess).before >>= (·.truthSet "⟨⟨team⟩⟩F crisis")) : Except String _) == .error
+      "crisis is not an atom of this model (atoms: emergency, given, harm, routine). \
+        For an action, write has(agent,action)."),
+  ("an unknown atom is an error: K[D]q on handoff, before and after",
+    ((do (← handoff).before >>= (·.truthSet "K[D]q")) : Except String _) == .error
+      "q is not an atom of this model (atoms: p)."
+    && isOk ((do (← handoff).after ["D"] >>= (·.truthSet "K[D]q")) : Except String _) == false),
+  ("an action written as an atom, or has without arguments, reaches the has(agent,action) advice",
+    ["refer", "has"].all fun f =>
+      match ((do (← wouldIfCould).after [referPatient] >>= (·.truthSet f)) : Except String _) with
+      | .error e => contains e s!"{f} is not an atom" && contains e "write has(agent,action)"
+      | .ok _ => false),
+  ("an unknown atom inside an update condition is an error",
+    isOk ((do (← wouldIfCould).before >>= (·.truthSet "[home:refer→{patient}]+⊤")) : Except String _)
+      == false),
+  ("a scenario's own atoms still work",
+    ((do (← wouldIfCould).before >>= (·.truthSet "primary ∨ treated")) : Except String _)
+      == .ok ["primary", "treated"]
+    && ((do (← handoff).after ["D"] >>= (·.truthSet "p")) : Except String _) == .ok ["w1×lost", "w1×sent"]),
+  ("every scenario's checks evaluate without error, before and under every named selection",
+    scenarios.all fun sc =>
+      let sels := [] :: sc.questions.filterMap (·.selection)
+      sels.all fun sel => sc.checks.all fun c => isOk ((sc.after sel).bind (·.truthSet c))),
   ("a refusal quotes clause labels and joins them with and",
     (gradeUnder shiftChange "click-unaware" [] (.worlds [])).map (·.correct) == .error
       s!"This question is about the model after selecting \"{grantHandoff}\" and \"{revokeOutgoing}\" only: \

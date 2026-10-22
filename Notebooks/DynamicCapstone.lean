@@ -24,7 +24,7 @@ potassium was high, and the nurse was left not knowing that the doctor knew.
 Here an *ability* changes hands, and not everyone finds out. At shift change,
 the authority to order passes from the outgoing clinician to the incoming one.
 The pharmacist, who has to act on orders, does not know whether the shift change
-has happened yet, and so does not know who can order.
+has happened yet, and so, once authority passes, cannot tell who can order.
 
 ## The model
 

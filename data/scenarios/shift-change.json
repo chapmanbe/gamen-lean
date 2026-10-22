@@ -66,7 +66,7 @@
         {"answer": "new-shift,new-shift-present",
          "text": "At new-shift-present the pharmacist was there for the shift change, so cannot mistake it for old-shift; there the pharmacist does know the incoming clinician can order."},
         {"answer": "",
-         "text": "One state qualifies. At new-shift the incoming clinician can order, but the pharmacist cannot rule out old-shift, where it cannot."},
+         "text": "One state qualifies. At new-shift the incoming clinician can order, but the pharmacist cannot rule out old-shift, where the incoming clinician cannot order."},
         {"answer": "new-shift,old-shift",
          "text": "At old-shift the shift has not changed: the grant's condition handoff is false there, so the incoming clinician still cannot order."}
       ]

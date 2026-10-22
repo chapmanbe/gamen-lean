@@ -261,6 +261,11 @@ def cases : List (String × Bool) := [
       dTruthIn .subjective shiftChange s!"K[{a}]handoff ∨ K[{a}]¬handoff"
         == .ok ["new-shift", "new-shift-present", "old-shift", "ordered"]
       && dTruthIn .subjective shiftChange s!"K[{a}]K[pharmacist]handoff" == .ok []),
+  ("library claim: the uninformed ⊤ grant teaches the pharmacist nothing about handoff",
+    (["K[pharmacist]handoff", "K[pharmacist]¬handoff"].all fun f =>
+      dTruthIn .subjective shiftChange s!"[⊤:order→\{incoming}]+{f}" == dTruthIn .subjective shiftChange f)
+      &&dTruthIn .subjective shiftChange "[⊤:order→{incoming}]+K[pharmacist]handoff"
+        == .ok ["new-shift-present"]),
   ("library claim: the ⊤ grant lets the incoming clinician order before the shift change",
     (dTruthIn .subjective shiftChange "[⊤:order→{incoming}]+has(incoming,order)").map (·.contains "old-shift")
       == .ok true),

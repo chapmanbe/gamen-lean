@@ -15,7 +15,7 @@ Open threads (2026-10-20), from plans/session-digest-2026-10-13.md:
   - View each of the three notebooks once in an infoview.
 - Next planned work after the explorer:
   - Scenario 4 (pancreatic) waits for the sources (PDFs to download manually into `~/Downloads/pancreatic-lit/`) and needs its own plan (SFormula parser, strategy extraction). Follow-up: a parallel ATL/ATL-D pancreatic notebook.
-  - Next planned work: the documentation site (`docs/superpowers/specs/2026-10-22-documentation-site-design.md`, awaiting Brian's approval).
+  - The documentation site (`docs/superpowers/specs/2026-10-22-documentation-site-design.md`, awaiting Brian's approval).
 - A notebook or widget for the action-model and angels-and-demons work beyond the dynamic explorer (the explorer covers scenarios 1, 2, 3, 5 only).
 - Obstruction Logic, which would let us test the OL halves of Theorems 3-4 of the angels-and-demons paper.
 - Unrun: Theorem 6 of the angels-and-demons paper (SCL hardness; proof sketch is in a technical report), and the "no formula can distinguish" halves of the expressivity theorems.

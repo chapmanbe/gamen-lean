@@ -1,4 +1,4 @@
-import Widgets.Dynamic.Explorer
+import Widgets.Dynamic.Widget
 
 /-!
 # The dynamic-scenarios explorer: scenario format and grader
@@ -128,7 +128,15 @@ def dNoted : ExplorerState := replayOn dscQ [.toggleControl "noX", .apply]
 def notesOf (s : ExplorerState) : List String :=
   ((viewField s "notes").getArr?.toOption.getD #[]).toList.filterMap (·.getStr?.toOption)
 
+/-- An RPC request: D observes, the update is applied, and w1×sent is clicked. -/
+def rpcParams : StepParams :=
+  { state := replay [.toggleControl "D", .apply], event := .clickWorld "w1×sent" }
+
 def cases : List (String × Bool) := [
+  ("rpc step = step + view",
+    (stepResult rpcParams).view == view (step rpcParams.state rpcParams.event)),
+  ("rpc step returns the stepped state",
+    toJson (stepResult rpcParams).state == toJson (step rpcParams.state rpcParams.event)),
   ("before has 2 worlds", ((sc.before).map (·.worlds.length)) == .ok 2),
   ("after, D observes: 3 worlds",
     ((sc.after ["D"]).map (·.worlds)) == .ok ["w1×lost", "w1×sent", "w2×lost"]),

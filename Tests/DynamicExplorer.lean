@@ -1,4 +1,4 @@
-import Widgets.Dynamic.Grade
+import Widgets.Dynamic.Explorer
 
 /-!
 # The dynamic-scenarios explorer: scenario format and grader
@@ -10,7 +10,7 @@ A two-world epistemic scenario (agents N and D; events `sent` and `lost`, with
 
 namespace DynamicExplorerTests
 
-open Lean (Json ToJson toJson)
+open Lean (Json ToJson toJson fromJson?)
 open Gamen.Widgets.Dynamic
 
 /-- `Except` has no `BEq` in core; compare successes by value and failures by message. -/
@@ -19,6 +19,9 @@ local instance {ε α : Type} [BEq ε] [BEq α] : BEq (Except ε α) where
     | .ok a, .ok b => a == b
     | .error a, .error b => a == b
     | _, _ => false
+
+def isOk {α : Type} (r : Except String α) : Bool :=
+  match r with | .ok _ => true | .error _ => false
 
 def isError {α : Type} (r : Except String α) : Bool :=
   match r with | .error _ => true | .ok _ => false
@@ -82,6 +85,23 @@ def dsc : Scenario :=
 
 def dynNotes : List String := ((dsc.after ["noX"]).map (·.notes)).toOption.getD []
 
+def replayOn (s : Scenario) (es : List Event) : ExplorerState :=
+  es.foldl step (ExplorerState.init s)
+
+def replay (es : List Event) : ExplorerState := replayOn sc es
+
+/-- Every event is ruled out by `pre`, so no world survives the product. -/
+def noSurvivorControls : Json := parsed
+  "{\"events\":[\"sent\"],\"pre\":{\"sent\":\"⊥\"},\"post\":{},
+    \"toggleable\":[],\"observers\":[]}"
+
+def noSurvivor : Scenario := { sc with controls := noSurvivorControls }
+
+def viewField (s : ExplorerState) (k : String) : Json := (view s).getObjValD k
+
+def viewWorlds (s : ExplorerState) : Nat :=
+  (((viewField s "model").getObjValD "worlds").getArr?.toOption.map (·.size)).getD 99
+
 def cases : List (String × Bool) := [
   ("before has 2 worlds", ((sc.before).map (·.worlds.length)) == .ok 2),
   ("after, D observes: 3 worlds",
@@ -122,7 +142,61 @@ def cases : List (String × Bool) := [
   ("ATL-D: no note where the revoke applied", !dynNotes.any (·.contains "s1")),
   ("ATL-D: revoke applied at s1", ((dsc.after ["noX"]).bind (·.truthSet "has(nurse,x)")) == .ok ["s0"]),
   ("ATL-D: before, x everywhere", ((dsc.before).bind (·.truthSet "has(nurse,x)")) == .ok ["s0", "s1"]),
-  ("ATL-D: unknown clause label is an error", isError (dsc.after ["nope"]))
+  ("ATL-D: unknown clause label is an error", isError (dsc.after ["nope"])),
+  ("submit before apply asks to apply",
+    (replay [.submit]).message == some "Apply the update first."),
+  ("apply then correct click grades true",
+    (replay [.toggleControl "D", .apply, .clickWorld "w1×sent", .submit]).feedback.map (·.correct)
+      == some true),
+  ("apply then wrong click grades false",
+    (replay [.toggleControl "D", .apply, .clickWorld "w1×lost", .submit]).feedback.map (·.correct)
+      == some false),
+  ("toggle after apply un-applies",
+    (replay [.toggleControl "D", .apply, .toggleControl "N"]).applied == false),
+  ("toggle after apply clears clicks and feedback",
+    let s := replay [.toggleControl "D", .apply, .clickWorld "w1×sent", .submit, .toggleControl "N"]
+    s.clicked.isEmpty && s.feedback.isNone),
+  ("apply shows the after model", (replay [.toggleControl "D", .apply]).applied == true),
+  ("click toggles membership",
+    (replay [.toggleControl "D", .apply, .clickWorld "w1×sent", .clickWorld "w1×sent"]).clicked == []),
+  ("click unknown world is a message",
+    (replay [.toggleControl "D", .apply, .clickWorld "w9"]).message.isSome),
+  ("click on a before-model world after apply is a message",
+    (replay [.toggleControl "D", .apply, .clickWorld "w1"]).message.isSome),
+  ("next past last clamps",
+    (replay (List.replicate 20 .nextQuestion)).question == sc.questions.length - 1),
+  ("prev before first clamps", (replay [.prevQuestion, .prevQuestion]).question == 0),
+  ("next clears clicks, formula and feedback",
+    let s := replay [.toggleControl "D", .apply, .clickWorld "w1×sent", .setFormula "p", .submit, .nextQuestion]
+    s.clicked.isEmpty && s.formulaText == "" && s.feedback.isNone),
+  ("empty update keeps before", (replayOn noSurvivor [.apply]).applied == false),
+  ("empty update says so",
+    (replayOn noSurvivor [.apply]).message == some "No world survives this update."),
+  ("writeFormula question submits the formula",
+    (replay [.toggleControl "D", .apply, .nextQuestion, .setFormula "K[D]p", .submit]).feedback.map
+      (·.correct) == some true),
+  ("writeFormula parse error lands in message",
+    let s := replay [.toggleControl "D", .apply, .nextQuestion, .setFormula "K[D", .submit]
+    s.message.isSome && s.feedback.isNone),
+  ("reachGoal grades the selection without apply",
+    (replay [.toggleControl "D", .nextQuestion, .nextQuestion, .submit]).feedback.map (·.correct)
+      == some true),
+  ("unknown control at apply is a message", (replay [.toggleControl "Z", .apply]).message.isSome),
+  ("reset clears selection and application",
+    let s := replay [.toggleControl "D", .apply, .reset]
+    s.selected.isEmpty && !s.applied),
+  ("state round-trips JSON",
+    isOk (fromJson? (toJson (replay [.toggleControl "D", .apply])) : Except String ExplorerState)),
+  ("event round-trips JSON",
+    isOk (fromJson? (toJson (Event.clickWorld "w")) : Except String Event)),
+  ("view before apply shows the before worlds", viewWorlds (replay []) == 2),
+  ("view after apply shows the after worlds", viewWorlds (replay [.toggleControl "D", .apply]) == 3),
+  ("view marks clicked worlds",
+    (toJson (view (replay [.toggleControl "D", .apply, .clickWorld "w1×sent"]))).compress.contains
+      "\"clicked\":true"),
+  ("view of a world missing from layout notes it",
+    let s := replayOn { sc with layout := [] } []
+    ((viewField s "message").getStr?.toOption.getD "").contains "w1")
 ]
 
 end DynamicExplorerTests

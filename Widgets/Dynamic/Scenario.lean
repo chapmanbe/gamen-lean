@@ -100,11 +100,21 @@ structure Scenario where
   questions : List Question
   deriving ToJson, FromJson, Inhabited
 
+/-- An arrow to draw: an agent's relation or a joint action. -/
+structure Edge where
+  label : String
+  src : String
+  dst : String
+  /-- Stands for every joint action at `src` that the model's `transitions` do
+  not list, which go to its default successor (`default_next`); drawn dashed. -/
+  dflt : Bool := false
+  deriving BEq, Repr
+
 /-- A model the explorer can evaluate on, whatever the logic. -/
 structure Evaluable where
   worlds : List String
-  /-- (agent or action label, from, to), for drawing. -/
-  edges : List (String × String × String)
+  /-- For drawing. -/
+  edges : List Edge
   /-- world ↦ true atoms. -/
   facts : List (String × List String)
   /-- Parse and evaluate a formula; the worlds where it holds, sorted. -/
@@ -193,7 +203,7 @@ private def epiEvaluable (m : EpistemicModel) (known : List String) : Evaluable 
   let ws := m.eFrame.eWorlds.toList
   { worlds := ws
     edges := m.eFrame.eRelations.toList.flatMap fun (a, r) =>
-      ws.flatMap fun w => (r.getD w ∅).toList.map fun w' => (a, w, w')
+      ws.flatMap fun w => (r.getD w ∅).toList.map fun w' => { label := a, src := w, dst := w' }
     facts := ws.map fun w =>
       (w, m.eValuation.toList.filterMap fun (p, s) => if s.contains w then some p.name else none)
     truthSet := fun s => do
@@ -287,13 +297,38 @@ private def dControls (c : Json) : Except String (IrMode × List DClause) := do
 private def jointLabel (jm : Std.TreeMap String String) : String :=
   ", ".intercalate (jm.toList.map fun (a, α) => s!"{a}={α}")
 
-private def dynEvaluable (m : DynModel) (mode : IrMode) (notes : List String) : Evaluable :=
+/-- The joint moves the model's `transitions` list, as (state, moves sorted by
+agent), and the label for every other joint move: `"otherwise: stay"` when
+`default_next` stays, else `"otherwise"`. Read from the JSON because with a
+`default_next`, `DynModel.specified` holds for every joint move and so cannot
+tell a listed move from a defaulted one. -/
+private def statedMoves (model : Json) :
+    Except String (List (String × List (String × String)) × String) := do
+  let ts ← (← field model "transitions" "model").getArr?.mapError fun e => s!"model.transitions: {e}"
+  let stated ← ts.toList.mapM fun t => do
+    let st ← str "model.transitions[].state" (← field t "state" "model.transitions[]")
+    let mv ← (← field t "moves" "model.transitions[]").getObj?.mapError
+      fun e => s!"model.transitions[].moves: {e}"
+    let mv ← mv.toList.mapM fun (a, x) => do pure (a, ← str "model.transitions[].moves" x)
+    pure (st, mv.mergeSort fun x y => (compare x.1 y.1).isLE)
+  let stay := ((model.getObjValD "default_next").getObjVal? "stay").toOption == some (Json.bool true)
+  pure (stated, if stay then "otherwise: stay" else "otherwise")
+
+/-- Each listed joint move is an edge labeled with it; the joint moves the
+model leaves to `default_next` are one dashed edge per state and successor,
+labeled `other` (so a default stay is visible as a loop). -/
+private def dynEvaluable (m : DynModel) (mode : IrMode) (notes : List String)
+    (stated : List (String × List (String × String))) (other : String) : Evaluable :=
   let cgs := m.cgs
   let ws := cgs.cgsStates.toList
   { worlds := ws
     edges := ws.flatMap fun v =>
-      (jointMoves cgs cgs.cgsAgents v).filterMap fun jm =>
-        if m.specified v jm then some (jointLabel jm, v, cgs.cgsTransition v jm) else none
+      let jms := jointMoves cgs cgs.cgsAgents v
+      let listed := jms.filter fun jm => stated.contains (v, jm.toList)
+      let rest := jms.filter fun jm => !stated.contains (v, jm.toList) && m.specified v jm
+      listed.map (fun jm => { label := jointLabel jm, src := v, dst := cgs.cgsTransition v jm }) ++
+        (rest.map (cgs.cgsTransition v ·)).eraseDups.map fun d =>
+          { label := other, src := v, dst := d, dflt := true }
     facts := ws.map fun v => (v, (cgs.cgsLabeling v).toList)
     truthSet := fun s => do
       let f ← parseDyn (dynAtoms m) s
@@ -351,7 +386,8 @@ def Scenario.before (sc : Scenario) : Except String Evaluable := do
   | .epistemic => let m ← epiModel sc; pure (epiEvaluable m (epiAtoms m))
   | .atlD =>
     let (m, mode, _) ← dynSetup sc
-    pure (dynEvaluable m mode [])
+    let (stated, other) ← statedMoves sc.model
+    pure (dynEvaluable m mode [] stated other)
 
 /-- The model after the update that the `selected` controls describe. -/
 def Scenario.after (sc : Scenario) (selected : List String) : Except String Evaluable := do
@@ -374,6 +410,7 @@ def Scenario.after (sc : Scenario) (selected : List String) : Except String Eval
         let (m', ns) ← applyRun m mode c.grant run
         m := m'
         notes := notes ++ ns
-    pure (dynEvaluable m mode notes)
+    let (stated, other) ← statedMoves sc.model
+    pure (dynEvaluable m mode notes stated other)
 
 end Gamen.Widgets.Dynamic

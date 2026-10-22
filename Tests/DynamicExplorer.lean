@@ -280,6 +280,12 @@ def cases : List (String × Bool) := [
     s.feedback.isSome && (notesOf s).any (·.contains "nurse")),
   ("notes: cleared by un-applying and by reset",
     (notesOf (step dNoted (.toggleControl "noX"))).isEmpty && (notesOf (step dNoted .reset)).isEmpty),
+  ("view: defaulted joint moves are one dashed loop per state; epistemic edges are not dashed",
+    let es := ((viewField (replayOn dscQ []) "model").getObjValD "edges").getArr?.toOption.getD #[]
+    es.size == 2 && es.all (fun e => e.getObjValD "dashed" == Json.bool true
+        && e.getObjValD "label" == Json.str "otherwise: stay" && e.getObjValD "from" == e.getObjValD "to")
+      && (((viewField (replay []) "model").getObjValD "edges").getArr?.toOption.getD #[]).all
+        (·.getObjValD "dashed" == Json.bool false)),
   ("view of a world missing from layout notes it",
     let s := replayOn { sc with layout := [] } []
     ((viewField s "message").getStr?.toOption.getD "").contains "w1")

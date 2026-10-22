@@ -49,6 +49,8 @@ namespace Gamen.Widgets
 
 open ProofWidgets
 
+/-- The renderer. Lake does not track `include_str` files: after editing the JS,
+change this file too (any real edit) so the widget is rebuilt with it. -/
 @[widget_module]
 def DynamicExplorerWidget : Component Dynamic.StepResult where
   javascript := include_str ".." / "js" / "dynamicExplorer.js"

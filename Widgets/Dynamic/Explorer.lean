@@ -148,8 +148,9 @@ private def evaluableView (s : ExplorerState) (ev : Evaluable) : Json × List St
     Json.mkObj [("name", toJson w), ("x", toJson x), ("y", toJson y),
       ("facts", toJson ((ev.facts.find? (·.1 == w)).map (·.2) |>.getD [])),
       ("clicked", toJson (s.clicked.contains w))]
-  let edges := ev.edges.map fun (label, a, b) =>
-    Json.mkObj [("label", toJson label), ("from", toJson a), ("to", toJson b)]
+  let edges := ev.edges.map fun e =>
+    Json.mkObj [("label", toJson e.label), ("from", toJson e.src), ("to", toJson e.dst),
+      ("dashed", toJson e.dflt)]
   (Json.mkObj [("worlds", Json.arr worlds.toArray), ("edges", Json.arr edges.toArray)], unplaced)
 
 private def checkView (ev : Evaluable) (f : String) : Json :=

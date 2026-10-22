@@ -24,12 +24,14 @@ const GOOD = boxStyle('#2e7d32', 'rgba(46,125,50,0.15)')
 const BAD = boxStyle('#c62828', 'rgba(198,40,40,0.15)')
 
 // Group edges by unordered pair; a pair drawn both ways with the same agents is
-// one undirected line, otherwise each direction is an arrow.
+// one undirected line, otherwise each direction is an arrow. Dashed edges (joint
+// actions left to the model's default successor) are grouped apart.
 function edgeGroups(edges) {
   const byPair = new Map()
   for (const e of edges) {
-    const k = JSON.stringify([e.from, e.to])
-    if (!byPair.has(k)) byPair.set(k, { from: e.from, to: e.to, labels: [] })
+    const dashed = !!e.dashed
+    const k = JSON.stringify([e.from, e.to, dashed])
+    if (!byPair.has(k)) byPair.set(k, { from: e.from, to: e.to, dashed, labels: [] })
     const g = byPair.get(k)
     if (!g.labels.includes(e.label)) g.labels.push(e.label)
   }
@@ -37,7 +39,7 @@ function edgeGroups(edges) {
   for (const [k, g] of byPair) {
     if (done.has(k)) continue
     done.add(k)
-    const rk = JSON.stringify([g.to, g.from])
+    const rk = JSON.stringify([g.to, g.from, g.dashed])
     const rev = byPair.get(rk)
     const same = rev && rev.labels.slice().sort().join() === g.labels.slice().sort().join()
     if (g.from !== g.to && same) {
@@ -62,11 +64,16 @@ function ModelSvg({ model, onClick }) {
   edges.forEach((e, i) => {
     const [x1, y1] = pos.get(e.from), [x2, y2] = pos.get(e.to)
     const label = e.labels.join(',')
+    const dash = e.dashed ? '4 3' : undefined
     if (e.from === e.to) {
+      // A dashed loop goes below the node, so it never hides a solid one above.
+      const s = e.dashed ? -1 : 1
+      const top = y1 - s * (R - 1), ctrl = y1 - s * (R + 22)
       parts.push(h('g', { key: `e${i}` },
-        h('path', { d: `M ${x1 - 6} ${y1 - R + 1} C ${x1 - 18} ${y1 - R - 22}, ${x1 + 18} ${y1 - R - 22}, ${x1 + 6} ${y1 - R + 1}`,
-                    fill: 'none', stroke: 'currentColor', strokeOpacity: 0.6 }),
-        h('text', { x: x1, y: y1 - R - 19, fontSize: 10, textAnchor: 'middle' }, label)))
+        h('path', { d: `M ${x1 - 6} ${top} C ${x1 - 18} ${ctrl}, ${x1 + 18} ${ctrl}, ${x1 + 6} ${top}`,
+                    fill: 'none', stroke: 'currentColor', strokeOpacity: 0.6, strokeDasharray: dash }),
+        h('text', { x: x1, y: e.dashed ? y1 + R + 28 : y1 - R - 19, fontSize: 10, textAnchor: 'middle' },
+          label)))
       return
     }
     const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1
@@ -77,7 +84,7 @@ function ModelSvg({ model, onClick }) {
     const ex = x2 - ux * R - uy * off, ey = y2 - uy * R + ux * off
     parts.push(h('g', { key: `e${i}` },
       h('line', { x1: sx, y1: sy, x2: ex, y2: ey, stroke: 'currentColor', strokeOpacity: 0.6,
-                  markerEnd: e.directed ? 'url(#dynexp-arrow)' : undefined }),
+                  strokeDasharray: dash, markerEnd: e.directed ? 'url(#dynexp-arrow)' : undefined }),
       h('text', { x: (sx + ex) / 2 - uy * 8, y: (sy + ey) / 2 + ux * 8 + 3,
                   fontSize: 10, textAnchor: 'middle' }, label)))
   })

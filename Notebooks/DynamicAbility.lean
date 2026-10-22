@@ -22,7 +22,11 @@ A model here is a *concurrent game structure*: a set of **states**, a set of
 **agents**, and, at every state, the **actions** each agent has available. At
 each step every agent picks one of its actions at once; the resulting *joint
 action* decides the next state. In the explorer, an arrow is labeled with the
-joint action that takes it, e.g. `patient=visit, staff=wait`.
+joint action that takes it, e.g. `patient=visit, staff=wait`. A model need not
+list every joint action: in the referral scenario below, any joint action it
+leaves out keeps the state where it is. Those are drawn as one dashed loop per
+state, labeled `otherwise: stay`; at `primary`, before any grant, it is the
+only arrow, since waiting is all anyone can do there.
 
 ## Saying what a group can do
 

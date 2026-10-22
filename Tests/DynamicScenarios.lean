@@ -173,6 +173,32 @@ def writeHasRefer (text : String) : Except String Bool := do
 
 def contains (s sub : String) : Bool := (s.splitOn sub).length > 1
 
+/-- From the model JSON alone: the states where some available joint move has
+no listed transition (fewer listed transitions of available moves than joint
+moves there). -/
+def unlistedStates (sc : Scenario) : List String :=
+  let moves := (sc.model.getObjValD "moves").getObj?.toOption.map (·.toList) |>.getD []
+  let ts := (sc.model.getObjValD "transitions").getArr?.toOption.getD #[]
+  moves.filterMap fun (st, byAgent) =>
+    let avail : List (String × List String) :=
+      (byAgent.getObj?.toOption.map (·.toList) |>.getD []).map fun (a, as) =>
+        (a, (Lean.fromJson? as : Except String (List String)).toOption.getD [])
+    let listed := ts.toList.filter fun t =>
+      (t.getObjValD "state").getStr? == .ok st &&
+        avail.all fun (a, as) => match (t.getObjValD "moves").getObjValD a |>.getStr? with
+          | .ok x => as.contains x
+          | .error _ => false
+    if (avail.map (·.2.length)).foldl (· * ·) 1 > listed.length then some st else none
+
+/-- The dashed edges of a scenario's model before any update. -/
+def dashedBefore (sc : Except String Scenario) : Except String (List Edge) := do
+  pure ((← (← sc).before).edges.filter (·.dflt))
+
+/-- The edges from `st` after `sel`. -/
+def edgesFrom (sc : Except String Scenario) (sel : List String) (st : String) :
+    Except String (List Edge) := do
+  pure ((← (← sc).after sel).edges.filter (·.src == st))
+
 def cases : List (String × Bool) := [
   ("every library scenario decodes",
     allScenarios.all (fun (_, r) => isOk r) && !allScenarios.isEmpty),
@@ -233,6 +259,24 @@ def cases : List (String × Bool) := [
     scenarios.all fun sc =>
       let sels := [] :: sc.questions.filterMap (·.selection)
       sels.all fun sel => sc.checks.all fun c => isOk ((sc.after sel).bind (·.truthSet c))),
+  ("would-if-could: one dashed \"otherwise: stay\" loop at each state with an unlisted joint move",
+    match wouldIfCould, dashedBefore wouldIfCould with
+    | .ok sc, .ok ds =>
+      !(unlistedStates sc).isEmpty && (unlistedStates sc).contains "primary"
+        && (unlistedStates sc).contains "treated"
+        && ds == (unlistedStates sc).map fun st =>
+          { label := "otherwise: stay", src := st, dst := st, dflt := true }
+    | _, _ => false),
+  ("notebook claim (DynamicAbility): before any grant, the dashed loop is the only arrow at primary",
+    edgesFrom wouldIfCould [] "primary" == .ok
+      [{ label := "otherwise: stay", src := "primary", dst := "primary", dflt := true }]),
+  ("after the patient's refer grant, primary has a solid arrow to specialist and still the dashed loop",
+    edgesFrom wouldIfCould [referPatient] "primary" == .ok
+      [{ label := "patient=refer, staff=wait", src := "primary", dst := "specialist" },
+       { label := "otherwise: stay", src := "primary", dst := "primary", dflt := true }]),
+  ("shift-change draws its default stays dashed; safety-access (no default_next) draws none",
+    ((dashedBefore shiftChange).map (·.length)) == ((shiftChange.map unlistedStates).map (·.length))
+      && dashedBefore safetyAccess == .ok []),
   ("a refusal quotes clause labels and joins them with and",
     (gradeUnder shiftChange "click-unaware" [] (.worlds [])).map (·.correct) == .error
       s!"This question is about the model after selecting \"{grantHandoff}\" and \"{revokeOutgoing}\" only: \

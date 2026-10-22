@@ -28,6 +28,8 @@ namespace Gamen.Atl.Dynamic
 
 open Gamen.Input
 
+deriving instance BEq for DFormula, UpdateList
+
 private abbrev Toks := List (Token × Nat)
 
 private def unexpected (endPos : Nat) (what : String) : Toks → String

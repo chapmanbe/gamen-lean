@@ -110,8 +110,6 @@ inductive UpdateList where
   | cons (cond : DFormula) (action : String) (agents informed : List String) (rest : UpdateList)
 end
 
-deriving instance BEq for DFormula, UpdateList
-
 namespace DFormula
 
 private def informedStr (bs : List String) : String :=

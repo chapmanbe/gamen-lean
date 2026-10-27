@@ -61,7 +61,10 @@ lake test      # unit, widget, notebook answer-key, and property tests
 Open a file in `Notebooks/` in VS Code with the Lean 4 extension and put the
 cursor on an `#eval` or `#html` line; results and diagrams appear in the
 infoview. Or run them in a browser: `web/setup.sh` once, then
-`web/run-local.sh` (localhost only; see `web/README.md`).
+`web/run-local.sh` (localhost only; see `web/README.md`). To read them
+without installing anything, see the
+[read-only copies](https://chapmanbe.github.io/gamen-lean/notebooks/) on the
+documentation site, with every result computed by Lean.
 
 For health informatics students with no logic background, two notebooks
 start from clinical rules: `PropLogicPrimer.lean` (truth tables, validity,

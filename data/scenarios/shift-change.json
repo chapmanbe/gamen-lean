@@ -1,0 +1,153 @@
+{
+  "id": "shift-change",
+  "title": "Shift change: authority that changes hands",
+  "setup": "At shift change, the authority to order passes from the outgoing clinician (outgoing) to the incoming clinician (incoming). Right now outgoing has the action order and incoming can only wait. The states old-shift and new-shift differ only in whether the shift change has happened (the atom handoff holds at new-shift). The pharmacist (pharmacist) does not know whether the shift change has happened yet: old-shift and new-shift look the same to the pharmacist. In new-shift-present the shift has also changed, but the pharmacist was there for it and knows. The two clinicians know whether the shift has changed, but not whether the pharmacist was there. Whoever orders moves the model to ordered; the pharmacist can only wait. Each control is an update clause, condition : action → {agents}: it grants or revokes the action for those agents at every state where the condition holds, judged in the model before the update. It also informs those agents, and anyone named after \"and inform\", whether the condition holds; nobody else learns anything. Tick clauses, then press Apply.",
+  "mode": "atlD",
+  "model": {
+    "states": ["old-shift", "new-shift", "new-shift-present", "ordered"],
+    "agents": ["outgoing", "incoming", "pharmacist"],
+    "actions": ["wait", "order"],
+    "moves": {
+      "old-shift": {"outgoing": ["wait", "order"], "incoming": ["wait"], "pharmacist": ["wait"]},
+      "new-shift": {"outgoing": ["wait", "order"], "incoming": ["wait"], "pharmacist": ["wait"]},
+      "new-shift-present": {"outgoing": ["wait", "order"], "incoming": ["wait"], "pharmacist": ["wait"]},
+      "ordered": {"outgoing": ["wait"], "incoming": ["wait"], "pharmacist": ["wait"]}
+    },
+    "transitions": [
+      {"state": "old-shift", "moves": {"outgoing": "order", "incoming": "wait", "pharmacist": "wait"}, "next": "ordered"},
+      {"state": "old-shift", "moves": {"outgoing": "wait", "incoming": "order", "pharmacist": "wait"}, "next": "ordered"},
+      {"state": "old-shift", "moves": {"outgoing": "order", "incoming": "order", "pharmacist": "wait"}, "next": "ordered"},
+      {"state": "new-shift", "moves": {"outgoing": "order", "incoming": "wait", "pharmacist": "wait"}, "next": "ordered"},
+      {"state": "new-shift", "moves": {"outgoing": "wait", "incoming": "order", "pharmacist": "wait"}, "next": "ordered"},
+      {"state": "new-shift", "moves": {"outgoing": "order", "incoming": "order", "pharmacist": "wait"}, "next": "ordered"},
+      {"state": "new-shift-present", "moves": {"outgoing": "order", "incoming": "wait", "pharmacist": "wait"}, "next": "ordered"},
+      {"state": "new-shift-present", "moves": {"outgoing": "wait", "incoming": "order", "pharmacist": "wait"}, "next": "ordered"},
+      {"state": "new-shift-present", "moves": {"outgoing": "order", "incoming": "order", "pharmacist": "wait"}, "next": "ordered"}
+    ],
+    "default_next": {"stay": true},
+    "valuation": {
+      "new-shift": ["handoff"],
+      "new-shift-present": ["handoff"],
+      "ordered": ["ordered"]
+    },
+    "indistinguishable": {
+      "pharmacist": [["old-shift", "new-shift"]],
+      "outgoing": [["new-shift", "new-shift-present"]],
+      "incoming": [["new-shift", "new-shift-present"]]
+    }
+  },
+  "controls": {
+    "mode": "subjective",
+    "clauses": [
+      {"label": "grant handoff : order → {incoming}", "kind": "grant",
+       "cond": "handoff", "action": "order", "agents": ["incoming"]},
+      {"label": "grant handoff : order → {incoming} and inform {pharmacist}", "kind": "grant",
+       "cond": "handoff", "action": "order", "agents": ["incoming"], "informed": ["pharmacist"]},
+      {"label": "grant ⊤ : order → {incoming}", "kind": "grant",
+       "cond": "⊤", "action": "order", "agents": ["incoming"]},
+      {"label": "revoke handoff : order → {outgoing}", "kind": "revoke",
+       "cond": "handoff", "action": "order", "agents": ["outgoing"]}
+    ]
+  },
+  "layout": [
+    {"name": "old-shift", "x": 0.15, "y": 0.25},
+    {"name": "new-shift", "x": 0.15, "y": 0.8},
+    {"name": "new-shift-present", "x": 0.85, "y": 0.8},
+    {"name": "ordered", "x": 0.85, "y": 0.25}
+  ],
+  "checks": ["has(incoming,order)", "has(outgoing,order)", "K[pharmacist]has(incoming,order)"],
+  "questions": [
+    {
+      "id": "click-unaware",
+      "prompt": "Press Reset, tick \"grant handoff : order → {incoming}\" and \"revoke handoff : order → {outgoing}\", and press Apply. Click the states where the incoming clinician can order but the pharmacist does not know it: has(incoming,order) ∧ ¬K[pharmacist]has(incoming,order).",
+      "kind": {"clickWorlds": {"formula": "has(incoming,order) ∧ ¬K[pharmacist]has(incoming,order)"}},
+      "selection": ["grant handoff : order → {incoming}", "revoke handoff : order → {outgoing}"],
+      "answer": "new-shift",
+      "hints": [
+        {"answer": "new-shift,new-shift-present",
+         "text": "At new-shift-present the pharmacist was there for the shift change, so cannot mistake it for old-shift; there the pharmacist does know the incoming clinician can order."},
+        {"answer": "",
+         "text": "One state qualifies. At new-shift the incoming clinician can order, but the pharmacist cannot rule out old-shift, where the incoming clinician cannot order."},
+        {"answer": "new-shift,old-shift",
+         "text": "At old-shift the shift has not changed: the grant's condition handoff is false there, so the incoming clinician still cannot order."}
+      ]
+    },
+    {
+      "id": "click-incoming-can",
+      "prompt": "Keep the same update (Reset, tick \"grant handoff : order → {incoming}\" and \"revoke handoff : order → {outgoing}\", Apply). Click the states where ⟨⟨incoming⟩⟩X ordered holds: the incoming clinician can make sure an order is placed next.",
+      "kind": {"clickWorlds": {"formula": "⟨⟨incoming⟩⟩X ordered"}},
+      "selection": ["grant handoff : order → {incoming}", "revoke handoff : order → {outgoing}"],
+      "answer": "new-shift,new-shift-present,ordered",
+      "hints": [
+        {"answer": "new-shift,new-shift-present",
+         "text": "At ordered every joint action stays at ordered, so ordered holds at the next state whatever anyone does."},
+        {"answer": "new-shift",
+         "text": "The grant applied at new-shift-present too, since handoff holds there. Whether the pharmacist was present does not change what the incoming clinician can do."},
+        {"answer": "new-shift,new-shift-present,old-shift,ordered",
+         "text": "At old-shift the shift has not changed: the grant's condition is false there, so the incoming clinician can only wait."}
+      ]
+    },
+    {
+      "id": "write-knows-whether",
+      "prompt": "Keep the same update (Reset, tick \"grant handoff : order → {incoming}\" and \"revoke handoff : order → {outgoing}\", Apply). Write a formula true exactly at the states where the pharmacist knows whether the incoming clinician can order: knows that it can, or knows that it cannot.",
+      "kind": {"writeFormula": {"target": ["new-shift-present", "ordered"]}},
+      "selection": ["grant handoff : order → {incoming}", "revoke handoff : order → {outgoing}"],
+      "answer": "K[pharmacist]has(incoming,order) ∨ K[pharmacist]¬has(incoming,order)",
+      "hints": [
+        {"answer": "K[pharmacist]has(incoming,order)",
+         "text": "That is true only at new-shift-present. At ordered the pharmacist knows the opposite, that the incoming clinician cannot order there; knowing whether covers both."},
+        {"answer": "handoff",
+         "text": "handoff is true at new-shift too, where the pharmacist cannot rule out old-shift. Knowing whether depends on what the pharmacist can rule out, not only on what is true."},
+        {"answer": "has(incoming,order)",
+         "text": "That says whether the incoming clinician can order, not whether the pharmacist knows it."}
+      ]
+    },
+    {
+      "id": "click-pharmacist-informed",
+      "prompt": "Press Reset, tick \"grant handoff : order → {incoming} and inform {pharmacist}\" and \"revoke handoff : order → {outgoing}\", and press Apply. Click the states where K[pharmacist]has(incoming,order) holds now.",
+      "kind": {"clickWorlds": {"formula": "K[pharmacist]has(incoming,order)"}},
+      "selection": ["grant handoff : order → {incoming} and inform {pharmacist}", "revoke handoff : order → {outgoing}"],
+      "answer": "new-shift,new-shift-present",
+      "hints": [
+        {"answer": "new-shift-present",
+         "text": "Informing the pharmacist splits new-shift from old-shift: at new-shift the pharmacist now knows the shift has changed, and so knows the incoming clinician can order."},
+        {"answer": "",
+         "text": "The pharmacist was informed whether handoff holds. Where it does, the pharmacist can rule out old-shift."},
+        {"answer": "new-shift,new-shift-present,old-shift",
+         "text": "At old-shift the incoming clinician cannot order, since the shift has not changed; the pharmacist knows that too."}
+      ]
+    },
+    {
+      "id": "click-everywhere",
+      "prompt": "Press Reset, tick only \"grant ⊤ : order → {incoming}\", and press Apply. The pharmacist is not informed. Click the states where K[pharmacist]has(incoming,order) holds.",
+      "kind": {"clickWorlds": {"formula": "K[pharmacist]has(incoming,order)"}},
+      "selection": ["grant ⊤ : order → {incoming}"],
+      "answer": "new-shift,new-shift-present,old-shift,ordered",
+      "hints": [
+        {"answer": "",
+         "text": "The pharmacist learned nothing, but with condition ⊤ the incoming clinician can now order at every state. Whatever state the pharmacist cannot rule out, the incoming clinician can order there."},
+        {"answer": "new-shift-present",
+         "text": "With condition ⊤ the grant reached every state, so the pharmacist does not need to know whether the shift has changed: the incoming clinician can order either way."},
+        {"answer": "new-shift,new-shift-present,old-shift",
+         "text": "⊤ holds at ordered too, so the grant reached ordered as well."}
+      ]
+    },
+    {
+      "id": "reach-informed",
+      "prompt": "Tick the fewest clauses so that, at every state, the incoming clinician can order exactly where the shift has changed, the outgoing clinician cannot order there, and the pharmacist knows whether the incoming clinician can order: (has(incoming,order) ↔ handoff) ∧ (handoff → ¬has(outgoing,order)) ∧ (K[pharmacist]has(incoming,order) ∨ K[pharmacist]¬has(incoming,order)). Then press Check.",
+      "kind": {"reachGoal": {"goal": "(has(incoming,order) ↔ handoff) ∧ (handoff → ¬has(outgoing,order)) ∧ (K[pharmacist]has(incoming,order) ∨ K[pharmacist]¬has(incoming,order))", "atWorld": null}},
+      "answer": "grant handoff : order → {incoming} and inform {pharmacist},revoke handoff : order → {outgoing}",
+      "minimal": true,
+      "hints": [
+        {"answer": "grant handoff : order → {incoming},revoke handoff : order → {outgoing}",
+         "text": "Authority changes hands, but the pharmacist is not told: at old-shift and new-shift the pharmacist still cannot tell whether the incoming clinician can order. Widen who is informed."},
+        {"answer": "grant handoff : order → {incoming} and inform {pharmacist}",
+         "text": "The pharmacist now knows, but the outgoing clinician can still order after the shift has changed. Revoke that too."},
+        {"answer": "grant ⊤ : order → {incoming},revoke handoff : order → {outgoing}",
+         "text": "Everyone now knows the incoming clinician can order, but it can order at old-shift too, before the shift has changed. The grant's condition should be handoff."},
+        {"answer": "",
+         "text": "With no update, the incoming clinician cannot order anywhere and the outgoing clinician can still order after the shift change."}
+      ]
+    }
+  ]
+}

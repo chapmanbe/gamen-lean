@@ -49,6 +49,13 @@ start from clinical rules: `PropLogicPrimer.lean` (truth tables, validity,
 entailment) and then `ThreeValued.lean` (missing data, strong Kleene logic,
 and why a CQL criterion can be null).
 
+Three notebooks on logics where the model itself changes use the dynamic
+explorer widget (tick an update, press Apply, answer graded questions):
+`DynamicEpistemic.lean` (action models: a page that some clinicians see and
+others don't), `DynamicAbility.lean` (ATL-D: granting and revoking actions),
+and `DynamicCapstone.lean` (ATEL-D: a shift change of ordering authority that
+not everyone knows about).
+
 ![Clicking a fact onto a world updates the guideline checks](docs/images/gamen-lean-widget-click-test.gif)
 
 ## License

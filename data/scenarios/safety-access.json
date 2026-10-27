@@ -1,0 +1,112 @@
+{
+  "id": "safety-access",
+  "title": "Safety versus access: revoking an override",
+  "setup": "A care team (team) gives a medication. In routine care the team can wait for the pharmacist to verify the order (verify, leading to given) or override the check (override); in this model, overriding in routine care lets an error through (error, where harm holds). In an emergency the team can wait for verification, which stays in emergency, or override, which leads to given. In a crisis such as a resuscitation, override is the team's only action. Each control is an update clause, condition : action → {agents}: a revoke removes the action from those agents at every state where the condition holds, judged in the model before the update, unless that would leave an agent with no action at a state. Tick clauses, then press Apply; skipped revokes appear in the notes box.",
+  "mode": "atlD",
+  "model": {
+    "states": ["routine", "emergency", "crisis", "given", "error"],
+    "agents": ["team"],
+    "actions": ["verify", "override", "wait"],
+    "moves": {
+      "routine": {"team": ["verify", "override"]},
+      "emergency": {"team": ["wait", "override"]},
+      "crisis": {"team": ["override"]},
+      "given": {"team": ["wait"]},
+      "error": {"team": ["wait"]}
+    },
+    "transitions": [
+      {"state": "routine", "moves": {"team": "verify"}, "next": "given"},
+      {"state": "routine", "moves": {"team": "override"}, "next": "error"},
+      {"state": "emergency", "moves": {"team": "wait"}, "next": "emergency"},
+      {"state": "emergency", "moves": {"team": "override"}, "next": "given"},
+      {"state": "crisis", "moves": {"team": "override"}, "next": "given"},
+      {"state": "given", "moves": {"team": "wait"}, "next": "given"},
+      {"state": "error", "moves": {"team": "wait"}, "next": "error"}
+    ],
+    "valuation": {
+      "routine": ["routine"],
+      "emergency": ["emergency"],
+      "crisis": ["emergency"],
+      "given": ["given"],
+      "error": ["harm"]
+    }
+  },
+  "controls": {
+    "mode": "perfect",
+    "clauses": [
+      {"label": "revoke ⊤ : override → {team}", "kind": "revoke",
+       "cond": "⊤", "action": "override", "agents": ["team"]},
+      {"label": "revoke routine : override → {team}", "kind": "revoke",
+       "cond": "routine", "action": "override", "agents": ["team"]},
+      {"label": "revoke emergency : override → {team}", "kind": "revoke",
+       "cond": "emergency", "action": "override", "agents": ["team"]}
+    ]
+  },
+  "layout": [
+    {"name": "routine", "x": 0.15, "y": 0.25},
+    {"name": "error", "x": 0.15, "y": 0.8},
+    {"name": "given", "x": 0.5, "y": 0.5},
+    {"name": "emergency", "x": 0.85, "y": 0.25},
+    {"name": "crisis", "x": 0.85, "y": 0.8}
+  ],
+  "checks": ["has(team,verify)", "has(team,wait)"],
+  "questions": [
+    {
+      "id": "click-harm-before",
+      "prompt": "The model before any revoke: press Reset, then press Apply with no box ticked. Click the states where ⟨⟨team⟩⟩F harm holds: the team can bring about harm.",
+      "kind": {"clickWorlds": {"formula": "⟨⟨team⟩⟩F harm"}},
+      "selection": [],
+      "answer": "error,routine",
+      "hints": [
+        {"answer": "routine",
+         "text": "Right about routine: override leads to error. But F includes the present, and harm already holds at error."},
+        {"answer": "error",
+         "text": "F includes the present, so error qualifies. Look also at routine: one of the team's actions there leads to error."}
+      ]
+    },
+    {
+      "id": "click-given-revoked",
+      "prompt": "Press Reset, tick only \"revoke ⊤ : override → {team}\", and press Apply. Click the states where ⟨⟨team⟩⟩F given holds now.",
+      "kind": {"clickWorlds": {"formula": "⟨⟨team⟩⟩F given"}},
+      "selection": ["revoke ⊤ : override → {team}"],
+      "answer": "crisis,given,routine",
+      "hints": [
+        {"answer": "crisis,emergency,given,routine",
+         "text": "At emergency the revoke removed override, and the team's only action left is wait, which stays in emergency. The revoke that blocks harm in routine care also blocks access in an emergency."},
+        {"answer": "given,routine",
+         "text": "Read the notes box: at crisis the revoke would have left the team no action, so it was not applied there (the reasonableness rule). The team keeps override at crisis and can still reach given."},
+        {"answer": "emergency,given,routine",
+         "text": "Two states are off. At emergency the team lost override and can only wait. At crisis the revoke was not applied (see the notes box), so override still leads to given."}
+      ]
+    },
+    {
+      "id": "click-has-override",
+      "prompt": "Keep \"revoke ⊤ : override → {team}\" applied (Reset, tick it, Apply). Click the states where the team still has override: has(team,override).",
+      "kind": {"clickWorlds": {"formula": "has(team,override)"}},
+      "selection": ["revoke ⊤ : override → {team}"],
+      "answer": "crisis",
+      "hints": [
+        {"answer": "",
+         "text": "The revoke's condition ⊤ holds everywhere, but one state kept override. The notes box names it: removing override there would have left the team with no action at all."},
+        {"answer": "crisis,emergency",
+         "text": "At emergency the team also had wait, so removing override still left it an action; the revoke was applied there. Only at crisis was override the last action."}
+      ]
+    },
+    {
+      "id": "reach-safe-access",
+      "prompt": "Tick revoke clauses so that, at every state, routine → ¬⟨⟨team⟩⟩F harm and emergency → ⟨⟨team⟩⟩F given both hold: no harm from routine care, and the team can still give the drug in every emergency state. Then press Check.",
+      "kind": {"reachGoal": {"goal": "(routine → ¬⟨⟨team⟩⟩F harm) ∧ (emergency → ⟨⟨team⟩⟩F given)", "atWorld": null}},
+      "answer": "revoke routine : override → {team}",
+      "hints": [
+        {"answer": "revoke ⊤ : override → {team}",
+         "text": "This blocks harm in routine care, but it also removes override at emergency, where wait leads nowhere. Find a condition that is true at routine and false in the emergency states."},
+        {"answer": "revoke emergency : override → {team}",
+         "text": "This removes override exactly where it is needed (at emergency; crisis keeps it by the reasonableness rule) and leaves it at routine, where it causes harm."},
+        {"answer": "revoke routine : override → {team},revoke ⊤ : override → {team}",
+         "text": "Ticked together, the two revokes apply as one update, and ⊤ still removes override at emergency. Keep only the targeted one."},
+        {"answer": "",
+         "text": "With no revoke, the team can still override in routine care and reach error."}
+      ]
+    }
+  ]
+}

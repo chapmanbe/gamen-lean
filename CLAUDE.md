@@ -11,6 +11,11 @@ happen here, and are not mirrored back to Haskell. Port history and status
 by module: `PORTING.md`. Why Lean, and the evidence: `docs/assessment/`.
 Forward plans: `plans/*-2026-09-29.md`.
 
+**"What's next?"**: read `NEXT.md` and answer from it. If it has a
+"Start here" section, give that section's steps in order, with the exact
+commands and file paths, and check the first one (the current branch)
+before going further. Don't summarize the open-threads list unless asked.
+
 ## Build
 
 - `lake build`: library, widgets, notebooks, `gamen-validate`

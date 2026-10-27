@@ -25,13 +25,13 @@ are usually taught on paper and studied in separate tools, one logic at a
 time. gamen-lean puts them in one executable Lean 4 library: Kripke
 semantics and tableau provers for the *Boxes and Diamonds* systems, and
 temporal, epistemic, doxastic, deontic, STIT, ATL and dynamic logics, each
-checked by tests against its source paper. It serves two groups. Students,
+with its own tests. It serves two groups. Students,
 especially in health informatics, work through notebooks where a clinical
 rule becomes a formula they can evaluate, a model they can click, and an
 answer the notebook grades. Researchers and applications call
 `gamen-validate`, a JSON Lines service that clinical guideline validation
 uses to detect conflicting obligations. gamen-lean succeeds gamen-hs
-(Haskell) and Gamen.jl (Julia).
+(Haskell), and ports the teaching notebooks of Gamen.jl (Julia) to Lean.
 
 ## Build
 

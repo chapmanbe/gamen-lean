@@ -12,8 +12,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from notebook import (  # noqa: E402
-    MissingOutput, generated_file, place_messages, render_page, split_blocks,
-    split_commands)
+    MissingOutput, generated_file, html_head, nested_widget, parse_expected,
+    place_messages, render_page, split_blocks, split_commands,
+    unexpected_placeholders)
 
 SOURCE = """import Gamen.Teaching
 
@@ -118,6 +119,40 @@ class GeneratedFileTests(unittest.TestCase):
         src = "#html countermodelHtml systemK [] ml[ □p ]\n"
         text, _ = generated_file("Notebooks.X", src, code_commands(src))
         self.assertIn("Gamen.Widgets.countermodelStatic systemK [] ml[ □p ]", text)
+
+
+class OpenInTests(unittest.TestCase):
+    SRC = "open Gamen.Widgets in\n#html kripkeExplorer figure11\n"
+
+    def test_open_in_prefix_joins_the_cell(self):
+        cmds = code_commands(self.SRC)
+        self.assertEqual(len(cmds), 1)
+        self.assertEqual(cmds[0].kind, "html")
+        self.assertEqual(html_head(cmds[0]), "kripkeExplorer")
+
+    def test_open_in_prefix_kept_in_generated_file(self):
+        text, _ = generated_file("Notebooks.X", self.SRC, code_commands(self.SRC))
+        lines = text.splitlines()
+        i = lines.index("open Gamen.Widgets in")
+        self.assertTrue(lines[i + 1].startswith("#eval"))
+        self.assertIn("Gamen.Widgets.kripkeStatic figure11", text)
+
+
+class PlaceholderTests(unittest.TestCase):
+    def test_nested_widget_found(self):
+        html = '<div><p>x</p><div class="widget-placeholder" data-export="default"></div></div>'
+        self.assertEqual(nested_widget(html), "default")
+        self.assertIsNone(nested_widget('<div class="kripke-static"><svg></svg></div>'))
+
+    def test_unexpected_placeholders(self):
+        found = ["Notebooks/A.lean:12: foo", "Notebooks/B.lean:3: bar"]
+        self.assertEqual(unexpected_placeholders(found, {"Notebooks/A.lean:12: foo"}),
+                         ["Notebooks/B.lean:3: bar"])
+        self.assertEqual(unexpected_placeholders(found, set(found)), [])
+
+    def test_expected_placeholders_file_parsing(self):
+        text = "# comment\n\nNotebooks/A.lean:12: foo\n"
+        self.assertEqual(parse_expected(text), {"Notebooks/A.lean:12: foo"})
 
 
 class PlacementTests(unittest.TestCase):

@@ -29,8 +29,9 @@ from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from notebook import (  # noqa: E402
-    MissingOutput, generated_file, html_head, place_messages, render_page,
-    split_blocks, split_commands)
+    MissingOutput, generated_file, html_head, nested_widget, parse_expected,
+    place_messages, render_page, split_blocks, split_commands,
+    unexpected_placeholders)
 from page import page  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
@@ -93,9 +94,10 @@ def render_notebook(path: Path, placeholders: List[str]) -> Tuple[str, str]:
             elif m.get("severity") == "information" and cell is not None:
                 widgets[cell] = widgets.get(cell, "") + _text(m)
         for c in cells:
-            if c.start in failed:
+            nested = nested_widget(widgets.get(c.start) or "")
+            if c.start in failed or c.start not in widgets or nested is not None:
                 widgets[c.start] = None
-                placeholders.append(f"placeholder: {rel}:{c.start}: {html_head(c)}")
+                placeholders.append(f"{rel}:{c.start}: {html_head(c)}")
 
     html = render_page(path.stem, source, outputs, widgets)
     m = re.search(r"<title>(.*?) · gamen-lean</title>", html)
@@ -136,8 +138,15 @@ def main() -> int:
             f"<ul>\n{items}\n</ul>")
     (args.out / "index.html").write_text(page("Notebooks · gamen-lean", body, 1), encoding="utf-8")
 
+    # A placeholder is a picture missing from the site: allowed only when
+    # listed in expected-placeholders.txt, so a renamed rewrite target or a
+    # nested widget fails the build instead of going quietly blank.
+    expected = parse_expected((HERE / "expected-placeholders.txt").read_text(encoding="utf-8"))
     for p in placeholders:
-        print(p)
+        print(f"placeholder: {p}")
+    for p in unexpected_placeholders(placeholders, expected):
+        failures.append(f"{p}: widget not rendered and not listed in "
+                        "tools/docs/expected-placeholders.txt")
     for f in failures:
         print(f"::error::{f}")
     return 1 if failures else 0

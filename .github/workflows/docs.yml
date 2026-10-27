@@ -38,10 +38,12 @@ permissions:
   pages: write
   id-token: write
 
-# One deployment at a time.
+# One deployment at a time, and a pull request never cancels one: PR runs
+# get their own group per PR (a newer push to the same PR cancels the older
+# run); deploys share the "pages" group and are never cancelled midway.
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'pull_request' && format('docs-pr-{0}', github.event.pull_request.number) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   docs:
@@ -50,7 +52,9 @@ jobs:
     timeout-minutes: 60
 
     # The github-pages environment is claimed only on a real deploy, so a
-    # PR run cannot hold it while it merely validates the build.
+    # PR run cannot hold it while it merely validates the build. On a PR the
+    # expression is '' (no environment); gamen-hs's docs.yml uses the same
+    # pattern.
     environment:
       name: ${{ github.event_name != 'pull_request' && 'github-pages' || '' }}
       url: ${{ steps.deployment.outputs.page_url }}

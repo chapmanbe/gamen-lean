@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from html import escape
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import markdown
 from pygments import highlight
@@ -83,7 +83,20 @@ def split_blocks(source: str) -> List[Block]:
     return blocks
 
 
+_OPEN_IN = re.compile(r"^open\s.*\sin\s*$")
+
+
+def _split_prefix(text: str) -> Tuple[List[str], str]:
+    """Leading `open … in` lines of a command, and the rest."""
+    lines = text.split("\n")
+    k = 0
+    while k < len(lines) - 1 and _OPEN_IN.match(lines[k]):
+        k += 1
+    return lines[:k], "\n".join(lines[k:])
+
+
 def _kind(text: str) -> str:
+    text = _split_prefix(text)[1]
     if text.startswith(OUTPUT_COMMANDS):
         return "eval"
     if text.startswith("#html"):
@@ -94,6 +107,9 @@ def _kind(text: str) -> str:
 def split_commands(block: Block) -> List[Command]:
     lines = block.text.split("\n")
     starts = [n for n, l in enumerate(lines) if l.strip() and not l[0].isspace()]
+    # `open X in` prefixes the command on the next line: one command, not two.
+    starts = [n for i, n in enumerate(starts)
+              if i == 0 or not (_OPEN_IN.match(lines[starts[i - 1]]) and starts[i - 1] == n - 1)]
     commands = []
     for k, s in enumerate(starts):
         stop = starts[k + 1] if k + 1 < len(starts) else len(lines)
@@ -104,12 +120,12 @@ def split_commands(block: Block) -> List[Command]:
 
 
 def html_head(cell: Command) -> str:
-    m = re.match(r"#html\s+([^\s(\[]+)", cell.text)
+    m = re.match(r"#html\s+([^\s(\[]+)", _split_prefix(cell.text)[1])
     return m.group(1) if m else "#html"
 
 
 def _rewritten_expr(cell: Command) -> str:
-    expr = cell.text[len("#html"):].strip()
+    expr = _split_prefix(cell.text)[1][len("#html"):].strip()
     head = html_head(cell)
     if head in REWRITES:
         expr = REWRITES[head] + expr[len(head):]
@@ -135,6 +151,7 @@ def generated_file(module: str, source: str,
         if n in by_start:
             cell = by_start[n]
             first = len(out) + 1
+            out.extend(_split_prefix(cell.text)[0])
             out.append("#eval IO.println (Gamen.Widgets.htmlToString (")
             out.extend(_rewritten_expr(cell).split("\n"))
             out.append("))")
@@ -143,6 +160,26 @@ def generated_file(module: str, source: str,
         elif n in code_lines and _SCOPE.match(line) and not line.rstrip().endswith(" in"):
             out.append(line)
     return "\n".join(out) + "\n", line_map
+
+
+_NESTED = re.compile(r'class="widget-placeholder" data-export="([^"]*)"')
+
+
+def nested_widget(html: str) -> Optional[str]:
+    """The export name of an interactive widget left inside a cell's static
+    HTML (`htmlToString` writes it as a placeholder div), or None."""
+    m = _NESTED.search(html)
+    return m.group(1) if m else None
+
+
+def parse_expected(text: str) -> Set[str]:
+    """`tools/docs/expected-placeholders.txt`: one `FILE:LINE: HEAD` per line;
+    `#` comments and blank lines ignored."""
+    return {l.strip() for l in text.splitlines() if l.strip() and not l.lstrip().startswith("#")}
+
+
+def unexpected_placeholders(found: Sequence[str], expected: Set[str]) -> List[str]:
+    return [p for p in found if p not in expected]
 
 
 def place_messages(commands: Sequence[Command],

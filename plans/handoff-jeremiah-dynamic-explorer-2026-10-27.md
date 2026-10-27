@@ -36,16 +36,35 @@ Read these for the why and the how, in this order:
 
 ## 2. Get the branch
 
-The work is on the branch `worktree-dynamic-explorer` on GitHub. It also
-carries three commits that are on Brian's local `main` but were never pushed
-(an EvidenceTrust docstring fix, the design, and the plan).
+The work is on the branch `dynamic-explorer` on GitHub; `main` does not
+have it yet. The branch also carries three commits that were never on
+GitHub's `main` (an EvidenceTrust docstring fix, the design, and the plan).
+If `git` is not installed yet, do section 3.1 first.
+
+If you don't have the repo yet:
 
 ```sh
-git clone git@github.com:chapmanbe/gamen-lean.git   # if you don't have it
+git clone git@github.com:chapmanbe/gamen-lean.git
+cd gamen-lean
+git switch dynamic-explorer
+```
+
+(Use `https://github.com/chapmanbe/gamen-lean.git` if you have no SSH key
+on GitHub.)
+
+If you already have a clone:
+
+```sh
 cd gamen-lean
 git fetch origin
-git switch worktree-dynamic-explorer
+git switch dynamic-explorer
 ```
+
+Commit or set aside any local changes first, or `git switch` refuses.
+`git branch --show-current` should print `dynamic-explorer`. From then on,
+`git pull` on this branch picks up anything Brian pushes. To push your own
+work you need collaborator access on `chapmanbe/gamen-lean`; ask Brian if
+`git push` is refused.
 
 ## 3. Setting up Lean and VS Code on macOS
 

@@ -1,4 +1,5 @@
 import Widgets.KripkeExplorer
+import Widgets.Countermodel
 import Widgets.Hint
 
 /-!
@@ -98,5 +99,10 @@ decreasing_by
 documentation site's read-only notebook pages. -/
 def kripkeStatic (sc : Scenario) : Html :=
   .element "div" #[("className", "kripke-static")] #[(initialResult sc).html]
+
+/-- `countermodelHtml` with its embedded explorer drawn by `kripkeStatic`. -/
+def countermodelStatic (sys : System) (premises : List Formula) (conclusion : Formula)
+    (maxSteps := defaultMaxSteps) : Html :=
+  countermodelHtmlWith kripkeStatic sys premises conclusion maxSteps
 
 end Gamen.Widgets

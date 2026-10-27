@@ -1,4 +1,6 @@
+import Gamen.Teaching
 import Widgets.StaticHtml
+import Widgets.Countermodel
 
 /-!
 # Tests for `Widgets/StaticHtml.lean`
@@ -10,7 +12,7 @@ documentation site (`tools/docs/render.py`). Plan:
 
 namespace StaticHtmlTests
 
-open Lean ProofWidgets Gamen.Widgets
+open Lean ProofWidgets Gamen Gamen.Widgets
 
 private def has (s sub : String) : Bool := (s.splitOn sub).length > 1
 
@@ -48,7 +50,14 @@ def cases : List (String × Bool) := [
     has (htmlToString (kripkeExplorer twoWorlds)) "class=\"widget-placeholder\""),
   ("static html: kripkeStatic draws an svg with every world",
     let s := htmlToString (kripkeStatic twoWorlds)
-    s.startsWith "<div class=\"kripke-static\">" && has s "<svg" && has s "u1" && has s "u2")
+    s.startsWith "<div class=\"kripke-static\">" && has s "<svg" && has s "u1" && has s "u2"),
+  ("static html: countermodelStatic draws the embedded explorer, no placeholder",
+    let s := htmlToString (countermodelStatic systemK [] ml[ □p → p ])
+    has s "kripke-static" && has s "<svg" && !has s "widget-placeholder"),
+  ("static html: countermodelStatic agrees with countermodelHtml outside the diagram",
+    let a := htmlToString (countermodelStatic systemK [] ml[ □p → □□p ])
+    let b := htmlToString (countermodelHtml systemK [] ml[ □p → □□p ])
+    (a.splitOn "<div class=\"kripke-static\">").head! == (b.splitOn "<div class=\"widget-placeholder\"").head!)
 ]
 
 end StaticHtmlTests

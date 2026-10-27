@@ -13,6 +13,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
+export PATH="$HOME/.elan/bin:$PATH"  # lake, also from shells that skip ~/.zshrc
 python="${PYTHON:-python3}"
 
 rm -rf _site

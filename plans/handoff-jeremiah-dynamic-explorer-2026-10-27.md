@@ -47,15 +47,141 @@ git fetch origin
 git switch worktree-dynamic-explorer
 ```
 
-## 3. Toolchain
+## 3. Setting up Lean and VS Code on macOS
 
-- Lean is pinned by `lean-toolchain` (4.34.0); install elan
-  (<https://github.com/leanprover/elan>) and it fetches the right version.
-- Make sure `~/.elan/bin` is on your PATH (`which lake` should print it). If
-  not, add `export PATH="$HOME/.elan/bin:$PATH"` to `~/.zshrc` and open a new
-  terminal.
-- VS Code with the **Lean 4** extension (leanprover.lean4) for the notebooks
-  and widget.
+Do these once, in order. Commands go in Terminal (or VS Code's terminal,
+**⌃`**). macOS's default shell is zsh, so the shell config file is
+`~/.zshrc`.
+
+### 3.1 Command-line developer tools (git)
+
+Lake fetches the project's dependencies with git.
+
+```sh
+git --version
+```
+
+If that prints a version, skip ahead. If macOS offers to install the
+"command line developer tools", accept; or run `xcode-select --install`.
+
+### 3.2 VS Code
+
+1. Download VS Code from <https://code.visualstudio.com>, unzip it, and drag
+   **Visual Studio Code.app** into **/Applications**. Run it from there, not
+   from Downloads: macOS runs apps outside /Applications from a temporary
+   location, which breaks the `code` command below.
+2. Install the `code` command: in VS Code press **⇧⌘P** (Command Palette),
+   run **Shell Command: Install 'code' command in PATH**, and enter your
+   password if asked. This makes `/usr/local/bin/code`, a link to a small
+   script inside the app. Check in a *new* terminal:
+   ```sh
+   which code        # /usr/local/bin/code
+   ```
+
+### 3.3 elan (Lean's version manager), lake and lean
+
+You never install a Lean version by hand: elan reads each project's
+`lean-toolchain` file (here 4.34.0) and downloads that version the first time
+it's needed.
+
+```sh
+curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh
+```
+
+Accept the default installation. It puts `elan`, `lake` and `lean` in
+`~/.elan/bin`.
+
+### 3.4 Put `~/.elan/bin` on your PATH
+
+The installer may write a PATH line into a profile file that your terminal
+doesn't read, so add it to `~/.zshrc` yourself:
+
+```sh
+echo 'export PATH="$HOME/.elan/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Check, in a **new** terminal window:
+
+```sh
+which elan lake lean   # all three under /Users/<you>/.elan/bin
+elan --version
+```
+
+If `which` finds nothing, open `~/.zshrc` (`code ~/.zshrc`) and confirm the
+line is there exactly once, then open another new terminal. A line with a
+typo, such as a stray character after the closing quote, can stop the rest
+of the file from being read.
+
+### 3.5 The Lean 4 extension
+
+1. In VS Code, open Extensions (**⇧⌘X**), search **Lean 4**, and install the
+   one published by **leanprover** (id `leanprover.lean4`).
+2. **Quit VS Code completely (⌘Q) and reopen it.** VS Code reads PATH when it
+   starts; a window opened before step 3.4 won't find `lake`.
+
+### 3.6 Open the project the right way
+
+Always open the **folder** that contains `lakefile.toml`, not a single file:
+
+```sh
+cd gamen-lean            # your clone, on the branch from section 2
+code .
+```
+
+or **File → Open Folder…**. Opened as a single file, the extension can't find
+the project and every import fails.
+
+Then build once from VS Code's terminal (**⌃`**), which starts in the
+project folder:
+
+```sh
+lake --version           # first run in the folder downloads Lean 4.34.0
+lake build               # downloads ProofWidgets and Plausible, then builds; several minutes
+```
+
+### 3.7 Check that everything works
+
+1. Open `Notebooks/Ch1SyntaxSemantics.lean`. A thin orange bar in the left
+   margin shows Lean processing the file; wait for it to disappear.
+2. The **infoview** panel opens on the right. If it doesn't: press **⇧⌘P**, type
+   `infoview`, and pick the Lean 4 command that toggles it.
+3. Put the cursor on a `#eval` line: its result appears in the infoview. Put
+   it on an `#html kripkeExplorer …` line: a clickable diagram appears.
+
+If that works, the setup is complete.
+
+### 3.8 Typing logic symbols
+
+- **In a `.lean` file**, the extension turns backslash abbreviations into
+  symbols as you type: `\and` → ∧, `\or` → ∨, `\not` → ¬, `\to` → →,
+  `\iff` → ↔, `\<` → ⟨, `\>` → ⟩, `\top` → ⊤, `\bot` → ⊥. Hover over a
+  symbol to see how to type it.
+- **In the explorer's formula box**, abbreviations don't work, because it's
+  a web text field, not the Lean editor. Use the ASCII forms the parser
+  accepts: `~` (¬), `&` (∧), `|` (∨), `->` (→), `<->` (↔), `<<a>>` (⟨⟨a⟩⟩),
+  `true`/`false`, `[]`/`<>` (□/◇). For example, `K[D]p & ~K[N]K[D]p`.
+
+### 3.9 Optional: the GitHub CLI
+
+For filing issues from the terminal (section 10), install Homebrew
+(<https://brew.sh>), then:
+
+```sh
+brew install gh
+gh auth login
+```
+
+### 3.10 Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `zsh: command not found: lake` | Step 3.4; then open a new terminal. |
+| The extension says it can't find Lean or `lake` | Quit VS Code with ⌘Q and reopen it (step 3.5). |
+| Every `import` is red | You opened a file, not the folder; reopen the folder (step 3.6). |
+| The orange bar never finishes on a notebook | Run `lake build` in the terminal and read the first error. |
+| Your edit to a `data/scenarios/*.json` file or the widget JS has no effect | Lake doesn't track those files; see the "Lake gotcha" in section 4. |
+| The infoview is stuck or stale after a rebuild | ⇧⌘P, type `restart`, and run the Lean 4 command that restarts the server (or restarts the file). |
 
 ## 4. Build and test
 

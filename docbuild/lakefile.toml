@@ -1,0 +1,21 @@
+# doc-gen4 build for the gamen-lean API reference.
+#
+# Kept apart from the main `lakefile.toml` (doc-gen4's documented
+# pattern), so gamen-lean itself gains no dependency. Upgrade doc-gen4's
+# `rev` together with `lean-toolchain`, ProofWidgets and Plausible.
+#
+#   cd docbuild && lake build Gamen:docs Widgets:docs
+#
+# Output: docbuild/.lake/build/doc/ (see tools/docs/build-api.sh).
+
+name = "docbuild"
+reservoir = false
+
+[[require]]
+name = "gamen"
+path = "../"
+
+[[require]]
+name = "doc-gen4"
+git = "https://github.com/leanprover/doc-gen4"
+rev = "v4.34.0"

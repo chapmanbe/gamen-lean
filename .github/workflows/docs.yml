@@ -1,0 +1,101 @@
+# Documentation site → GitHub Pages (https://chapmanbe.github.io/gamen-lean)
+#
+# Builds, with tools/docs/build-site.sh:
+#   /            the landing page, generated from README.md
+#   /api/        the doc-gen4 API reference for Gamen and Widgets (docbuild/)
+#   /notebooks/  read-only copies of the notebooks; every #eval output is
+#                computed by Lean in this run, and widgets appear as their
+#                starting picture
+#
+# Setup (one-time, done): Settings → Pages → Source → "GitHub Actions".
+#
+# WHEN this runs, and what it does in each case:
+#
+#   push to main       build the site AND deploy it.
+#   pull request       build only; do NOT deploy.
+#   manual dispatch    build and deploy (re-publish without a new commit).
+#
+# The pull_request trigger moves breakage (a notebook that no longer
+# elaborates, a widget that fails to render, a missing API page) into
+# review instead of onto the live site. The two deploy steps are guarded
+# with `if: github.event_name != 'pull_request'`; that guard is
+# load-bearing: without it, opening a PR from any branch would publish that
+# branch's site.
+#
+# This workflow does not run `lake test`; testing CI is separate work.
+
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and a pull request never cancels one: PR runs
+# get their own group per PR (a newer push to the same PR cancels the older
+# run); deploys share the "pages" group and are never cancelled midway.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('docs-pr-{0}', github.event.pull_request.number) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  docs:
+    name: Build & Deploy Docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    # The github-pages environment is claimed only on a real deploy, so a
+    # PR run cannot hold it while it merely validates the build. On a PR the
+    # expression is '' (no environment); gamen-hs's docs.yml uses the same
+    # pattern.
+    environment:
+      name: ${{ github.event_name != 'pull_request' && 'github-pages' || '' }}
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install -r tools/docs/requirements.txt
+
+      # Lake build outputs for gamen-lean and for docbuild (doc-gen4 and its
+      # dependencies take the longest to build from scratch).
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .lake
+            docbuild/.lake
+          key: lake-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'docbuild/lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'docbuild/lake-manifest.json') }}-
+
+      - name: Build the site
+        run: bash tools/docs/build-site.sh
+
+      # Publish: push to main and manual runs only (see the header).
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        if: github.event_name != 'pull_request'
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,9 @@
+# #html cells that may appear on the documentation site as a named
+# placeholder instead of a picture, one per line, exactly as render.py prints
+# them without the "placeholder: " prefix:
+#
+#   Notebooks/File.lean:LINE: head
+#
+# Any other placeholder fails tools/docs/render.py (and the docs workflow).
+# Empty: every current widget renders. The dynamic explorer's cells go here
+# only if they are published before plan Task 7 draws them.

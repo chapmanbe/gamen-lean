@@ -438,9 +438,11 @@ private def checksProse (premises : List Formula) (conclusion : Formula) : Html 
   bulletList (s!"conclusion: {conclusion} (false at 1 in this model)"
     :: premises.zipIdx.map fun (φ, i) => s!"premise {i + 1}: {φ} (true at 1)")
 
-/-- The notebook entry point: `#html countermodelHtml systemK [] ml[ … ]`. -/
-def countermodelHtml (sys : System) (premises : List Formula) (conclusion : Formula)
-    (maxSteps := defaultMaxSteps) : Html :=
+/-- `countermodelHtml` with the diagram drawn by `diagram`: the interactive
+`kripkeExplorer` in notebooks, a static picture on the documentation site
+(`kripkeStatic`, in `Widgets/StaticHtml.lean`). -/
+def countermodelHtmlWith (diagram : Scenario → Html) (sys : System) (premises : List Formula)
+    (conclusion : Formula) (maxSteps := defaultMaxSteps) : Html :=
   let what := if premises.isEmpty then s!"{conclusion}"
     else s!"{conclusion} (from {premises.length} premise{if premises.length == 1 then "" else "s"})"
   match countermodelView sys premises conclusion maxSteps with
@@ -451,7 +453,12 @@ def countermodelHtml (sys : System) (premises : List Formula) (conclusion : Form
       para s!"Not valid in {sys.name}: {what}. Here is a countermodel read off \
         open branch {i}. The checks are evaluated at world 1:",
       checksProse premises conclusion,
-      if fitsCanvas sc then kripkeExplorer sc else countermodelText sc]
+      if fitsCanvas sc then diagram sc else countermodelText sc]
+
+/-- The notebook entry point: `#html countermodelHtml systemK [] ml[ … ]`. -/
+def countermodelHtml (sys : System) (premises : List Formula) (conclusion : Formula)
+    (maxSteps := defaultMaxSteps) : Html :=
+  countermodelHtmlWith kripkeExplorer sys premises conclusion maxSteps
 
 /-- The open branch that the countermodel is read off, as a preformatted
 block for `#html` (`openBranchLines`). -/

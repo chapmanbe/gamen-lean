@@ -16,3 +16,6 @@ __pycache__/
 
 # The DCLEG thesis PDF is Jeremiah's unpublished work: kept locally, never committed
 notes/dcleg-thesis-final.pdf
+
+# documentation site output (tools/docs/build-site.sh)
+_site/

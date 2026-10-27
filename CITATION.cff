@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use gamen-lean, please cite it as below."
+title: "gamen-lean"
+abstract: "Executable modal, temporal, epistemic, deontic, STIT, ATL and dynamic logics in Lean 4, with teaching notebooks and a JSON Lines service for clinical guideline validation."
+type: software
+authors:
+  - family-names: Chapman
+    given-names: Brian
+  - family-names: Chapman
+    given-names: Jeremiah
+version: "0.1.0"
+license: MIT
+repository-code: "https://github.com/chapmanbe/gamen-lean"
+url: "https://chapmanbe.github.io/gamen-lean"

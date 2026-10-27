@@ -8,11 +8,30 @@ teaching notebooks that follow *Boxes and Diamonds*
 
 Named from Old English *gamen* (game, sport, joy).
 
-**Status: early port.** The formula language, Kripke semantics, the prefixed
-tableau for K (plus the D rules), the JSON protocol, and `gamen-validate`
-are ported; `gamen-validate` answers identically to gamen-hs on every
-request it supports. See [`PORTING.md`](PORTING.md) for the module-by-module
-status and plan.
+**Status.** gamen-lean is the primary implementation of the Gamen logics
+(since 2026-09-29). Every gamen-hs library module is ported, gamen-hs is
+frozen, and new logics are added here. For the request types gamen-hs
+supports, `gamen-validate` answers identically to gamen-hs, apart from the
+divergences listed in `tools/compare/intentional-divergences.md`. See
+[`PORTING.md`](PORTING.md) for the module-by-module record.
+
+**Documentation:** [chapmanbe.github.io/gamen-lean](https://chapmanbe.github.io/gamen-lean)
+has the API reference and read-only copies of the notebooks.
+
+## Statement of need
+
+Modal logics for knowledge, obligation, time, agency and strategic ability
+are usually taught on paper and studied in separate tools, one logic at a
+time. gamen-lean puts them in one executable Lean 4 library: Kripke
+semantics and tableau provers for the *Boxes and Diamonds* systems, and
+temporal, epistemic, doxastic, deontic, STIT, ATL and dynamic logics, each
+checked by tests against its source paper. It serves two groups. Students,
+especially in health informatics, work through notebooks where a clinical
+rule becomes a formula they can evaluate, a model they can click, and an
+answer the notebook grades. Researchers and applications call
+`gamen-validate`, a JSON Lines service that clinical guideline validation
+uses to detect conflicting obligations. gamen-lean succeeds gamen-hs
+(Haskell) and Gamen.jl (Julia).
 
 ## Build
 
@@ -50,6 +69,22 @@ entailment) and then `ThreeValued.lean` (missing data, strong Kleene logic,
 and why a CQL criterion can be null).
 
 ![Clicking a fact onto a world updates the guideline checks](docs/images/gamen-lean-widget-click-test.gif)
+
+## How to cite
+
+If you use gamen-lean, please cite it using the metadata in
+[`CITATION.cff`](CITATION.cff). GitHub's "Cite this repository" button
+produces APA and BibTeX from that file.
+
+## Contributing
+
+Bug reports, questions and pull requests are welcome on
+[GitHub](https://github.com/chapmanbe/gamen-lean/issues). Before opening a
+pull request, run `lake build` and `lake test`; both must pass. A bug fix
+comes with a test that fails without it. The project's conventions (no
+`sorry`, errors as `Except` rather than `panic!`, *Boxes and Diamonds*
+definition numbers in docstrings checked against the text) are in
+[`CLAUDE.md`](CLAUDE.md).
 
 ## License
 

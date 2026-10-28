@@ -203,7 +203,9 @@ private def fuelOf (m : DynModel) : Nat := m.cgs.cgsStates.size + 1
 in the residual CGS `res` (the coalition's profile fixed, opponents free). A state
 satisfies it iff some profile's witnessing set covers its requirement set
 (`subjectiveClass` or the state itself). Mirrors `atlirSatWith`'s `objSat`, but
-over `DFormula`. -/
+over `DFormula`. The profiles come from `allUniformProfiles`, which by default
+collapses effect-equivalent actions (gamen-lean#8). That changes neither the
+answer nor the first error `mapM` raises. -/
 def uniformSat (m : DynModel) (mode : IrMode) (coalition : Std.TreeSet String)
     (w : Cgs String String → Except String (Std.TreeSet String)) :
     Except String (Std.TreeSet String) :=

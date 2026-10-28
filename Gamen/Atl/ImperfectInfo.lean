@@ -37,12 +37,13 @@ each, build the *residual CGS* with the coalition's actions committed, and
 apply ATL semantics (against the empty coalition) there. Exponential in
 (epistemic classes × actions per class).
 
-Not in gamen-hs (gamen-lean#8): `atlirSatWith` enumerates the profiles with
-`prune := true`, so each class offers only one of each group of actions
-that have the same effect throughout it (`distinctUniformActions`). An
-uninformed agent's no-op moves and the moves at sink states no longer
-multiply the profile count. The answers and errors are unchanged
-(`Tests/AtlirPruning.lean` checks this against `prune := false`).
+Not in gamen-hs (gamen-lean#8): `allUniformProfiles` prunes by default, so
+each class offers only one of each group of actions that have the same
+effect throughout it (`distinctUniformActions`). An uninformed agent's no-op
+moves and the moves at sink states no longer multiply the profile count,
+here and in ATL-D (`Gamen.Atl.Dynamic.uniformSat`). The answers and errors
+are unchanged (`Tests/AtlirPruning.lean` checks this against
+`prune := false`, gamen-hs's full enumeration).
 
 None of the cited papers (Jamroga & van der Hoek 2004; Schobbens 2004,
 ENTCS 85(2): 82–93; Bulling & Jamroga 2014; Kurpiewski, Jamroga & Knapik
@@ -187,6 +188,22 @@ private def sequenceExcept {α : Type} :
         let tails ← sequenceExcept rest
         pure (xs.flatMap fun x => tails.map (x :: ·))
 
+/-- Not in gamen-hs as a separate function: `allUniformStrategies`'s
+enumeration, with the actions tried on each class supplied by `choices`
+(given the class and its least state). Shared with the pruned enumeration in
+`allUniformProfiles`. -/
+def uniformStrategiesWith {s a : Type} [Ord s] [Ord a] (m : AtelModel s a) (ag : String)
+    (choices : Std.TreeSet s → s → List a) : Except String (List (UniformStrategy s a)) := do
+  let classChoices : List (Except String (List (Std.TreeMap s a))) :=
+    (epistemicClasses m ag).map fun cls =>
+      match cls.min? with
+      | none => throw "Set.findMin: empty set has no minimal element"
+      | some rep =>
+          pure ((choices cls rep).map fun act =>
+            Std.TreeMap.ofList (cls.toList.map fun st => (st, act)))
+  let combos ← sequenceExcept classChoices
+  pure (combos.map unionsLeft)
+
 /-- All uniform memoryless strategies for agent `ag`: the Cartesian product
 of action choices over `epistemicClasses`, each class contributing one
 action from `uniformActions`, assigned to every state in that class.
@@ -196,20 +213,6 @@ module docstring). -/
 def allUniformStrategies {s a : Type} [Ord s] [Ord a] (m : AtelModel s a) (ag : String) :
     Except String (List (UniformStrategy s a)) :=
   uniformStrategiesWith m ag fun _ rep => (uniformActions m ag rep).toList
-where
-  /-- The enumeration, with the actions tried on each class (given the class
-  and its least state) supplied by `choices`. -/
-  uniformStrategiesWith (m : AtelModel s a) (ag : String) (choices : Std.TreeSet s → s → List a) :
-      Except String (List (UniformStrategy s a)) := do
-    let classChoices : List (Except String (List (Std.TreeMap s a))) :=
-      (epistemicClasses m ag).map fun cls =>
-        match cls.min? with
-        | none => throw "Set.findMin: empty set has no minimal element"
-        | some rep =>
-            pure ((choices cls rep).map fun act =>
-              Std.TreeMap.ofList (cls.toList.map fun st => (st, act)))
-    let combos ← sequenceExcept classChoices
-    pure (combos.map unionsLeft)
 
 /-- Not in gamen-hs (gamen-lean#8). `acts` with each action dropped that has
 the same effect as an earlier one at every state of `cls`. Two actions of `ag`
@@ -231,20 +234,23 @@ def distinctUniformActions {s a : Type} [Ord s] [Ord a] (m : AtelModel s a) (ag 
 /-- All uniform joint strategy profiles for `coalition`: the Cartesian
 product of `allUniformStrategies` over the coalition's agents (ascending).
 
-With `prune` (not in gamen-hs; gamen-lean#8), each class offers only
-`distinctUniformActions`, where `others` is everyone in the model or the
-coalition but the agent. The pruned list is a sublist of the full one, in the
-same order, with the same first profile, and every profile left out has a
-residual CGS identical to that of one kept. So `atlirSatWith` gives the same
-answer, and raises the same errors, with or without it. -/
+Differs from gamen-hs (gamen-lean#8): by default (`prune := true`) each class
+offers only `distinctUniformActions`, where `others` is everyone in the model
+or the coalition but the agent. The pruned list is a sublist of the full one,
+in the same order, with the same first profile, and every profile left out has
+a residual CGS identical to that of an earlier one kept. So a checker that
+looks for a covering witness set (`atlirSatWith`), or computes them all in
+order (`Gamen.Atl.Dynamic.uniformSat`), gives the same answer and raises the
+same first error either way. `prune := false` is gamen-hs's full list, kept as
+the baseline that `Tests/AtlirPruning.lean` checks against. -/
 def allUniformProfiles {s a : Type} [Ord s] [Ord a] (m : AtelModel s a)
-    (coalition : Std.TreeSet String) (prune : Bool := false) :
+    (coalition : Std.TreeSet String) (prune : Bool := true) :
     Except String (List (Std.TreeMap String (UniformStrategy s a))) := do
   let agentList := coalition.toList
   let strategies (ag : String) : Except String (List (UniformStrategy s a)) :=
     if prune then
       let others := (m.atelCgs.cgsAgents ∪ coalition).erase ag
-      allUniformStrategies.uniformStrategiesWith m ag fun cls rep =>
+      uniformStrategiesWith m ag fun cls rep =>
         distinctUniformActions m ag others cls (uniformActions m ag rep).toList
     else allUniformStrategies m ag
   let stratCombs ← sequenceExcept (agentList.map strategies)

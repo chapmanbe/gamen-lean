@@ -35,6 +35,23 @@ def noopModel : Except String (AtelModel Nat String) :=
     { cgsStates := Std.TreeSet.ofList [0, 1, 2], cgsAgents := Std.TreeSet.ofList ["alice"],
       cgsMoves := moves, cgsTransition := trans, cgsLabeling := label } epi
 
+/-- A bare-constructed model (not `mkAtelModel`, not `mkCgs`) whose only
+agent is `alice`, but whose transition also reads `ghost`, an agent outside
+`cgsAgents` with moves `{0,1}`. From either state, `alice = 1` and
+`ghost = 1` lead to state 1 (where `p` holds); anything else, including a
+joint move with no `ghost` entry, leads to state 0. Compared without
+`ghost`'s move, alice's two moves look the same and pruning would drop
+`1`. -/
+def ghostModel : AtelModel Nat Nat :=
+  { atelCgs :=
+      { cgsStates := Std.TreeSet.ofList [0, 1], cgsAgents := Std.TreeSet.ofList ["alice"],
+        cgsMoves := fun _ ag =>
+          if ag == "alice" || ag == "ghost" then Std.TreeSet.ofList [0, 1] else ∅
+        cgsTransition := fun _ jm =>
+          if jm.get? "alice" == some 1 && jm.get? "ghost" == some 1 then 1 else 0
+        cgsLabeling := fun st => if st == 1 then Std.TreeSet.ofList ["p"] else ∅ }
+    atelEpistemic := fun _ st => Std.TreeSet.ofList [st] }
+
 -- ── Pseudo-random iCGSs ─────────────────────────────────────────────────
 
 private def mix (h x : Nat) : Nat :=
@@ -118,13 +135,26 @@ private def seeds : List Nat := (List.range 30).map fun i => 3000 + 7919 * i
 
 def cases : List (String × Bool) :=
   [ ("ATLir pruning: noop ≡ right on {0,1}, and every move at the sink 2 is the same, \
-      so alice's 9 uniform strategies collapse to 2 (left/right on {0,1})",
+      so alice's 9 uniform strategies collapse to 2 (left or noop on {0,1}, the first \
+      of each group in move order; left at 2), and pruning is the default",
       match noopModel with
       | .ok m =>
-          (allUniformProfiles m (Std.TreeSet.ofList ["alice"])).toOption.map List.length == some 9
-            && (allUniformProfiles m (Std.TreeSet.ofList ["alice"]) (prune := true)).toOption.map
-                List.length == some 2
+          let al := Std.TreeSet.ofList ["alice"]
+          let kept := (allUniformProfiles m al).toOption.map fun ps =>
+            ps.map fun p => ((p.get? "alice").map (·.toList)).getD []
+          (allUniformProfiles m al (prune := false)).toOption.map List.length == some 9
+            && kept == some [[(0, "left"), (1, "left"), (2, "left")],
+                             [(0, "noop"), (1, "noop"), (2, "left")]]
       | .error _ => false),
+    ("ATLir pruning: a coalition member outside cgsAgents still counts as an `other` \
+      (bare model: ghost's move reaches p only with alice's move 1, so alice's two \
+      moves are not equivalent)",
+      let p : Formula := .atom "p"
+      let c := ["alice", "ghost"]
+      let pruned := atlirSatObjective ghostModel (.canNext c p)
+      let full := atlirSatWith (fun _ _ st => Std.TreeSet.ofList [st]) ghostModel (.canNext c p)
+        (prune := false)
+      pruned.toOption.map (·.toList) == some [0, 1] && sameResult pruned full),
     ("ATLir pruning: on the noop model, ⟨⟨alice⟩⟩ir X p = {2}, objective = {0,1,2}, \
       ⟨⟨alice⟩⟩ir F ¬p = {0,1} (as without noop)",
       match noopModel with
@@ -148,7 +178,7 @@ def cases : List (String × Bool) :=
       seeds.all fun sd => match randomModel sd (3 + sd % 3) with
         | .ok m =>
             let c := Std.TreeSet.ofList agentNames
-            match allUniformProfiles m c, allUniformProfiles m c (prune := true) with
+            match allUniformProfiles m c (prune := false), allUniformProfiles m c with
             | .ok (u :: _), .ok (p :: _) =>
                 (u.toList.map fun (ag, st) => (ag, st.toList))
                   == (p.toList.map fun (ag, st) => (ag, st.toList))
